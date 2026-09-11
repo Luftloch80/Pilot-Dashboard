@@ -2,6 +2,7 @@
 
 const API_BASE = "https://openairlog.de/api/v1";
 const STORAGE_KEY = "oal_api_key";
+const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 
 const els = {
   setupCard: document.getElementById("setupCard"),
@@ -256,6 +257,34 @@ function setApiKey(key) {
 }
 function clearApiKey() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+}
+
+// Persist the parsed PDF crew (not the PDF file itself) so it survives a
+// page refresh instead of having to re-upload every time.
+function savePdfCrew() {
+  try {
+    if (state.pdfCrew) {
+      localStorage.setItem(PDF_CREW_STORAGE_KEY, JSON.stringify({ ...state.pdfCrew, crewSource: state.crewSource }));
+    } else {
+      localStorage.removeItem(PDF_CREW_STORAGE_KEY);
+    }
+  } catch { /* private mode etc. */ }
+}
+
+function loadStoredPdfCrew() {
+  try {
+    const raw = localStorage.getItem(PDF_CREW_STORAGE_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    if (!stored || !Array.isArray(stored.crew) || !stored.crew.length) return;
+    state.pdfCrew = { crew: stored.crew, rotation: stored.rotation || null, fileName: stored.fileName || "PDF" };
+    state.crewSource = stored.crewSource === "pdf" ? "pdf" : "api";
+    els.crewPdfLabel.textContent = stored.fileName || "PDF";
+    els.crewPdfStatus.hidden = false;
+    els.crewPdfStatus.textContent =
+      `${stored.crew.length} Crewmitglied(er) aus vorherigem Upload (${stored.fileName || "PDF"}).` +
+      (stored.rotation ? ` (Umlauf ${stored.rotation.rotation})` : "");
+  } catch { /* ignore malformed storage */ }
 }
 
 // ---------- rendering ----------
@@ -641,6 +670,7 @@ async function handleCrewPdf(file) {
       // the pilot go back to the OpenAirLog data if this wasn't wanted.
       state.pdfCrew = { crew, rotation, fileName: file.name };
       state.crewSource = "pdf";
+      savePdfCrew();
       els.crewPdfStatus.hidden = false;
       els.crewPdfStatus.textContent =
         `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
@@ -716,6 +746,7 @@ els.crewPdfRawToggle.addEventListener("click", () => {
 
 els.crewSourceSwitchBtn.addEventListener("click", () => {
   state.crewSource = state.crewSource === "pdf" ? "api" : "pdf";
+  savePdfCrew();
   const f = state.flights[state.index];
   if (f) renderCrew(f);
 });
@@ -727,4 +758,5 @@ if (window.pdfjsLib) {
 
 // ---------- init ----------
 
+loadStoredPdfCrew();
 loadFlights();

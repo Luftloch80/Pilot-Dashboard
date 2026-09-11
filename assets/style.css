@@ -331,6 +331,18 @@ body {
   cursor: pointer;
 }
 
+#crewPdfRotation {
+  margin-top: 12px;
+}
+
+.crew-pdf-card .crew-list {
+  margin-top: 12px;
+}
+
+.crew-pdf-card #crewPdfRawToggle {
+  margin-top: 10px;
+}
+
 .pdf-text {
   margin-top: 12px;
   background: var(--bg);

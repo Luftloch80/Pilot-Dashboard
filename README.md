@@ -67,8 +67,14 @@ Nicht genutzt (aber von OpenAirLog verfügbar, potenzielle Erweiterungen):
 - **Zeiten in UTC/Zulu:** Alle Zeiten werden bewusst in UTC (`HH:mmZ`)
   angezeigt, wie in der Luftfahrt üblich – nicht in der lokalen
   Zeitzone des iPhones.
-- Crew aus PDF wird als reiner Extrakttext angezeigt (kein automatisches
-  Parsen in Namen/Rollen), um keine falschen Namen/Rollen zu erraten.
+- **Crew-PDF-Parsing:** Die App erkennt Crew-Zeilen im Stil einer
+  „Umlaufcrewliste“ (Rollen-Kürzel wie `CP`/`FO`/`P1`/`FB` gefolgt von
+  `NACHNAME, VORNAME` in Großbuchstaben, wie z. B. bei Lufthansa-Group-
+  Rostern üblich) und zeigt sie als strukturierte Liste mit Rolle an –
+  verifiziert gegen eine echte Umlaufcrewliste. Erkennt die App bei einem
+  anderen PDF-Layout keine Zeilen, wird stattdessen automatisch der
+  extrahierte Rohtext angezeigt (auch bei erkannter Crew über „Rohtext
+  anzeigen“ einsehbar), damit nichts verloren geht.
 
 ## Deployment
 

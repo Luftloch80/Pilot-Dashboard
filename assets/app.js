@@ -38,6 +38,9 @@ const els = {
 
   crewPdfInput: document.getElementById("crewPdfInput"),
   crewPdfLabel: document.getElementById("crewPdfLabel"),
+  crewPdfRotation: document.getElementById("crewPdfRotation"),
+  crewPdfList: document.getElementById("crewPdfList"),
+  crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
 
   rawToggle: document.getElementById("rawToggle"),
@@ -453,22 +456,127 @@ async function loadFlights() {
 }
 
 // ---------- PDF crew list (optional, supplementary) ----------
+//
+// Layout-aware extraction: pdf.js only gives us individual positioned text
+// fragments, not rows. We cluster fragments by their y-coordinate into
+// visual lines, then sort each line left-to-right by x, which reconstructs
+// table rows like "CP DROSTE, ALEXANDER 770166A FRAL/OF-A/B" reliably
+// enough to parse. Verified against a real "Umlaufcrewliste" (Lufthansa-
+// style rotation crew list) PDF.
+
+async function extractPdfLines(pdf) {
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items
+      .map((it) => ({ str: it.str, x: it.transform[4], y: it.transform[5] }))
+      .filter((it) => it.str.trim() !== "");
+
+    const rows = [];
+    const tolerance = 2;
+    for (const it of items) {
+      let row = rows.find((r) => Math.abs(r.y - it.y) <= tolerance);
+      if (!row) { row = { y: it.y, items: [] }; rows.push(row); }
+      row.items.push(it);
+    }
+    rows.sort((a, b) => b.y - a.y); // PDF y grows upward -> top of page first
+    for (const row of rows) {
+      row.items.sort((a, b) => a.x - b.x);
+      const line = row.items.map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+      if (line) lines.push(line);
+    }
+  }
+  return lines;
+}
+
+// Matches crew-table rows: a short role code (CP, FO, P1, FB, PU, ...)
+// followed by "NACHNAME, VORNAME" (all-caps, as used in these official
+// rotation crew lists) and trailing columns. Deliberately not a fixed
+// role whitelist, since role codes differ between airlines/roster
+// systems. The PK-Nummer/staff-ID column (starts with a digit) is used
+// as an anchor so the lazily-matched name doesn't get cut short; a
+// second, looser pattern covers rows with no such trailing column.
+const CREW_ROW_WITH_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*?)\s+(\d\S*)\s*(.*)$/;
+const CREW_ROW_NO_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*)$/;
+
+function parseCrewFromLines(lines) {
+  const crew = [];
+  for (const line of lines) {
+    let m = line.match(CREW_ROW_WITH_ID_RE);
+    if (m) {
+      const [, role, name, , details] = m;
+      crew.push({ role: role.trim(), name: name.trim().replace(/\s+/g, " "), details: (details || "").trim() });
+      continue;
+    }
+    m = line.match(CREW_ROW_NO_ID_RE);
+    if (m) {
+      const [, role, name] = m;
+      crew.push({ role: role.trim(), name: name.trim().replace(/\s+/g, " "), details: "" });
+    }
+  }
+  return crew;
+}
+
+function parseRotationHeader(lines) {
+  for (const line of lines) {
+    const m = line.match(/^(.*?)\s+Ihr angeforderter Flug.*?Umlaufs:\s*(\S+)/i);
+    if (m) return { pilot: m[1].trim(), rotation: m[2].trim() };
+  }
+  return null;
+}
+
+function renderPdfCrew(crew, rotation) {
+  els.crewPdfRotation.hidden = !rotation;
+  els.crewPdfRotation.textContent = rotation ? `Umlauf ${rotation.rotation} · ${rotation.pilot}` : "";
+
+  els.crewPdfList.innerHTML = "";
+  els.crewPdfList.hidden = crew.length === 0;
+  for (const member of crew) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = member.name;
+    const role = document.createElement("span");
+    role.className = "crew-role";
+    role.textContent = member.role;
+    li.appendChild(name);
+    li.appendChild(role);
+    els.crewPdfList.appendChild(li);
+  }
+}
 
 async function handleCrewPdf(file) {
   els.crewPdfLabel.textContent = file.name;
-  els.crewPdfResult.hidden = false;
+  els.crewPdfRotation.hidden = true;
+  els.crewPdfList.hidden = true;
+  els.crewPdfList.innerHTML = "";
+  els.crewPdfRawToggle.hidden = true;
+  els.crewPdfResult.hidden = true;
   els.crewPdfResult.textContent = "Lese PDF …";
+  els.crewPdfResult.hidden = false;
+
   try {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    let text = "";
-    for (let p = 1; p <= pdf.numPages; p++) {
-      const page = await pdf.getPage(p);
-      const content = await page.getTextContent();
-      text += content.items.map((it) => it.str).join(" ") + "\n\n";
+    const lines = await extractPdfLines(pdf);
+    const rawText = lines.join("\n");
+    const rotation = parseRotationHeader(lines);
+    const crew = parseCrewFromLines(lines);
+
+    els.crewPdfRawToggle.hidden = false;
+    els.crewPdfRawToggle.textContent = "Rohtext anzeigen";
+    els.crewPdfResult.textContent = rawText || "Kein Text im PDF gefunden.";
+
+    if (crew.length) {
+      renderPdfCrew(crew, rotation);
+      els.crewPdfResult.hidden = true; // available via "Rohtext anzeigen"
+    } else {
+      // Couldn't recognize crew rows in this layout: show raw text directly
+      // rather than hiding it behind a toggle with nothing else to show.
+      els.crewPdfResult.hidden = false;
     }
-    els.crewPdfResult.textContent = text.trim() || "Kein Text im PDF gefunden.";
   } catch (err) {
+    els.crewPdfResult.hidden = false;
     els.crewPdfResult.textContent = "PDF konnte nicht gelesen werden: " + (err && err.message ? err.message : err);
   }
 }
@@ -518,6 +626,16 @@ els.crewPdfInput.addEventListener("change", (e) => {
   const file = e.target.files && e.target.files[0];
   if (file) handleCrewPdf(file);
 });
+
+els.crewPdfRawToggle.addEventListener("click", () => {
+  els.crewPdfResult.hidden = !els.crewPdfResult.hidden;
+  els.crewPdfRawToggle.textContent = els.crewPdfResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
+});
+
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+}
 
 // ---------- init ----------
 

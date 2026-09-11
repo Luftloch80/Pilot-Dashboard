@@ -47,17 +47,7 @@
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
 
-  <!-- Flugauswahl -->
-  <section id="flightNav" class="flight-nav" hidden>
-    <button id="prevFlightBtn" class="icon-btn" aria-label="Vorheriger Flug">‹</button>
-    <div class="flight-nav-label">
-      <div id="flightNavTitle" class="flight-nav-title">–</div>
-      <div id="flightNavSub" class="flight-nav-sub muted">–</div>
-    </div>
-    <button id="nextFlightBtn" class="icon-btn" aria-label="Nächster Flug">›</button>
-  </section>
-
-  <!-- Hauptkarte: aktueller Flug -->
+  <!-- Hauptkarte: der Flug, der jetzt zu Datum/Uhrzeit passt -->
   <section id="flightCard" class="card flight-card" hidden>
     <div class="flight-header">
       <div class="flight-number" id="flightNumber">–</div>
@@ -121,6 +111,16 @@
         <div class="meta-val" id="registration">–</div>
       </div>
     </div>
+  </section>
+
+  <!-- Andere Flüge durchblättern (sekundär, unter dem aktuellen Flug) -->
+  <section id="flightNav" class="flight-nav" hidden>
+    <button id="prevFlightBtn" class="icon-btn" aria-label="Vorheriger Flug">‹</button>
+    <div class="flight-nav-label">
+      <div id="flightNavTitle" class="flight-nav-title">–</div>
+      <div id="flightNavSub" class="flight-nav-sub muted">–</div>
+    </div>
+    <button id="nextFlightBtn" class="icon-btn" aria-label="Nächster Flug">›</button>
   </section>
 
   <!-- Crew aus OpenAirLog -->

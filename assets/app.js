@@ -525,6 +525,9 @@ async function loadFlights() {
   state.index = pickInitialIndex(flights);
   showBanner("", "");
   renderFlight();
+  // Land on the flight that matches the current time, not wherever the
+  // page happened to be scrolled (e.g. after a refresh from further down).
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // ---------- PDF crew list (optional, supplementary) ----------

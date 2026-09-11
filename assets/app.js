@@ -91,6 +91,17 @@ function todayISO(offsetDays) {
   return d.toISOString().slice(0, 10);
 }
 
+// Local (device) calendar day, not UTC - "heute" means the pilot's local day,
+// even though flight times themselves are shown in UTC.
+function localDateKey(d) {
+  if (!d) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function localDateLabel(d) {
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.`;
+}
+
 // ---------- normalization (defensive: field names are inferred, not confirmed) ----------
 
 function extractFlightsArray(json) {
@@ -394,8 +405,12 @@ async function loadFlights() {
   els.resetKeyBtn.hidden = false;
   showBanner("Lade Flugdaten …", "");
 
-  const from = todayISO(-2);
-  const to = todayISO(10);
+  // Small +/-1 day buffer (not "history"): the API's from/to are UTC dates,
+  // and a flight scheduled "today" in local time can fall on the adjacent
+  // UTC date depending on the device's timezone. We still only ever show
+  // flights whose local calendar day is today (filtered below).
+  const from = todayISO(-1);
+  const to = todayISO(1);
   const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
 
   let res;
@@ -435,21 +450,32 @@ async function loadFlights() {
   }
 
   const rawFlights = extractFlightsArray(json);
-  if (!rawFlights.length) {
-    showBanner("Keine Flüge im Zeitraum gefunden.", "warn");
-    state.flights = [];
-    renderFlight();
-    return;
-  }
-
-  const flights = rawFlights.map(normalizeFlight).sort((a, b) => {
+  const allFlights = rawFlights.map(normalizeFlight).sort((a, b) => {
     const da = a.depSchedDate || a.depActualDate || new Date(0);
     const db = b.depSchedDate || b.depActualDate || new Date(0);
     return da - db;
   });
 
+  const todayKey = localDateKey(new Date());
+  const flights = allFlights.filter((f) => {
+    const d = f.depSchedDate || f.depActualDate;
+    return d && localDateKey(d) === todayKey;
+  });
+
   crewCache.clear();
   state.flights = flights;
+
+  if (!flights.length) {
+    let msg = `Heute (${localDateLabel(new Date())}) sind keine Flüge für dich hinterlegt.`;
+    if (allFlights.length) {
+      msg += ` OpenAirLog liefert für den abgefragten Zeitraum ${allFlights.length} Flug(e), aber keiner davon liegt heute – bitte Datum/Uhrzeit auf dem Gerät und in „Rohdaten anzeigen“ prüfen.`;
+      els.rawData.textContent = JSON.stringify(allFlights.map((f) => f.raw), null, 2);
+    }
+    showBanner(msg, "");
+    renderFlight();
+    return;
+  }
+
   state.index = pickInitialIndex(flights);
   showBanner("", "");
   renderFlight();

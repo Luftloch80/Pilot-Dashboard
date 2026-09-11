@@ -172,13 +172,28 @@ function timeField(raw, side, kind) {
   ].filter(Boolean));
 }
 
+// Some sources (official rotation crew list PDFs) print names in solid
+// caps; OpenAirLog's own API already gives proper mixed case. Only
+// reformat strings with no case variation at all (all-caps or
+// all-lowercase) - anything already mixed case is left exactly as given.
+function hasMixedCase(str) {
+  return /[a-zA-ZÄÖÜäöü]/.test(str) && str !== str.toUpperCase() && str !== str.toLowerCase();
+}
+function toTitleCase(str) {
+  return str.toLowerCase().replace(/(^|[\s\-'.])\p{L}/gu, (c) => c.toUpperCase());
+}
+function displayName(str) {
+  if (!str) return str;
+  return hasMixedCase(str) ? str : toTitleCase(str);
+}
+
 function normalizeCrewMember(m) {
-  if (typeof m === "string") return { name: m, role: "" };
+  if (typeof m === "string") return { name: displayName(m), role: "" };
   const name = pick(m, ["name", "full_name", "fullName", "display_name"]) ||
     [pick(m, ["first_name", "firstName"]), pick(m, ["last_name", "lastName"])].filter(Boolean).join(" ") ||
     "Unbekannt";
   const role = pick(m, ["role", "function", "position", "rank", "duty"]) || "";
-  return { name: String(name), role: String(role) };
+  return { name: displayName(String(name)), role: String(role) };
 }
 
 const FLIGHT_NUMBER_KEYS = ["flight_number", "flightNumber", "flight_no", "flightNo", "number", "callsign"];
@@ -582,13 +597,13 @@ function parseCrewFromLines(lines) {
     let m = line.match(CREW_ROW_WITH_ID_RE);
     if (m) {
       const [, role, name, , details] = m;
-      crew.push({ role: role.trim(), name: name.trim().replace(/\s+/g, " "), details: (details || "").trim() });
+      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: (details || "").trim() });
       continue;
     }
     m = line.match(CREW_ROW_NO_ID_RE);
     if (m) {
       const [, role, name] = m;
-      crew.push({ role: role.trim(), name: name.trim().replace(/\s+/g, " "), details: "" });
+      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: "" });
     }
   }
   return crew;

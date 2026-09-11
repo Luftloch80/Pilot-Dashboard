@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Pilot Dashboard</title>
+<meta name="description" content="Aktueller Flug: Abflug, Ankunft und Crew auf einen Blick." />
+
+<!-- iPhone / Safari: als App auf den Home-Bildschirm -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Pilot" />
+<meta name="theme-color" content="#0b1220" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="assets/icon-180.png" />
+<link rel="icon" href="assets/favicon.png" />
+
+<link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    <span>Pilot Dashboard</span>
+  </div>
+  <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
+</header>
+
+<main id="app" class="app">
+
+  <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
+  <section id="setupCard" class="card setup-card" hidden>
+    <h2>OpenAirLog verbinden</h2>
+    <p class="muted">
+      Dein API-Schlüssel wird ausschließlich lokal auf diesem Gerät gespeichert
+      (Browser-Speicher) und bei jeder Anfrage direkt an
+      <code>openairlog.de</code> gesendet. Er verlässt dieses Gerät sonst nicht.
+    </p>
+    <label for="apiKeyInput">API-Schlüssel</label>
+    <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein OpenAirLog API-Schlüssel" />
+    <button id="saveKeyBtn" class="btn primary">Speichern &amp; verbinden</button>
+    <p id="setupError" class="error-text" hidden></p>
+  </section>
+
+  <!-- Status / Lade / Fehleranzeige -->
+  <section id="statusBanner" class="status-banner" hidden></section>
+
+  <!-- Flugauswahl -->
+  <section id="flightNav" class="flight-nav" hidden>
+    <button id="prevFlightBtn" class="icon-btn" aria-label="Vorheriger Flug">‹</button>
+    <div class="flight-nav-label">
+      <div id="flightNavTitle" class="flight-nav-title">–</div>
+      <div id="flightNavSub" class="flight-nav-sub muted">–</div>
+    </div>
+    <button id="nextFlightBtn" class="icon-btn" aria-label="Nächster Flug">›</button>
+  </section>
+
+  <!-- Hauptkarte: aktueller Flug -->
+  <section id="flightCard" class="card flight-card" hidden>
+    <div class="flight-header">
+      <div class="flight-number" id="flightNumber">–</div>
+      <div id="flightStatus" class="status-pill">–</div>
+    </div>
+
+    <div class="route">
+      <div class="route-point">
+        <div class="route-code" id="depCode">---</div>
+        <div class="route-label">Abflug</div>
+      </div>
+      <div class="route-line" aria-hidden="true">
+        <span class="plane">✈</span>
+      </div>
+      <div class="route-point">
+        <div class="route-code" id="arrCode">---</div>
+        <div class="route-label">Ankunft</div>
+      </div>
+    </div>
+
+    <div class="time-grid">
+      <div class="time-block">
+        <div class="time-block-title">Abflug</div>
+        <div class="time-row">
+          <span class="time-key">Planmäßig</span>
+          <span class="time-val" id="depSched">–</span>
+        </div>
+        <div class="time-row">
+          <span class="time-key">Aktuell</span>
+          <span class="time-val" id="depActual">–</span>
+        </div>
+        <div class="time-row">
+          <span class="time-key">Gate</span>
+          <span class="time-val" id="depGate">–</span>
+        </div>
+      </div>
+      <div class="time-block">
+        <div class="time-block-title">Ankunft</div>
+        <div class="time-row">
+          <span class="time-key">Planmäßig</span>
+          <span class="time-val" id="arrSched">–</span>
+        </div>
+        <div class="time-row">
+          <span class="time-key">Aktuell</span>
+          <span class="time-val" id="arrActual">–</span>
+        </div>
+        <div class="time-row">
+          <span class="time-key">Gate</span>
+          <span class="time-val" id="arrGate">–</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="meta-row">
+      <div class="meta-item">
+        <div class="meta-key">Flugzeug</div>
+        <div class="meta-val" id="aircraft">–</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-key">Kennzeichen</div>
+        <div class="meta-val" id="registration">–</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Crew aus OpenAirLog -->
+  <section id="crewCard" class="card crew-card" hidden>
+    <h2>Crew</h2>
+    <ul id="crewList" class="crew-list"></ul>
+    <p id="crewEmpty" class="muted" hidden>Keine Crewdaten in OpenAirLog für diesen Flug hinterlegt.</p>
+  </section>
+
+  <!-- PDF-Crew-Upload (optional / Ergänzung) -->
+  <section class="card crew-pdf-card">
+    <div class="crew-pdf-head">
+      <h2>Crewliste als PDF</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Ergänzt die OpenAirLog-Crew, z. B. wenn ein separates Briefing-PDF vorliegt.
+      Die Datei wird nur lokal im Browser gelesen, nicht hochgeladen.
+    </p>
+    <label for="crewPdfInput" class="btn secondary file-btn">
+      <span id="crewPdfLabel">PDF auswählen</span>
+      <input id="crewPdfInput" type="file" accept="application/pdf" hidden />
+    </label>
+    <div id="crewPdfResult" class="pdf-text" hidden></div>
+  </section>
+
+  <!-- Rohdaten zum Debuggen -->
+  <section class="card raw-card">
+    <button id="rawToggle" class="btn ghost small">Rohdaten anzeigen</button>
+    <pre id="rawData" class="raw-data" hidden></pre>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <button id="refreshBtn" class="btn secondary" hidden>Aktualisieren</button>
+  <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>

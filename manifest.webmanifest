@@ -1,0 +1,11 @@
+{
+  "name": "Pilot Dashboard",
+  "short_name": "Pilot",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [
+    { "src": "assets/icon-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

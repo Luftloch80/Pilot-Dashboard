@@ -33,13 +33,14 @@ const els = {
   registration: document.getElementById("registration"),
 
   crewCard: document.getElementById("crewCard"),
+  crewSource: document.getElementById("crewSource"),
   crewList: document.getElementById("crewList"),
   crewEmpty: document.getElementById("crewEmpty"),
+  crewSourceSwitchBtn: document.getElementById("crewSourceSwitchBtn"),
 
   crewPdfInput: document.getElementById("crewPdfInput"),
   crewPdfLabel: document.getElementById("crewPdfLabel"),
-  crewPdfRotation: document.getElementById("crewPdfRotation"),
-  crewPdfList: document.getElementById("crewPdfList"),
+  crewPdfStatus: document.getElementById("crewPdfStatus"),
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
 
@@ -50,8 +51,8 @@ const els = {
   resetKeyBtn: document.getElementById("resetKeyBtn"),
 };
 
-/** @type {{flights: any[], index: number}} */
-const state = { flights: [], index: 0 };
+/** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
+const state = { flights: [], index: 0, crewSource: "api", pdfCrew: null };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -299,12 +300,51 @@ function renderFlight() {
   renderFlightNav();
 }
 
+function renderCrewMembers(listEl, crew) {
+  listEl.innerHTML = "";
+  for (const member of crew) {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = member.name;
+    const role = document.createElement("span");
+    role.className = "crew-role";
+    role.textContent = member.role;
+    li.appendChild(name);
+    li.appendChild(role);
+    listEl.appendChild(li);
+  }
+}
+
+// Crew shown here comes either from OpenAirLog (per-flight, via
+// /flights/{id}/crew) or - if the pilot uploaded a PDF - from that PDF,
+// which then overwrites the OpenAirLog crew until switched back.
 function renderCrew(f) {
   const entry = f.id != null ? crewCache.get(f.id) : undefined;
-  const crew = entry && entry.status === "ok" ? entry.crew : f.embeddedCrew;
+  const apiCrew = entry && entry.status === "ok" ? entry.crew : f.embeddedCrew;
+  const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length);
+
+  if (hasPdfCrew) {
+    els.crewSourceSwitchBtn.hidden = false;
+    els.crewSourceSwitchBtn.textContent =
+      state.crewSource === "pdf" ? "OpenAirLog-Crew stattdessen anzeigen" : "PDF-Crew stattdessen anzeigen";
+  } else {
+    els.crewSourceSwitchBtn.hidden = true;
+    state.crewSource = "api"; // nothing to override with (anymore)
+  }
+
+  const useSource = hasPdfCrew && state.crewSource === "pdf" ? "pdf" : "api";
 
   els.crewList.innerHTML = "";
   els.crewEmpty.hidden = true;
+
+  if (useSource === "pdf") {
+    const { crew, rotation, fileName } = state.pdfCrew;
+    els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
+    renderCrewMembers(els.crewList, crew);
+    return;
+  }
+
+  els.crewSource.textContent = "OpenAirLog";
 
   if (entry && entry.status === "loading") {
     els.crewEmpty.hidden = false;
@@ -321,23 +361,13 @@ function renderCrew(f) {
     els.crewEmpty.textContent = entry.message || "Crew konnte nicht geladen werden.";
     return;
   }
-  if (!crew.length) {
+  if (!apiCrew.length) {
     els.crewEmpty.hidden = false;
     els.crewEmpty.textContent = "Keine Crewdaten in OpenAirLog für diesen Flug hinterlegt.";
     return;
   }
 
-  for (const member of crew) {
-    const li = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = member.name;
-    const role = document.createElement("span");
-    role.className = "crew-role";
-    role.textContent = member.role;
-    li.appendChild(name);
-    li.appendChild(role);
-    els.crewList.appendChild(li);
-  }
+  renderCrewMembers(els.crewList, apiCrew);
 }
 
 async function ensureCrewLoaded(f) {
@@ -552,34 +582,12 @@ function parseRotationHeader(lines) {
   return null;
 }
 
-function renderPdfCrew(crew, rotation) {
-  els.crewPdfRotation.hidden = !rotation;
-  els.crewPdfRotation.textContent = rotation ? `Umlauf ${rotation.rotation} · ${rotation.pilot}` : "";
-
-  els.crewPdfList.innerHTML = "";
-  els.crewPdfList.hidden = crew.length === 0;
-  for (const member of crew) {
-    const li = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = member.name;
-    const role = document.createElement("span");
-    role.className = "crew-role";
-    role.textContent = member.role;
-    li.appendChild(name);
-    li.appendChild(role);
-    els.crewPdfList.appendChild(li);
-  }
-}
-
 async function handleCrewPdf(file) {
   els.crewPdfLabel.textContent = file.name;
-  els.crewPdfRotation.hidden = true;
-  els.crewPdfList.hidden = true;
-  els.crewPdfList.innerHTML = "";
+  els.crewPdfStatus.hidden = true;
   els.crewPdfRawToggle.hidden = true;
-  els.crewPdfResult.hidden = true;
-  els.crewPdfResult.textContent = "Lese PDF …";
   els.crewPdfResult.hidden = false;
+  els.crewPdfResult.textContent = "Lese PDF …";
 
   try {
     const buf = await file.arrayBuffer();
@@ -594,13 +602,26 @@ async function handleCrewPdf(file) {
     els.crewPdfResult.textContent = rawText || "Kein Text im PDF gefunden.";
 
     if (crew.length) {
-      renderPdfCrew(crew, rotation);
+      // Overwrites the OpenAirLog crew above; the switch button there lets
+      // the pilot go back to the OpenAirLog data if this wasn't wanted.
+      state.pdfCrew = { crew, rotation, fileName: file.name };
+      state.crewSource = "pdf";
+      els.crewPdfStatus.hidden = false;
+      els.crewPdfStatus.textContent =
+        `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
+        (rotation ? ` (Umlauf ${rotation.rotation})` : "");
       els.crewPdfResult.hidden = true; // available via "Rohtext anzeigen"
     } else {
-      // Couldn't recognize crew rows in this layout: show raw text directly
-      // rather than hiding it behind a toggle with nothing else to show.
+      // Couldn't recognize crew rows in this layout: nothing to overwrite
+      // with, show the raw text directly instead of hiding it behind a
+      // toggle with nothing else to show.
       els.crewPdfResult.hidden = false;
+      els.crewPdfStatus.hidden = false;
+      els.crewPdfStatus.textContent = "Konnte keine Crew-Zeilen in dieser PDF erkennen, siehe Rohtext unten.";
     }
+
+    const f = state.flights[state.index];
+    if (f) renderCrew(f);
   } catch (err) {
     els.crewPdfResult.hidden = false;
     els.crewPdfResult.textContent = "PDF konnte nicht gelesen werden: " + (err && err.message ? err.message : err);
@@ -656,6 +677,12 @@ els.crewPdfInput.addEventListener("change", (e) => {
 els.crewPdfRawToggle.addEventListener("click", () => {
   els.crewPdfResult.hidden = !els.crewPdfResult.hidden;
   els.crewPdfRawToggle.textContent = els.crewPdfResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
+});
+
+els.crewSourceSwitchBtn.addEventListener("click", () => {
+  state.crewSource = state.crewSource === "pdf" ? "api" : "pdf";
+  const f = state.flights[state.index];
+  if (f) renderCrew(f);
 });
 
 if (window.pdfjsLib) {

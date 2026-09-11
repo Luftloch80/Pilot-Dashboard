@@ -293,6 +293,19 @@ body {
 .meta-val { font-weight: 600; margin-top: 2px; }
 
 /* Crew */
+.crew-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.crew-card-head h2 { margin: 0; }
+
+#crewSourceSwitchBtn {
+  margin-top: 10px;
+}
+
 .crew-list {
   list-style: none;
   margin: 0;
@@ -331,11 +344,7 @@ body {
   cursor: pointer;
 }
 
-#crewPdfRotation {
-  margin-top: 12px;
-}
-
-.crew-pdf-card .crew-list {
+#crewPdfStatus {
   margin-top: 12px;
 }
 

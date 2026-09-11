@@ -21,9 +21,14 @@ Vercel als statisches Verzeichnis).
    Flüge heute, lässt sich mit den Pfeilen unter der Karte zwischen ihnen
    blättern; automatisch ausgewählt ist der aktuell aktive bzw. der nächste
    anstehende Flug des Tages.
-5. Crewliste als PDF ist optional und ergänzt die Crew-Daten aus
-   OpenAirLog (z. B. für ein separates Briefing). Das PDF wird nur lokal
-   im Browser gelesen (per pdf.js), nicht hochgeladen.
+5. Crewliste als PDF ist optional. Werden darin Crew-Zeilen erkannt,
+   **überschreibt sie automatisch die Crew-Anzeige** (statt sie nur zu
+   ergänzen) – z. B. wenn die offizielle Umlaufcrewliste aktueller ist als
+   OpenAirLog. Über den Button unter der Crew-Liste lässt sich jederzeit
+   zurück zur OpenAirLog-Crew wechseln (und wieder zurück zur PDF-Crew).
+   Das PDF wird nur lokal im Browser gelesen (per pdf.js), nicht
+   hochgeladen. Werden keine Crew-Zeilen erkannt, wird nichts überschrieben
+   und stattdessen der extrahierte Rohtext angezeigt.
 
 ## API-Endpunkte
 

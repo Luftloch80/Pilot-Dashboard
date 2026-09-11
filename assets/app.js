@@ -321,14 +321,22 @@ function renderFlightNav() {
   els.flightNavSub.textContent = f ? `${f.depCode} → ${f.arrCode}` : "–";
 }
 
-function statusLabel(f) {
-  const now = new Date();
-  const dep = f.depActualDate || f.depSchedDate;
-  const arr = f.arrActualDate || f.arrSchedDate;
-  if (dep && arr && dep <= now && now <= arr) return { text: "Aktiv", cls: "active" };
-  if (dep && dep > now) return { text: "Bevorstehend", cls: "upcoming" };
-  if (f.status) return { text: f.status, cls: "" };
-  return { text: "Abgeschlossen", cls: "" };
+// T-minus/T-plus countdown against the scheduled departure: green "-N min"
+// while still ahead of schedule, red "+N min" once that time has passed.
+function renderTimerPill(f) {
+  if (!f.depSchedDate) {
+    els.flightStatus.textContent = "–";
+    els.flightStatus.className = "status-pill";
+    return;
+  }
+  const diffMin = Math.round((f.depSchedDate.getTime() - Date.now()) / 60000);
+  if (diffMin > 0) {
+    els.flightStatus.textContent = `-${diffMin} min`;
+    els.flightStatus.className = "status-pill timer-before";
+  } else {
+    els.flightStatus.textContent = `+${Math.abs(diffMin)} min`;
+    els.flightStatus.className = "status-pill timer-after";
+  }
 }
 
 function renderFlight() {
@@ -338,9 +346,7 @@ function renderFlight() {
   if (!f) return;
 
   els.flightNumber.textContent = f.flightNumber;
-  const st = statusLabel(f);
-  els.flightStatus.textContent = st.text;
-  els.flightStatus.className = "status-pill" + (st.cls ? " " + st.cls : "");
+  renderTimerPill(f);
 
   els.depCode.textContent = f.depCode;
   els.arrCode.textContent = f.arrCode;
@@ -760,3 +766,9 @@ if (window.pdfjsLib) {
 
 loadStoredPdfCrew();
 loadFlights();
+
+// Keep the T-minus/T-plus countdown ticking without a full data refresh.
+setInterval(() => {
+  const f = state.flights[state.index];
+  if (f) renderTimerPill(f);
+}, 30000);

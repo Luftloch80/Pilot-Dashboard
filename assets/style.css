@@ -226,8 +226,14 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.status-pill.active { background: var(--ok-bg); color: var(--ok); }
-.status-pill.upcoming { background: var(--warn-bg); color: var(--warn); }
+.status-pill.timer-before,
+.status-pill.timer-after {
+  text-transform: none;
+  letter-spacing: normal;
+  font-variant-numeric: tabular-nums;
+}
+.status-pill.timer-before { background: var(--ok-bg); color: var(--ok); }
+.status-pill.timer-after { background: var(--danger-bg); color: var(--danger); }
 
 .route {
   display: flex;

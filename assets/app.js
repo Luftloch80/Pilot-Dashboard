@@ -23,12 +23,8 @@ const els = {
   flightStatus: document.getElementById("flightStatus"),
   depCode: document.getElementById("depCode"),
   arrCode: document.getElementById("arrCode"),
-  depSched: document.getElementById("depSched"),
-  depActual: document.getElementById("depActual"),
-  depGate: document.getElementById("depGate"),
-  arrSched: document.getElementById("arrSched"),
-  arrActual: document.getElementById("arrActual"),
-  arrGate: document.getElementById("arrGate"),
+  depTime: document.getElementById("depTime"),
+  arrTime: document.getElementById("arrTime"),
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
 
@@ -69,13 +65,13 @@ function pick(obj, paths) {
   return undefined;
 }
 
+// Scheduled time only, no date - the dashboard only ever shows today's
+// flights, so the date would be redundant here.
 function fmtTime(d) {
   if (!d) return "–";
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  const dd = String(d.getUTCDate()).padStart(2, "0");
-  const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
-  return `${hh}:${mm}Z · ${dd}.${mo}.`;
+  return `${hh}:${mm}Z`;
 }
 
 // Confirmed OpenAirLog schema: scheduled/actual times are standalone
@@ -176,16 +172,6 @@ function timeField(raw, side, kind) {
   ].filter(Boolean));
 }
 
-function gateField(raw, side) {
-  const nested = raw[side];
-  if (nested && typeof nested === "object") {
-    const v = pick(nested, ["gate", "gate_number"]);
-    if (v) return v;
-  }
-  const prefix = side === "departure" ? "dep" : "arr";
-  return pick(raw, [`${prefix}_gate`, `${prefix}Gate`, `${side}_gate`]);
-}
-
 function normalizeCrewMember(m) {
   if (typeof m === "string") return { name: m, role: "" };
   const name = pick(m, ["name", "full_name", "fullName", "display_name"]) ||
@@ -222,8 +208,6 @@ function normalizeFlight(raw) {
   const arrActualDate = combineDateAndTime(raw.date, raw.on_block || raw.landing, depActualDate)
     || toDateOrNull(timeField(raw, "arrival", "actual"));
 
-  const depGate = gateField(raw, "departure");
-  const arrGate = gateField(raw, "arrival");
   const aircraft = pick(raw, ["aircraft_type", "aircraftType", "aircraft.type", "aircraft", "type"]);
   const registration = pick(raw, ["aircraft_registration", "registration", "reg", "tail_number", "tailNumber", "aircraft.registration"]);
   const status = pick(raw, ["status", "flight_status", "state"]);
@@ -240,7 +224,6 @@ function normalizeFlight(raw) {
     flightNumber: String(flightNumber),
     depCode, arrCode,
     depSchedDate, depActualDate, arrSchedDate, arrActualDate,
-    depGate: depGate || "–", arrGate: arrGate || "–",
     aircraft: aircraft || "–",
     registration: registration || "–",
     status: status ? String(status) : "",
@@ -317,14 +300,8 @@ function renderFlight() {
 
   els.depCode.textContent = f.depCode;
   els.arrCode.textContent = f.arrCode;
-
-  els.depSched.textContent = fmtTime(f.depSchedDate);
-  els.depActual.textContent = fmtTime(f.depActualDate);
-  els.depGate.textContent = f.depGate;
-
-  els.arrSched.textContent = fmtTime(f.arrSchedDate);
-  els.arrActual.textContent = fmtTime(f.arrActualDate);
-  els.arrGate.textContent = f.arrGate;
+  els.depTime.textContent = fmtTime(f.depSchedDate);
+  els.arrTime.textContent = fmtTime(f.arrSchedDate);
 
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;

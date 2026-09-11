@@ -238,6 +238,12 @@ body {
 .route-point { text-align: center; flex: 1; }
 .route-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.02em; }
 .route-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+.route-time {
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+}
 .route-line {
   flex: 1.4;
   height: 1px;
@@ -253,34 +259,6 @@ body {
   font-size: 1rem;
   color: var(--accent);
 }
-
-.time-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 14px;
-}
-.time-block {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-}
-.time-block-title {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-.time-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.88rem;
-  padding: 3px 0;
-}
-.time-key { color: var(--text-muted); }
-.time-val { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 .meta-row {
   display: flex;
@@ -387,6 +365,3 @@ body {
   gap: 8px;
 }
 
-@media (min-width: 420px) {
-  .time-grid { gap: 14px; }
-}

@@ -69,15 +69,28 @@ function pick(obj, paths) {
   return undefined;
 }
 
-function fmtTime(iso) {
-  if (!iso) return "–";
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return String(iso);
+function fmtTime(d) {
+  if (!d) return "–";
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   const dd = String(d.getUTCDate()).padStart(2, "0");
   const mo = String(d.getUTCMonth() + 1).padStart(2, "0");
   return `${hh}:${mm}Z · ${dd}.${mo}.`;
+}
+
+// Confirmed OpenAirLog schema: scheduled/actual times are standalone
+// "HH:MM:SS" strings, not full datetimes - combine with the flight's
+// separate "date" field. Cross-checked as UTC against a real response
+// (scheduled_off_block "18:00:00" matched a same-flight PDF's "STD UTC
+// 1800"). Rolls to the next day if before `anchor` (overnight flights).
+function combineDateAndTime(dateStr, timeStr, anchor) {
+  if (!dateStr || !timeStr) return null;
+  const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(timeStr);
+  if (!m) return null;
+  let d = new Date(`${dateStr}T${m[1]}:${m[2]}:${m[3] || "00"}Z`);
+  if (isNaN(d.getTime())) return null;
+  if (anchor && d < anchor) d = new Date(d.getTime() + 24 * 3600 * 1000);
+  return d;
 }
 
 function toDateOrNull(iso) {
@@ -173,23 +186,42 @@ function normalizeCrewMember(m) {
   return { name: String(name), role: String(role) };
 }
 
+const FLIGHT_NUMBER_KEYS = ["flight_number", "flightNumber", "flight_no", "flightNo", "number", "callsign"];
+
+// OpenAirLog's /flights also returns non-flight duty entries (e.g.
+// duty_code "ORTSTAG", block/ground days) alongside real flights - those
+// have flight_number: null. Only entries with a flight number are flights.
+function isRealFlightEntry(raw) {
+  return pick(raw, FLIGHT_NUMBER_KEYS) !== undefined;
+}
+
 function normalizeFlight(raw) {
   const id = pick(raw, ["id", "flight_id", "flightId", "uuid"]);
-  const flightNumber = pick(raw, ["flight_number", "flightNumber", "flight_no", "flightNo", "number", "callsign"]) || "–";
+  const flightNumber = pick(raw, FLIGHT_NUMBER_KEYS) || "–";
   const depCode = airportCode(raw, "departure");
   const arrCode = airportCode(raw, "arrival");
-  const depSched = timeField(raw, "departure", "scheduled");
-  const depActual = timeField(raw, "departure", "actual");
-  const arrSched = timeField(raw, "arrival", "scheduled");
-  const arrActual = timeField(raw, "arrival", "actual");
+
+  // Prefer the confirmed date+time-string fields; fall back to the
+  // generic (nested-or-flat, full-ISO-datetime) guesser for any other
+  // shape this API - or a future change to it - might return.
+  const depSchedDate = combineDateAndTime(raw.date, raw.scheduled_off_block, null)
+    || toDateOrNull(timeField(raw, "departure", "scheduled"));
+  const depActualDate = combineDateAndTime(raw.date, raw.off_block || raw.takeoff, null)
+    || toDateOrNull(timeField(raw, "departure", "actual"));
+  const arrSchedDate = combineDateAndTime(raw.date, raw.scheduled_on_block, depSchedDate)
+    || toDateOrNull(timeField(raw, "arrival", "scheduled"));
+  const arrActualDate = combineDateAndTime(raw.date, raw.on_block || raw.landing, depActualDate)
+    || toDateOrNull(timeField(raw, "arrival", "actual"));
+
   const depGate = gateField(raw, "departure");
   const arrGate = gateField(raw, "arrival");
   const aircraft = pick(raw, ["aircraft_type", "aircraftType", "aircraft.type", "aircraft", "type"]);
-  const registration = pick(raw, ["registration", "reg", "tail_number", "tailNumber", "aircraft.registration"]);
+  const registration = pick(raw, ["aircraft_registration", "registration", "reg", "tail_number", "tailNumber", "aircraft.registration"]);
   const status = pick(raw, ["status", "flight_status", "state"]);
 
-  // Crew is normally fetched separately via GET /flights/{id}/crew (crew:read scope).
-  // Kept here only as a fallback in case a flight response ever embeds it directly.
+  // Crew can be embedded directly in the flight object (confirmed) and/or
+  // fetched separately via GET /flights/{id}/crew (crew:read scope) -
+  // ensureCrewLoaded() prefers this embedded copy when non-empty.
   const crewRaw = pick(raw, ["crew", "crew_members", "crewMembers", "crewlist"]);
   const embeddedCrew = Array.isArray(crewRaw) ? crewRaw.map(normalizeCrewMember) : [];
 
@@ -198,12 +230,7 @@ function normalizeFlight(raw) {
     id,
     flightNumber: String(flightNumber),
     depCode, arrCode,
-    depSchedDate: toDateOrNull(depSched),
-    depActualDate: toDateOrNull(depActual),
-    arrSchedDate: toDateOrNull(arrSched),
-    arrActualDate: toDateOrNull(arrActual),
-    depSchedRaw: depSched, depActualRaw: depActual,
-    arrSchedRaw: arrSched, arrActualRaw: arrActual,
+    depSchedDate, depActualDate, arrSchedDate, arrActualDate,
     depGate: depGate || "–", arrGate: arrGate || "–",
     aircraft: aircraft || "–",
     registration: registration || "–",
@@ -282,12 +309,12 @@ function renderFlight() {
   els.depCode.textContent = f.depCode;
   els.arrCode.textContent = f.arrCode;
 
-  els.depSched.textContent = fmtTime(f.depSchedRaw);
-  els.depActual.textContent = fmtTime(f.depActualRaw);
+  els.depSched.textContent = fmtTime(f.depSchedDate);
+  els.depActual.textContent = fmtTime(f.depActualDate);
   els.depGate.textContent = f.depGate;
 
-  els.arrSched.textContent = fmtTime(f.arrSchedRaw);
-  els.arrActual.textContent = fmtTime(f.arrActualRaw);
+  els.arrSched.textContent = fmtTime(f.arrSchedDate);
+  els.arrActual.textContent = fmtTime(f.arrActualDate);
   els.arrGate.textContent = f.arrGate;
 
   els.aircraft.textContent = f.aircraft;
@@ -320,7 +347,8 @@ function renderCrewMembers(listEl, crew) {
 // which then overwrites the OpenAirLog crew until switched back.
 function renderCrew(f) {
   const entry = f.id != null ? crewCache.get(f.id) : undefined;
-  const apiCrew = entry && entry.status === "ok" ? entry.crew : f.embeddedCrew;
+  const hasEmbedded = f.embeddedCrew.length > 0;
+  const apiCrew = hasEmbedded ? f.embeddedCrew : entry && entry.status === "ok" ? entry.crew : [];
   const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length);
 
   if (hasPdfCrew) {
@@ -346,17 +374,17 @@ function renderCrew(f) {
 
   els.crewSource.textContent = "OpenAirLog";
 
-  if (entry && entry.status === "loading") {
+  if (!hasEmbedded && entry && entry.status === "loading") {
     els.crewEmpty.hidden = false;
     els.crewEmpty.textContent = "Lade Crew …";
     return;
   }
-  if (entry && entry.status === "forbidden") {
+  if (!hasEmbedded && entry && entry.status === "forbidden") {
     els.crewEmpty.hidden = false;
     els.crewEmpty.textContent = "Keine Berechtigung für Crew-Daten (Scope crew:read fehlt für diesen API-Schlüssel).";
     return;
   }
-  if (entry && entry.status === "error") {
+  if (!hasEmbedded && entry && entry.status === "error") {
     els.crewEmpty.hidden = false;
     els.crewEmpty.textContent = entry.message || "Crew konnte nicht geladen werden.";
     return;
@@ -371,6 +399,7 @@ function renderCrew(f) {
 }
 
 async function ensureCrewLoaded(f) {
+  if (f.embeddedCrew.length > 0) return; // already have it, no need to call /flights/{id}/crew
   if (f.id == null) return; // no id to query /flights/{id}/crew with
   const cached = crewCache.get(f.id);
   if (cached && (cached.status === "ok" || cached.status === "forbidden")) return;
@@ -479,7 +508,8 @@ async function loadFlights() {
     return;
   }
 
-  const rawFlights = extractFlightsArray(json);
+  // Ignore non-flight entries (duty/ground days etc.) - only real flights.
+  const rawFlights = extractFlightsArray(json).filter(isRealFlightEntry);
   const allFlights = rawFlights.map(normalizeFlight).sort((a, b) => {
     const da = a.depSchedDate || a.depActualDate || new Date(0);
     const db = b.depSchedDate || b.depActualDate || new Date(0);

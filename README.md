@@ -47,23 +47,47 @@ Nicht genutzt (aber von OpenAirLog verfügbar, potenzielle Erweiterungen):
 `GET /profile`, `GET /landings`, `GET /statistics`, `GET /documents`,
 `GET /documents/{id}`, `GET /documents/{id}/download`.
 
-## Bekannte Einschränkungen / offene Punkte
+## Bestätigtes `/flights`-Schema
 
-- **Flug-Feldnamen ungetestet:** Ich hatte während der Entwicklung keinen
-  Netzwerkzugriff auf `openairlog.de` (Egress blockiert) und keinen echten
-  API-Schlüssel. Für `/flights` selbst ist nur bekannt, dass es die Filter
-  `from`, `to`, `updated_since`, `flight_number`, `airport`,
-  `aircraft_type`, `per_page` gibt – die genauen Feldnamen im
-  JSON-Objekt eines Flugs (Abflug-/Ankunftsfelder, Zeiten, Gate, …) nicht.
-  Das Mapping in `assets/app.js` (`normalizeFlight`, `airportCode`,
-  `timeField`, …) probiert daher mehrere gängige Varianten durch
-  (`departure_airport`/`dep_icao`/`origin`/…, verschachtelt oder flach).
-  Für `/flights/{id}/crew` wird sowohl eine rohe Liste als auch
-  `{ data: [...] }`/`{ crew: [...] }` unterstützt, Feldnamen pro
-  Crew-Mitglied wie `name`/`full_name` und `role`/`function`/`position`.
-  Über „Rohdaten anzeigen“ am Ende der Seite lässt sich das tatsächliche
-  Flug-JSON einsehen – falls Felder falsch oder leer angezeigt werden,
-  bitte schicken, dann passe ich das Mapping gezielt an.
+Gegen eine echte API-Antwort verifiziert. Ein Eintrag ist ein Objekt mit
+u. a.:
+
+```jsonc
+{
+  "id": 2703415,
+  "date": "2026-09-11",              // Datum, separat von den Uhrzeiten unten
+  "flight_number": "LH1556",         // null bei Nicht-Flug-Einträgen (Dienste) -> werden ignoriert
+  "duty_code": null,                 // z. B. "ORTSTAG" bei Diensten ohne Flug
+  "departure": "EDDF",               // ICAO, flacher String
+  "arrival": "LUKK",
+  "scheduled_off_block": "18:00:00", // nur Uhrzeit (UTC), kein Datum -> mit "date" kombiniert
+  "scheduled_on_block": "20:20:00",
+  "off_block": null, "on_block": null,     // Ist-Zeiten, gleiches Format
+  "takeoff": null, "landing": null,
+  "aircraft_type": "A319",
+  "aircraft_registration": "D-AILU",
+  "crew": [ { "name": "Droste, Alexander", "role": "CP", "is_self": false }, ... ]
+}
+```
+
+Wichtige Konsequenzen im Code (`assets/app.js`):
+
+- **Nur Flüge, keine Dienste:** Einträge ohne `flight_number` (z. B.
+  `duty_code: "ORTSTAG"`) werden vor jeder weiteren Verarbeitung
+  herausgefiltert (`isRealFlightEntry`).
+- **Zeiten = Datum + separate Uhrzeit:** `scheduled_off_block` &Co. sind
+  reine `"HH:MM:SS"`-Strings ohne Datum und werden mit `date` zu einem
+  UTC-Zeitstempel kombiniert (`combineDateAndTime`); bei Ankunft nach
+  Mitternacht wird automatisch ein Tag addiert (Über-Nacht-Flüge).
+- **Crew ist eingebettet:** `crew` liegt direkt im Flug-Objekt vor: Die App
+  nutzt das zuerst und ruft `/flights/{id}/crew` nur auf, wenn kein
+  eingebettetes Crew-Array vorhanden ist.
+
+Für andere/künftige Antwortformen bleibt zusätzlich ein flexibler
+Fallback-Parser aktiv (`airportCode`, `timeField`, `gateField` probieren
+weitere gängige Feldnamen-Varianten durch, verschachtelt oder flach).
+Über „Rohdaten anzeigen“ am Ende der Seite lässt sich das tatsächliche
+Flug-JSON jederzeit einsehen.
 - **CORS:** Ob `openairlog.de` Browser-Anfragen von einer fremden
   Origin (deiner gehosteten URL) per CORS erlaubt, ist unbekannt. Schlägt
   das Laden mit einem Netzwerkfehler fehl (Banner „Verbindung zu

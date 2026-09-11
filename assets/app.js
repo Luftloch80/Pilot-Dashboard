@@ -49,6 +49,7 @@ const els = {
 
 /** @type {{flights: any[], index: number}} */
 const state = { flights: [], index: 0 };
+const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
 
@@ -158,6 +159,7 @@ function normalizeCrewMember(m) {
 }
 
 function normalizeFlight(raw) {
+  const id = pick(raw, ["id", "flight_id", "flightId", "uuid"]);
   const flightNumber = pick(raw, ["flight_number", "flightNumber", "flight_no", "flightNo", "number", "callsign"]) || "–";
   const depCode = airportCode(raw, "departure");
   const arrCode = airportCode(raw, "arrival");
@@ -171,11 +173,14 @@ function normalizeFlight(raw) {
   const registration = pick(raw, ["registration", "reg", "tail_number", "tailNumber", "aircraft.registration"]);
   const status = pick(raw, ["status", "flight_status", "state"]);
 
+  // Crew is normally fetched separately via GET /flights/{id}/crew (crew:read scope).
+  // Kept here only as a fallback in case a flight response ever embeds it directly.
   const crewRaw = pick(raw, ["crew", "crew_members", "crewMembers", "crewlist"]);
-  const crew = Array.isArray(crewRaw) ? crewRaw.map(normalizeCrewMember) : [];
+  const embeddedCrew = Array.isArray(crewRaw) ? crewRaw.map(normalizeCrewMember) : [];
 
   return {
     raw,
+    id,
     flightNumber: String(flightNumber),
     depCode, arrCode,
     depSchedDate: toDateOrNull(depSched),
@@ -188,7 +193,7 @@ function normalizeFlight(raw) {
     aircraft: aircraft || "–",
     registration: registration || "–",
     status: status ? String(status) : "",
-    crew,
+    embeddedCrew,
   };
 }
 
@@ -273,9 +278,42 @@ function renderFlight() {
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;
 
+  renderCrew(f);
+  ensureCrewLoaded(f);
+
+  els.rawData.textContent = JSON.stringify(f.raw, null, 2);
+  renderFlightNav();
+}
+
+function renderCrew(f) {
+  const entry = f.id != null ? crewCache.get(f.id) : undefined;
+  const crew = entry && entry.status === "ok" ? entry.crew : f.embeddedCrew;
+
   els.crewList.innerHTML = "";
-  els.crewEmpty.hidden = f.crew.length > 0;
-  for (const member of f.crew) {
+  els.crewEmpty.hidden = true;
+
+  if (entry && entry.status === "loading") {
+    els.crewEmpty.hidden = false;
+    els.crewEmpty.textContent = "Lade Crew …";
+    return;
+  }
+  if (entry && entry.status === "forbidden") {
+    els.crewEmpty.hidden = false;
+    els.crewEmpty.textContent = "Keine Berechtigung für Crew-Daten (Scope crew:read fehlt für diesen API-Schlüssel).";
+    return;
+  }
+  if (entry && entry.status === "error") {
+    els.crewEmpty.hidden = false;
+    els.crewEmpty.textContent = entry.message || "Crew konnte nicht geladen werden.";
+    return;
+  }
+  if (!crew.length) {
+    els.crewEmpty.hidden = false;
+    els.crewEmpty.textContent = "Keine Crewdaten in OpenAirLog für diesen Flug hinterlegt.";
+    return;
+  }
+
+  for (const member of crew) {
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.textContent = member.name;
@@ -286,9 +324,52 @@ function renderFlight() {
     li.appendChild(role);
     els.crewList.appendChild(li);
   }
+}
 
-  els.rawData.textContent = JSON.stringify(f.raw, null, 2);
-  renderFlightNav();
+async function ensureCrewLoaded(f) {
+  if (f.id == null) return; // no id to query /flights/{id}/crew with
+  const cached = crewCache.get(f.id);
+  if (cached && (cached.status === "ok" || cached.status === "forbidden")) return;
+
+  crewCache.set(f.id, { status: "loading", crew: [] });
+  if (state.flights[state.index] === f) renderCrew(f);
+
+  const key = getApiKey();
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/flights/${encodeURIComponent(f.id)}/crew`, {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+    });
+  } catch {
+    crewCache.set(f.id, { status: "error", crew: [], message: "Crew-Anfrage fehlgeschlagen (Netzwerk/CORS)." });
+    if (state.flights[state.index] === f) renderCrew(f);
+    return;
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    crewCache.set(f.id, { status: "forbidden", crew: [] });
+    if (state.flights[state.index] === f) renderCrew(f);
+    return;
+  }
+  if (!res.ok) {
+    crewCache.set(f.id, { status: "error", crew: [], message: `Crew-Endpunkt antwortete mit Fehler ${res.status}.` });
+    if (state.flights[state.index] === f) renderCrew(f);
+    return;
+  }
+
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    crewCache.set(f.id, { status: "error", crew: [], message: "Crew-Antwort war kein gültiges JSON." });
+    if (state.flights[state.index] === f) renderCrew(f);
+    return;
+  }
+
+  const rawCrew = extractFlightsArray(json);
+  const crew = rawCrew.map(normalizeCrewMember);
+  crewCache.set(f.id, { status: "ok", crew });
+  if (state.flights[state.index] === f) renderCrew(f);
 }
 
 // ---------- data loading ----------
@@ -312,7 +393,7 @@ async function loadFlights() {
 
   const from = todayISO(-2);
   const to = todayISO(10);
-  const url = `${API_BASE}/flights?from=${from}&to=${to}`;
+  const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
 
   let res;
   try {
@@ -364,6 +445,7 @@ async function loadFlights() {
     return da - db;
   });
 
+  crewCache.clear();
   state.flights = flights;
   state.index = pickInitialIndex(flights);
   showBanner("", "");

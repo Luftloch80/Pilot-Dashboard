@@ -22,17 +22,40 @@ Vercel als statisches Verzeichnis).
    OpenAirLog (z. B. für ein separates Briefing). Das PDF wird nur lokal
    im Browser gelesen (per pdf.js), nicht hochgeladen.
 
+## API-Endpunkte
+
+Verwendet werden aktuell:
+
+| Endpunkt | Scope | Zweck in der App |
+|---|---|---|
+| `GET /flights` | `flights:read` | Flugliste (`from`, `to`, `per_page`) |
+| `GET /flights/{id}/crew` | `crew:read` | Crew des ausgewählten Flugs (separater Call, sobald ein Flug ausgewählt ist) |
+
+Der API-Schlüssel muss also mindestens die Scopes `flights:read` und
+`crew:read` haben. Fehlt `crew:read`, zeigt die App das explizit an
+(„Keine Berechtigung für Crew-Daten“), statt einfach nur leer zu bleiben.
+
+Nicht genutzt (aber von OpenAirLog verfügbar, potenzielle Erweiterungen):
+`GET /profile`, `GET /landings`, `GET /statistics`, `GET /documents`,
+`GET /documents/{id}`, `GET /documents/{id}/download`.
+
 ## Bekannte Einschränkungen / offene Punkte
 
-- **API-Schema ungetestet:** Ich hatte während der Entwicklung keinen
-  Zugriff auf `openairlog.de` (Netzwerk-Egress war blockiert) und keinen
-  echten API-Schlüssel. Das Feld-Mapping in `assets/app.js`
-  (`normalizeFlight`, `airportCode`, `timeField`, …) probiert daher mehrere
-  gängige Feldnamen durch (`departure_airport`/`dep_icao`/`origin`/…,
-  verschachtelt oder flach). Über den Button „Rohdaten anzeigen“ am Ende
-  der Seite lässt sich das tatsächliche JSON eines Flugs einsehen – falls
-  Felder falsch oder leer angezeigt werden, bitte die Rohdaten schicken,
-  dann passe ich das Mapping gezielt an.
+- **Flug-Feldnamen ungetestet:** Ich hatte während der Entwicklung keinen
+  Netzwerkzugriff auf `openairlog.de` (Egress blockiert) und keinen echten
+  API-Schlüssel. Für `/flights` selbst ist nur bekannt, dass es die Filter
+  `from`, `to`, `updated_since`, `flight_number`, `airport`,
+  `aircraft_type`, `per_page` gibt – die genauen Feldnamen im
+  JSON-Objekt eines Flugs (Abflug-/Ankunftsfelder, Zeiten, Gate, …) nicht.
+  Das Mapping in `assets/app.js` (`normalizeFlight`, `airportCode`,
+  `timeField`, …) probiert daher mehrere gängige Varianten durch
+  (`departure_airport`/`dep_icao`/`origin`/…, verschachtelt oder flach).
+  Für `/flights/{id}/crew` wird sowohl eine rohe Liste als auch
+  `{ data: [...] }`/`{ crew: [...] }` unterstützt, Feldnamen pro
+  Crew-Mitglied wie `name`/`full_name` und `role`/`function`/`position`.
+  Über „Rohdaten anzeigen“ am Ende der Seite lässt sich das tatsächliche
+  Flug-JSON einsehen – falls Felder falsch oder leer angezeigt werden,
+  bitte schicken, dann passe ich das Mapping gezielt an.
 - **CORS:** Ob `openairlog.de` Browser-Anfragen von einer fremden
   Origin (deiner gehosteten URL) per CORS erlaubt, ist unbekannt. Schlägt
   das Laden mit einem Netzwerkfehler fehl (Banner „Verbindung zu

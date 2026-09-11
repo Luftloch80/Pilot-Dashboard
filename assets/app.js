@@ -83,8 +83,17 @@ function fmtTime(d) {
 // separate "date" field. Cross-checked as UTC against a real response
 // (scheduled_off_block "18:00:00" matched a same-flight PDF's "STD UTC
 // 1800"). Rolls to the next day if before `anchor` (overnight flights).
+// Also accepts a full datetime in `timeStr` directly, in case some
+// entries carry that instead of a bare time.
 function combineDateAndTime(dateStr, timeStr, anchor) {
-  if (!dateStr || !timeStr) return null;
+  if (!timeStr) return null;
+
+  if (/\d{4}-\d{2}-\d{2}/.test(timeStr)) {
+    const direct = new Date(timeStr);
+    if (!isNaN(direct.getTime())) return direct;
+  }
+
+  if (!dateStr) return null;
   const m = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(timeStr);
   if (!m) return null;
   let d = new Date(`${dateStr}T${m[1]}:${m[2]}:${m[3] || "00"}Z`);

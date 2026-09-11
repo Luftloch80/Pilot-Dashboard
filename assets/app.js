@@ -566,14 +566,15 @@ async function extractPdfLines(pdf) {
 }
 
 // Matches crew-table rows: a short role code (CP, FO, P1, FB, PU, ...)
-// followed by "NACHNAME, VORNAME" (all-caps, as used in these official
-// rotation crew lists) and trailing columns. Deliberately not a fixed
-// role whitelist, since role codes differ between airlines/roster
+// followed by "Nachname, Vorname" and trailing columns. Case-insensitive,
+// since names appear all-caps in some rotation crew lists (as in the
+// original sample) and in regular Title Case in others. Deliberately not
+// a fixed role whitelist, since role codes differ between airlines/roster
 // systems. The PK-Nummer/staff-ID column (starts with a digit) is used
 // as an anchor so the lazily-matched name doesn't get cut short; a
 // second, looser pattern covers rows with no such trailing column.
-const CREW_ROW_WITH_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*?)\s+(\d\S*)\s*(.*)$/;
-const CREW_ROW_NO_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*)$/;
+const CREW_ROW_WITH_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*?)\s+(\d\S*)\s*(.*)$/i;
+const CREW_ROW_NO_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*)$/i;
 
 function parseCrewFromLines(lines) {
   const crew = [];

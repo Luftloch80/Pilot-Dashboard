@@ -29,6 +29,12 @@ const els = {
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
 
+  layoverCard: document.getElementById("layoverCard"),
+  layoverCode: document.getElementById("layoverCode"),
+  layoverHotel: document.getElementById("layoverHotel"),
+  roomNumberInput: document.getElementById("roomNumberInput"),
+  layoverPickup: document.getElementById("layoverPickup"),
+
   crewCard: document.getElementById("crewCard"),
   crewSource: document.getElementById("crewSource"),
   crewList: document.getElementById("crewList"),
@@ -49,7 +55,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], index: 0, crewSource: "api", pdfCrew: null };
+const state = { flights: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -259,12 +265,19 @@ function clearApiKey() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
 }
 
-// Persist the parsed PDF crew (not the PDF file itself) so it survives a
-// page refresh instead of having to re-upload every time.
+// Persist what was parsed from the uploaded PDF (crew, flight legs incl.
+// hotel/layover info, and the raw extracted lines for pickup-time lookup) -
+// not the PDF file itself - so it survives a page refresh instead of
+// having to re-upload every time.
 function savePdfCrew() {
   try {
-    if (state.pdfCrew) {
-      localStorage.setItem(PDF_CREW_STORAGE_KEY, JSON.stringify({ ...state.pdfCrew, crewSource: state.crewSource }));
+    if (state.pdfCrew || state.pdfLegs.length) {
+      localStorage.setItem(PDF_CREW_STORAGE_KEY, JSON.stringify({
+        ...(state.pdfCrew || {}),
+        crewSource: state.crewSource,
+        legs: state.pdfLegs,
+        lines: state.pdfLines,
+      }));
     } else {
       localStorage.removeItem(PDF_CREW_STORAGE_KEY);
     }
@@ -276,14 +289,20 @@ function loadStoredPdfCrew() {
     const raw = localStorage.getItem(PDF_CREW_STORAGE_KEY);
     if (!raw) return;
     const stored = JSON.parse(raw);
-    if (!stored || !Array.isArray(stored.crew) || !stored.crew.length) return;
-    state.pdfCrew = { crew: stored.crew, rotation: stored.rotation || null, fileName: stored.fileName || "PDF" };
-    state.crewSource = stored.crewSource === "pdf" ? "pdf" : "api";
-    els.crewPdfLabel.textContent = stored.fileName || "PDF";
-    els.crewPdfStatus.hidden = false;
-    els.crewPdfStatus.textContent =
-      `${stored.crew.length} Crewmitglied(er) aus vorherigem Upload (${stored.fileName || "PDF"}).` +
-      (stored.rotation ? ` (Umlauf ${stored.rotation.rotation})` : "");
+    if (!stored) return;
+
+    state.pdfLegs = Array.isArray(stored.legs) ? stored.legs.map(reviveLeg) : [];
+    state.pdfLines = Array.isArray(stored.lines) ? stored.lines : [];
+
+    if (Array.isArray(stored.crew) && stored.crew.length) {
+      state.pdfCrew = { crew: stored.crew, rotation: stored.rotation || null, fileName: stored.fileName || "PDF" };
+      state.crewSource = stored.crewSource === "pdf" ? "pdf" : "api";
+      els.crewPdfLabel.textContent = stored.fileName || "PDF";
+      els.crewPdfStatus.hidden = false;
+      els.crewPdfStatus.textContent =
+        `${stored.crew.length} Crewmitglied(er) aus vorherigem Upload (${stored.fileName || "PDF"}).` +
+        (stored.rotation ? ` (Umlauf ${stored.rotation.rotation})` : "");
+    }
   } catch { /* ignore malformed storage */ }
 }
 
@@ -652,6 +671,129 @@ function parseRotationHeader(lines) {
   return null;
 }
 
+// ---------- flight legs / layover (hotel) from the PDF's routing table ----------
+//
+// The routing table (separate from the crew table) looks like:
+//   "1 1 LH1556 / 11SEP26 FRA - RMO 319 / DAILU 1800 / 2000 2020 / 2320 Courtyard by Marriott"
+//   "Chisinau"                                                          <- wrapped hotel name
+// Sh./Fl., designator+date, dep-arr, AC/reg, STD (UTC/LT), STA (UTC/LT), Hotel.
+// A non-empty Hotel means the crew stays overnight there after that leg.
+
+const PDF_MONTHS = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+
+const LEG_ROW_RE = /^(\d+)\s+(\d+)\s+([A-Z]{2,3}\d+)\s*\/\s*(\d{2}[A-Z]{3}\d{2})\s+([A-Z]{3})\s*-\s*([A-Z]{3})\s+(\S+)\s*\/\s*(\S+)\s+(\d{3,4})\s*\/\s*(\d{3,4})\s+(\d{3,4})\s*\/\s*(\d{3,4})\s*(.*)$/;
+
+const NON_HOTEL_CONTINUATION_RE = /^(Cr\.|F\.|Zeichenerkl|UMLAUFCREWLISTE|<<<|>>>)/i;
+
+function legDateTimeUtc(dateToken, timeToken, anchor) {
+  const dm = /^(\d{2})([A-Z]{3})(\d{2})$/.exec(dateToken);
+  if (!dm) return null;
+  const month = PDF_MONTHS[dm[2]];
+  if (month === undefined) return null;
+  const hhmm = timeToken.padStart(4, "0");
+  let d = new Date(Date.UTC(2000 + Number(dm[3]), month, Number(dm[1]), Number(hhmm.slice(0, 2)), Number(hhmm.slice(2, 4))));
+  if (anchor && d < anchor) d = new Date(d.getTime() + 24 * 3600 * 1000);
+  return d;
+}
+
+function parseFlightLegs(lines) {
+  const legs = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(LEG_ROW_RE);
+    if (!m) continue;
+    const [, , , flightNumber, dateStr, depCode, arrCode, , , stdUtc, , staUtc, , hotelRest] = m;
+    let hotel = (hotelRest || "").trim();
+
+    const next = lines[i + 1];
+    if (hotel && next && !LEG_ROW_RE.test(next) && !CREW_ROW_WITH_ID_RE.test(next) &&
+        !CREW_ROW_NO_ID_RE.test(next) && !NON_HOTEL_CONTINUATION_RE.test(next.trim()) && next.trim().length < 40) {
+      hotel = `${hotel} ${next.trim()}`.trim();
+    }
+
+    const depUtc = legDateTimeUtc(dateStr, stdUtc, null);
+    const arrUtc = legDateTimeUtc(dateStr, staUtc, depUtc);
+    legs.push({ flightNumber, depCode: depCode.toUpperCase(), arrCode: arrCode.toUpperCase(), depUtc, arrUtc, hotel });
+  }
+  return legs;
+}
+
+// After JSON round-tripping through localStorage, Date fields come back as
+// strings - restore them.
+function reviveLeg(leg) {
+  return {
+    ...leg,
+    depUtc: leg.depUtc ? new Date(leg.depUtc) : null,
+    arrUtc: leg.arrUtc ? new Date(leg.arrUtc) : null,
+  };
+}
+
+// The leg we're currently laying over at: the most recent arrival (with a
+// hotel) that's in the past, provided we haven't already departed since.
+function findCurrentLayover(legs) {
+  const now = new Date();
+  let current = null;
+  for (const leg of legs) {
+    if (!leg.hotel || !leg.arrUtc || leg.arrUtc > now) continue;
+    if (!current || leg.arrUtc > current.arrUtc) current = leg;
+  }
+  if (!current) return null;
+  const alreadyDeparted = legs.some((l) => l.depUtc && l.depUtc > current.arrUtc && l.depUtc <= now);
+  return alreadyDeparted ? null : current;
+}
+
+// Best-effort: this PDF format has no confirmed "pickup" field, so just
+// find a line mentioning it and pull out a UTC/LT time pair (taking the
+// local half) or a plain HH:MM, falling back to the raw line if neither
+// pattern matches - better than hiding a pickup note we can't fully parse.
+function findPickupLocal(lines) {
+  const mentionRe = /pick[- ]?up|abholung/i;
+  for (const line of lines) {
+    if (!mentionRe.test(line)) continue;
+    const pair = line.match(/(\d{3,4})\s*\/\s*(\d{3,4})/);
+    if (pair) {
+      const local = pair[2].padStart(4, "0");
+      return `${local.slice(0, 2)}:${local.slice(2)} (lokal)`;
+    }
+    const single = line.match(/\b(\d{1,2}):(\d{2})\b/);
+    if (single) return `${single[1].padStart(2, "0")}:${single[2]} (lokal)`;
+    return line.trim();
+  }
+  return null;
+}
+
+const ROOM_STORAGE_KEY = "oal_room_numbers";
+
+function roomKeyFor(layover) {
+  return `${layover.arrCode}|${layover.hotel}`;
+}
+function getRoomNumber(key) {
+  try {
+    const all = JSON.parse(localStorage.getItem(ROOM_STORAGE_KEY) || "{}");
+    return all[key] || "";
+  } catch { return ""; }
+}
+function setRoomNumber(key, value) {
+  try {
+    const all = JSON.parse(localStorage.getItem(ROOM_STORAGE_KEY) || "{}");
+    all[key] = value;
+    localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify(all));
+  } catch { /* private mode etc. */ }
+}
+
+function renderLayover() {
+  const layover = findCurrentLayover(state.pdfLegs);
+  els.layoverCard.hidden = !layover;
+  if (!layover) return;
+
+  els.layoverCode.textContent = layover.arrCode;
+  els.layoverHotel.textContent = layover.hotel;
+  els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover));
+
+  const pickup = findPickupLocal(state.pdfLines);
+  els.layoverPickup.hidden = !pickup;
+  els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
+}
+
 async function handleCrewPdf(file) {
   els.crewPdfLabel.textContent = file.name;
   els.crewPdfStatus.hidden = true;
@@ -666,6 +808,10 @@ async function handleCrewPdf(file) {
     const rawText = lines.join("\n");
     const rotation = parseRotationHeader(lines);
     const crew = parseCrewFromLines(lines);
+    const legs = parseFlightLegs(lines);
+
+    state.pdfLegs = legs;
+    state.pdfLines = lines;
 
     els.crewPdfRawToggle.hidden = false;
     els.crewPdfRawToggle.textContent = "Rohtext anzeigen";
@@ -676,7 +822,6 @@ async function handleCrewPdf(file) {
       // the pilot go back to the OpenAirLog data if this wasn't wanted.
       state.pdfCrew = { crew, rotation, fileName: file.name };
       state.crewSource = "pdf";
-      savePdfCrew();
       els.crewPdfStatus.hidden = false;
       els.crewPdfStatus.textContent =
         `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
@@ -690,6 +835,9 @@ async function handleCrewPdf(file) {
       els.crewPdfStatus.hidden = false;
       els.crewPdfStatus.textContent = "Konnte keine Crew-Zeilen in dieser PDF erkennen, siehe Rohtext unten.";
     }
+
+    savePdfCrew(); // also persists legs/lines, even if no crew rows matched
+    renderLayover();
 
     const f = state.flights[state.index];
     if (f) renderCrew(f);
@@ -757,6 +905,11 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
   if (f) renderCrew(f);
 });
 
+els.roomNumberInput.addEventListener("input", () => {
+  const layover = findCurrentLayover(state.pdfLegs);
+  if (layover) setRoomNumber(roomKeyFor(layover), els.roomNumberInput.value);
+});
+
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -765,10 +918,13 @@ if (window.pdfjsLib) {
 // ---------- init ----------
 
 loadStoredPdfCrew();
+renderLayover();
 loadFlights();
 
-// Keep the T-minus/T-plus countdown ticking without a full data refresh.
+// Keep the T-minus/T-plus countdown and the layover state current without
+// a full data refresh.
 setInterval(() => {
   const f = state.flights[state.index];
   if (f) renderTimerPill(f);
+  renderLayover();
 }, 30000);

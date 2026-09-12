@@ -92,6 +92,18 @@
     </div>
   </section>
 
+  <!-- Übernachtung/Layover: aus der Flugbeinstabelle der hochgeladenen Umlaufcrewliste -->
+  <section id="layoverCard" class="card layover-card" hidden>
+    <h2>Übernachtung</h2>
+    <div class="layover-place">
+      <div class="layover-code" id="layoverCode">---</div>
+      <div class="layover-hotel" id="layoverHotel">–</div>
+    </div>
+    <label for="roomNumberInput">Zimmernummer</label>
+    <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
+    <p id="layoverPickup" class="muted small" hidden></p>
+  </section>
+
   <!-- Crew: aus OpenAirLog, wahlweise überschrieben durch eine hochgeladene PDF -->
   <section id="crewCard" class="card crew-card" hidden>
     <div class="crew-card-head">

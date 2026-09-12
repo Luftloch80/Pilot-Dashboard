@@ -276,6 +276,33 @@ body {
 .meta-key { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; }
 .meta-val { font-weight: 600; margin-top: 2px; }
 
+/* Layover */
+.layover-place {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.layover-code { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; }
+.layover-hotel { font-size: 0.95rem; }
+
+.layover-card label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 12px 0 6px;
+}
+.layover-card input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+}
+#layoverPickup { margin-top: 12px; }
+
 /* Crew */
 .crew-card-head {
   display: flex;

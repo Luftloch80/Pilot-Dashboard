@@ -315,6 +315,25 @@ body {
 }
 #layoverPickup { margin-top: 12px; }
 
+.layover-currency { margin-top: 16px; }
+.currency-table {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.currency-row {
+  display: flex;
+  justify-content: space-between;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.currency-row .local { font-weight: 600; }
+#currencyNote { margin-top: 8px; }
+
 .layover-crew { margin-top: 16px; }
 .layover-crew-title { margin-bottom: 8px; }
 .layover-crew-list {

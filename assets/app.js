@@ -48,6 +48,10 @@ const els = {
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
+  layoverCurrency: document.getElementById("layoverCurrency"),
+  currencyCode: document.getElementById("currencyCode"),
+  currencyTable: document.getElementById("currencyTable"),
+  currencyNote: document.getElementById("currencyNote"),
   layoverCrew: document.getElementById("layoverCrew"),
   layoverCrewList: document.getElementById("layoverCrewList"),
 
@@ -847,6 +851,106 @@ function cityForIcao(code) {
   return ICAO_CITY[code] || null;
 }
 
+// ISO 4217 currency per ICAO code - only for airports outside the eurozone
+// (a code from ICAO_CITY that's absent here uses the euro, needs no table).
+// Not exhaustive: covers the airports already in ICAO_CITY.
+const CURRENCY_BY_ICAO = {
+  EGLL: "GBP", EGKK: "GBP", EGSS: "GBP", EGGW: "GBP", EGLC: "GBP", EGCC: "GBP",
+  EGBB: "GBP", EGPH: "GBP", EGPF: "GBP", EGNT: "GBP",
+  LSZH: "CHF", LSGG: "CHF", LSZB: "CHF",
+  ESSA: "SEK", ENGM: "NOK", EKCH: "DKK", EKBI: "DKK",
+  EPWA: "PLN", EPKK: "PLN", EPPO: "PLN", EPWR: "PLN", EPGD: "PLN",
+  LKPR: "CZK", LHBP: "HUF", LROP: "RON", LBSF: "BGN", LYBE: "RSD", LUKK: "MDL",
+  LTFM: "TRY", LTAI: "TRY", LTFJ: "TRY",
+  GMMN: "MAD", HECA: "EGP", HEGN: "EGP", HESH: "EGP",
+  OMDB: "AED", OMAA: "AED", OTHH: "QAR", OERK: "SAR", OEJN: "SAR",
+  KJFK: "USD", KEWR: "USD", KLAX: "USD", KORD: "USD", KMIA: "USD", KIAD: "USD",
+  KBOS: "USD", KSFO: "USD", KATL: "USD", CYYZ: "CAD", CYUL: "CAD",
+  RJAA: "JPY", RJTT: "JPY", ZBAA: "CNY", VHHH: "HKD", WSSS: "SGD",
+  VABB: "INR", VIDP: "INR", RKSI: "KRW", YSSY: "AUD", FAOR: "ZAR",
+  HKJK: "KES", SBGR: "BRL",
+};
+
+// Fallback only: used when the live rate lookup fails (offline, CORS,
+// etc). Rough 2026-era values, not meant to be exact - the UI marks them
+// as approximate whenever this table (rather than a live rate) is used.
+const APPROX_EUR_RATES = {
+  GBP: 0.84, CHF: 0.95, SEK: 11.2, NOK: 11.5, DKK: 7.46, PLN: 4.3, CZK: 25,
+  HUF: 400, RON: 5.0, BGN: 1.96, RSD: 117, MDL: 19.5, TRY: 39, MAD: 10.8,
+  EGP: 51, AED: 3.97, QAR: 3.93, SAR: 4.05, USD: 1.08, CAD: 1.48, JPY: 162,
+  CNY: 7.9, HKD: 8.4, SGD: 1.45, INR: 91, KRW: 1480, AUD: 1.63, ZAR: 20.5,
+  KES: 140, BRL: 6.0,
+};
+
+// Cached in memory (not localStorage - a stale exchange rate isn't worth
+// persisting across sessions) since rates barely move within a browsing
+// session; avoids refetching on every 30s layover re-render.
+let liveRatesCache = null;
+let liveRatesFetchedAt = 0;
+const LIVE_RATES_CACHE_MS = 6 * 3600 * 1000;
+
+async function getEurRates() {
+  const now = Date.now();
+  if (liveRatesCache && now - liveRatesFetchedAt < LIVE_RATES_CACHE_MS) {
+    return { rates: liveRatesCache, live: true };
+  }
+  try {
+    const res = await fetchWithTimeout("https://open.er-api.com/v6/latest/EUR", {});
+    if (!res.ok) throw new Error("bad status");
+    const json = await res.json();
+    if (!json || !json.rates) throw new Error("no rates in response");
+    liveRatesCache = json.rates;
+    liveRatesFetchedAt = now;
+    return { rates: json.rates, live: true };
+  } catch {
+    return { rates: APPROX_EUR_RATES, live: false };
+  }
+}
+
+const CURRENCY_TABLE_AMOUNTS = [5, 10, 20, 50, 100];
+
+// Guards against a slow/late fetch from an earlier call overwriting the UI
+// after a newer renderLayover() already moved on to a different airport.
+let layoverCurrencyToken = 0;
+
+async function renderLayoverCurrency(arrCode) {
+  const token = ++layoverCurrencyToken;
+  const currency = CURRENCY_BY_ICAO[arrCode];
+  if (!currency) {
+    els.layoverCurrency.hidden = true;
+    return;
+  }
+
+  const { rates, live } = await getEurRates();
+  if (token !== layoverCurrencyToken) return; // superseded by a newer call
+
+  const rate = rates[currency];
+  if (!rate) {
+    els.layoverCurrency.hidden = true;
+    return;
+  }
+
+  els.layoverCurrency.hidden = false;
+  els.currencyCode.textContent = currency;
+  els.currencyTable.innerHTML = "";
+  for (const eur of CURRENCY_TABLE_AMOUNTS) {
+    const local = eur * rate;
+    const decimals = local >= 100 ? 0 : 2;
+    const row = document.createElement("div");
+    row.className = "currency-row";
+    const eurSpan = document.createElement("span");
+    eurSpan.textContent = `${eur} €`;
+    const localSpan = document.createElement("span");
+    localSpan.className = "local";
+    localSpan.textContent = `${local.toLocaleString("de-DE", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ${currency}`;
+    row.appendChild(eurSpan);
+    row.appendChild(localSpan);
+    els.currencyTable.appendChild(row);
+  }
+  els.currencyNote.hidden = live;
+  els.currencyNote.textContent = live ? "" : "Ungefährer Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).";
+}
+
 // Primary layover detection: OpenAirLog flight data, not the PDF. The most
 // recent completed arrival that hasn't been followed by a later departure
 // means we're still there - "if the day before ended in RMO, that's an
@@ -950,6 +1054,7 @@ function renderLayover() {
   els.layoverPickup.hidden = !pickup;
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
+  renderLayoverCurrency(layover.arrCode);
   renderLayoverCrew(layover.arrCode, hotel);
 }
 

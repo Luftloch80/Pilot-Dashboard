@@ -137,6 +137,12 @@
     <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
     <p id="layoverPickup" class="muted small" hidden></p>
 
+    <div id="layoverCurrency" class="layover-currency" hidden>
+      <div class="layover-crew-title muted small">Umrechnung (<span id="currencyCode">–</span>)</div>
+      <div id="currencyTable" class="currency-table"></div>
+      <p id="currencyNote" class="muted small" hidden></p>
+    </div>
+
     <div id="layoverCrew" class="layover-crew" hidden>
       <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>
       <ul id="layoverCrewList" class="layover-crew-list"></ul>

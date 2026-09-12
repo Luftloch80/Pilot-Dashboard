@@ -29,13 +29,18 @@ Vercel als statisches Verzeichnis).
    Das PDF wird nur lokal im Browser gelesen (per pdf.js), nicht
    hochgeladen. Werden keine Crew-Zeilen erkannt, wird nichts überschrieben
    und stattdessen der extrahierte Rohtext angezeigt.
-6. **Übernachtung/Layover:** Enthält die hochgeladene PDF eine Flugbein-
-   Tabelle mit Hotel-Spalte (wie bei der Umlaufcrewliste), erkennt die App
-   automatisch, wenn gerade ein Layover läuft (aktuelle Uhrzeit liegt
-   zwischen einer Ankunft mit Hotel-Eintrag und dem nächsten Abflug) und
-   zeigt Ort + Hotel oben im Dashboard. Dort lässt sich eine Zimmernummer
-   eintragen (pro Ort+Hotel lokal gespeichert, übersteht einen Refresh).
-   Ein „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
+6. **Übernachtung/Layover:** Wird **aus OpenAirLog erkannt**, nicht aus der
+   PDF: Landet der letzte Flug irgendwann in der Vergangenheit an einem Ort
+   und ist seitdem kein weiterer Abflug erfolgt, gilt das als aktueller
+   Layover dort ("wenn der Tag davor in RMO endet, ist das eine
+   Übernachtung dort") – dafür wird `/flights` intern bis zu 7 Tage zurück
+   abgefragt (angezeigt wird weiterhin nur der heutige Flug). Die Karte
+   zeigt den Flughafencode oben im Dashboard, dazu ein Eingabefeld für die
+   Zimmernummer (pro Ort+Hotel lokal gespeichert, übersteht einen Refresh).
+   Ist zusätzlich eine passende Umlaufcrewliste als PDF hochgeladen (gleicher
+   Ankunftsort), wird deren Hotelname ergänzt – die PDF liefert hier nur
+   diese Zusatzinfo, nicht die Layover-Erkennung selbst. Ein
+   „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
    PDF-Zeilen ein Wort wie „Pickup“/„Abholung“ enthalten – das Format ist
    nicht bekannt/bestätigt, daher Best-Effort-Erkennung einer Uhrzeit
    darin, sonst wird die gefundene Zeile unverändert gezeigt.

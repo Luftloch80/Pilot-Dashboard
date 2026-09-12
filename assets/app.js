@@ -57,7 +57,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
+const state = { flights: [], allFlights: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -538,11 +538,11 @@ async function loadFlights() {
   els.resetKeyBtn.hidden = false;
   showBanner("Lade Flugdaten …", "");
 
-  // Small +/-1 day buffer (not "history"): the API's from/to are UTC dates,
-  // and a flight scheduled "today" in local time can fall on the adjacent
-  // UTC date depending on the device's timezone. We still only ever show
-  // flights whose local calendar day is today (filtered below).
-  const from = todayISO(-1);
+  // Only *today's* flights are ever shown as "the" flight (filtered below),
+  // but layover detection needs to look back further - a layover can span
+  // several days (e.g. landed 3 days ago, next departure tomorrow) - so the
+  // fetch window itself reaches back a week to find the most recent arrival.
+  const from = todayISO(-7);
   const to = todayISO(1);
   const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
 
@@ -598,6 +598,8 @@ async function loadFlights() {
 
   crewCache.clear();
   state.flights = flights;
+  state.allFlights = allFlights;
+  renderLayover();
 
   if (!flights.length) {
     let msg = `Heute (${localDateLabel(new Date())}) sind keine Flüge für dich hinterlegt.`;
@@ -746,18 +748,35 @@ function reviveLeg(leg) {
   };
 }
 
-// The leg we're currently laying over at: the most recent arrival (with a
-// hotel) that's in the past, provided we haven't already departed since.
-function findCurrentLayover(legs) {
+// Primary layover detection: OpenAirLog flight data, not the PDF. The most
+// recent completed arrival that hasn't been followed by a later departure
+// means we're still there - "if the day before ended in RMO, that's an
+// overnight stay there."
+function findApiLayover(allFlights) {
   const now = new Date();
   let current = null;
-  for (const leg of legs) {
-    if (!leg.hotel || !leg.arrUtc || leg.arrUtc > now) continue;
-    if (!current || leg.arrUtc > current.arrUtc) current = leg;
+  let currentArr = null;
+  for (const f of allFlights) {
+    const arr = f.arrActualDate || f.arrSchedDate;
+    if (!arr || arr > now) continue;
+    if (!current || arr > currentArr) { current = f; currentArr = arr; }
   }
   if (!current) return null;
-  const alreadyDeparted = legs.some((l) => l.depUtc && l.depUtc > current.arrUtc && l.depUtc <= now);
-  return alreadyDeparted ? null : current;
+  const alreadyDeparted = allFlights.some((f) => {
+    const dep = f.depActualDate || f.depSchedDate;
+    return dep && dep > currentArr && dep <= now;
+  });
+  return alreadyDeparted ? null : { arrCode: current.arrCode, arrTime: currentArr };
+}
+
+// The PDF is only used to enrich this with a hotel name, if a matching leg
+// (same arrival airport) happens to have one - not to decide whether
+// there's a layover in the first place.
+function findPdfHotelFor(arrCode, legs) {
+  for (const leg of legs) {
+    if (leg.hotel && leg.arrCode === arrCode) return leg.hotel;
+  }
+  return null;
 }
 
 // Best-effort: this PDF format has no confirmed "pickup" field, so just
@@ -782,8 +801,8 @@ function findPickupLocal(lines) {
 
 const ROOM_STORAGE_KEY = "oal_room_numbers";
 
-function roomKeyFor(layover) {
-  return `${layover.arrCode}|${layover.hotel}`;
+function roomKeyFor(arrCode, hotel) {
+  return `${arrCode}|${hotel || ""}`;
 }
 function getRoomNumber(key) {
   try {
@@ -799,14 +818,21 @@ function setRoomNumber(key, value) {
   } catch { /* private mode etc. */ }
 }
 
+let currentLayover = null; // {arrCode, hotel|null} for the room-number input handler
+
 function renderLayover() {
-  const layover = findCurrentLayover(state.pdfLegs);
+  const layover = findApiLayover(state.allFlights);
   els.layoverCard.hidden = !layover;
+  currentLayover = null;
   if (!layover) return;
 
+  const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
+  currentLayover = { arrCode: layover.arrCode, hotel };
+
   els.layoverCode.textContent = layover.arrCode;
-  els.layoverHotel.textContent = layover.hotel;
-  els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover));
+  els.layoverHotel.hidden = !hotel;
+  els.layoverHotel.textContent = hotel || "";
+  els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover.arrCode, hotel));
 
   const pickup = findPickupLocal(state.pdfLines);
   els.layoverPickup.hidden = !pickup;
@@ -925,8 +951,7 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
 });
 
 els.roomNumberInput.addEventListener("input", () => {
-  const layover = findCurrentLayover(state.pdfLegs);
-  if (layover) setRoomNumber(roomKeyFor(layover), els.roomNumberInput.value);
+  if (currentLayover) setRoomNumber(roomKeyFor(currentLayover.arrCode, currentLayover.hotel), els.roomNumberInput.value);
 });
 
 if (window.pdfjsLib) {

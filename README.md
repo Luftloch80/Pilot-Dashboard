@@ -104,8 +104,6 @@ Wichtige Konsequenzen im Code (`assets/app.js`):
 Für andere/künftige Antwortformen bleibt zusätzlich ein flexibler
 Fallback-Parser aktiv (`airportCode`, `timeField`, `gateField` probieren
 weitere gängige Feldnamen-Varianten durch, verschachtelt oder flach).
-Über „Rohdaten anzeigen“ am Ende der Seite lässt sich das tatsächliche
-Flug-JSON jederzeit einsehen.
 - **CORS:** Ob `openairlog.de` Browser-Anfragen von einer fremden
   Origin (deiner gehosteten URL) per CORS erlaubt, ist unbekannt. Schlägt
   das Laden mit einem Netzwerkfehler fehl (Banner „Verbindung zu

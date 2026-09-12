@@ -48,10 +48,6 @@ const els = {
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
 
-  rawCard: document.getElementById("rawCard"),
-  rawToggle: document.getElementById("rawToggle"),
-  rawData: document.getElementById("rawData"),
-
   refreshBtn: document.getElementById("refreshBtn"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
 };
@@ -308,13 +304,12 @@ function loadStoredPdfCrew() {
 
 // Settings is a focused screen containing only the API key and the PDF
 // upload: opening it hides the rest of the dashboard (flight, layover,
-// crew, raw data) and shows the PDF upload card, which otherwise stays
-// hidden. Closing it re-runs the normal render functions so flight/crew/
-// layover reappear only if there's actually something to show.
+// crew) and shows the PDF upload card, which otherwise stays hidden.
+// Closing it re-runs the normal render functions so flight/crew/layover
+// reappear only if there's actually something to show.
 function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
   els.crewPdfCard.hidden = !open;
-  els.rawCard.hidden = open;
   if (open) {
     els.flightNav.hidden = true;
     els.flightCard.hidden = true;
@@ -396,7 +391,6 @@ function renderFlight() {
   renderCrew(f);
   ensureCrewLoaded(f);
 
-  els.rawData.textContent = JSON.stringify(f.raw, null, 2);
   renderFlightNav();
 }
 
@@ -599,12 +593,7 @@ async function loadFlights() {
 
   if (!flights.length) {
     // No visible hint when today simply has no flight - the layover card
-    // (rendered above) or an empty dashboard speaks for itself. Still fill
-    // "Rohdaten anzeigen" for debugging in case OpenAirLog did return
-    // flights for the queried window but none matched today.
-    if (allFlights.length) {
-      els.rawData.textContent = JSON.stringify(allFlights.map((f) => f.raw), null, 2);
-    }
+    // (rendered above) or an empty dashboard speaks for itself.
     showBanner("", "");
     renderFlight();
     return;
@@ -924,11 +913,6 @@ els.prevFlightBtn.addEventListener("click", () => {
 });
 els.nextFlightBtn.addEventListener("click", () => {
   if (state.index < state.flights.length - 1) { state.index++; renderFlight(); }
-});
-
-els.rawToggle.addEventListener("click", () => {
-  els.rawData.hidden = !els.rawData.hidden;
-  els.rawToggle.textContent = els.rawData.hidden ? "Rohdaten anzeigen" : "Rohdaten ausblenden";
 });
 
 els.crewPdfInput.addEventListener("change", (e) => {

@@ -592,9 +592,10 @@ async function loadFlights() {
   renderLayover();
 
   if (!flights.length) {
-    // No visible hint when today simply has no flight - the layover card
-    // (rendered above) or an empty dashboard speaks for itself.
-    showBanner("", "");
+    // A short hint only when the dashboard would otherwise show nothing at
+    // all (no flight today and no layover) - so it's clear the app loaded
+    // fine rather than looking broken/blank.
+    showBanner(els.layoverCard.hidden ? "Heute nichts geplant." : "", "");
     renderFlight();
     return;
   }

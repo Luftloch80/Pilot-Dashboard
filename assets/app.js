@@ -41,12 +41,14 @@ const els = {
   crewEmpty: document.getElementById("crewEmpty"),
   crewSourceSwitchBtn: document.getElementById("crewSourceSwitchBtn"),
 
+  crewPdfCard: document.getElementById("crewPdfCard"),
   crewPdfInput: document.getElementById("crewPdfInput"),
   crewPdfLabel: document.getElementById("crewPdfLabel"),
   crewPdfStatus: document.getElementById("crewPdfStatus"),
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
 
+  rawCard: document.getElementById("rawCard"),
   rawToggle: document.getElementById("rawToggle"),
   rawData: document.getElementById("rawData"),
 
@@ -308,6 +310,26 @@ function loadStoredPdfCrew() {
 
 // ---------- rendering ----------
 
+// Settings (the API-key card) is a focused screen: opening it hides the
+// rest of the dashboard (flight, layover, crew, PDF upload, raw data)
+// instead of just adding a card above them. Closing it re-runs the normal
+// render functions so flight/crew/layover reappear only if there's
+// actually something to show.
+function setSettingsOpen(open) {
+  els.setupCard.hidden = !open;
+  els.crewPdfCard.hidden = open;
+  els.rawCard.hidden = open;
+  if (open) {
+    els.flightNav.hidden = true;
+    els.flightCard.hidden = true;
+    els.layoverCard.hidden = true;
+    els.crewCard.hidden = true;
+  } else {
+    renderFlight();
+    renderLayover();
+  }
+}
+
 function showBanner(message, kind) {
   els.statusBanner.hidden = !message;
   els.statusBanner.textContent = message || "";
@@ -505,16 +527,13 @@ async function ensureCrewLoaded(f) {
 async function loadFlights() {
   const key = getApiKey();
   if (!key) {
-    els.setupCard.hidden = false;
-    els.flightCard.hidden = true;
-    els.crewCard.hidden = true;
-    els.flightNav.hidden = true;
+    setSettingsOpen(true);
     els.refreshBtn.hidden = true;
     els.resetKeyBtn.hidden = true;
     return;
   }
 
-  els.setupCard.hidden = true;
+  setSettingsOpen(false);
   els.refreshBtn.hidden = false;
   els.resetKeyBtn.hidden = false;
   showBanner("Lade Flugdaten …", "");
@@ -547,7 +566,7 @@ async function loadFlights() {
 
   if (res.status === 401 || res.status === 403) {
     showBanner("API-Schlüssel ungültig oder abgelaufen. Bitte neu eingeben.", "error");
-    els.setupCard.hidden = false;
+    setSettingsOpen(true);
     return;
   }
   if (!res.ok) {
@@ -863,7 +882,7 @@ els.saveKeyBtn.addEventListener("click", () => {
 });
 
 els.settingsBtn.addEventListener("click", () => {
-  els.setupCard.hidden = !els.setupCard.hidden;
+  setSettingsOpen(els.setupCard.hidden);
 });
 
 els.resetKeyBtn.addEventListener("click", () => {

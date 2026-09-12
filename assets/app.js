@@ -3,6 +3,20 @@
 const API_BASE = "https://openairlog.de/api/v1";
 const STORAGE_KEY = "oal_api_key";
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
+const FETCH_TIMEOUT_MS = 15000;
+
+// Plain fetch() never times out on its own - a stalled connection (bad
+// network, an unresponsive server) would otherwise leave the UI stuck on
+// "Lade Flugdaten …" forever. Aborts after FETCH_TIMEOUT_MS instead.
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
 
 const els = {
   setupCard: document.getElementById("setupCard"),
@@ -480,11 +494,14 @@ async function ensureCrewLoaded(f) {
   const key = getApiKey();
   let res;
   try {
-    res = await fetch(`${API_BASE}/flights/${encodeURIComponent(f.id)}/crew`, {
+    res = await fetchWithTimeout(`${API_BASE}/flights/${encodeURIComponent(f.id)}/crew`, {
       headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
     });
-  } catch {
-    crewCache.set(f.id, { status: "error", crew: [], message: "Crew-Anfrage fehlgeschlagen (Netzwerk/CORS)." });
+  } catch (err) {
+    const message = err && err.name === "AbortError"
+      ? "Crew-Anfrage hat zu lange gedauert (Zeitüberschreitung)."
+      : "Crew-Anfrage fehlgeschlagen (Netzwerk/CORS).";
+    crewCache.set(f.id, { status: "error", crew: [], message });
     if (state.flights[state.index] === f) renderCrew(f);
     return;
   }
@@ -541,7 +558,7 @@ async function loadFlights() {
 
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       headers: {
         Authorization: `Bearer ${key}`,
         Accept: "application/json",
@@ -549,9 +566,11 @@ async function loadFlights() {
     });
   } catch (err) {
     showBanner(
-      "Verbindung zu OpenAirLog fehlgeschlagen. Das kann an fehlendem Internet liegen " +
-      "oder daran, dass die API keine Anfragen direkt aus dem Browser erlaubt (CORS). " +
-      "Falls das dauerhaft passiert, muss OpenAirLog diese Web-App-Adresse freigeben.",
+      err && err.name === "AbortError"
+        ? "Zeitüberschreitung bei der Verbindung zu OpenAirLog. Bitte auf „Aktualisieren“ tippen."
+        : "Verbindung zu OpenAirLog fehlgeschlagen. Das kann an fehlendem Internet liegen " +
+          "oder daran, dass die API keine Anfragen direkt aus dem Browser erlaubt (CORS). " +
+          "Falls das dauerhaft passiert, muss OpenAirLog diese Web-App-Adresse freigeben.",
       "error"
     );
     return;

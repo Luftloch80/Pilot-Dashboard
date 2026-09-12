@@ -354,20 +354,33 @@ function showBanner(message, kind) {
   els.statusBanner.className = "status-banner" + (kind ? " " + kind : "");
 }
 
+// On a multi-leg day, only switch the shown flight to the next one starting
+// 45 minutes before its departure - before that, stay on the most recently
+// completed leg instead of jumping ahead as soon as the previous one ends.
+const NEXT_FLIGHT_LEAD_MS = 45 * 60 * 1000;
+
 function pickInitialIndex(flights) {
   const now = new Date();
-  let best = -1;
+
   for (let i = 0; i < flights.length; i++) {
     const f = flights[i];
     const dep = f.depActualDate || f.depSchedDate;
     const arr = f.arrActualDate || f.arrSchedDate;
     if (dep && arr && dep <= now && now <= arr) return i; // currently in the air / on the ground for this leg
   }
+
+  let nextIndex = -1;
   for (let i = 0; i < flights.length; i++) {
     const dep = flights[i].depActualDate || flights[i].depSchedDate;
-    if (dep && dep > now) return i; // next upcoming
+    if (dep && dep > now) { nextIndex = i; break; }
   }
-  return flights.length ? flights.length - 1 : -1; // most recent past
+  if (nextIndex !== -1) {
+    const dep = flights[nextIndex].depActualDate || flights[nextIndex].depSchedDate;
+    if (dep - now <= NEXT_FLIGHT_LEAD_MS || nextIndex === 0) return nextIndex;
+    return nextIndex - 1; // still show the previous, just-completed leg for now
+  }
+
+  return flights.length ? flights.length - 1 : -1; // all of today's flights are done
 }
 
 function renderFlightNav() {

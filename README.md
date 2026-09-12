@@ -20,8 +20,12 @@ Vercel als statisches Verzeichnis).
    die Flugkarte einfach leer/ausgeblendet – ohne Hinweistext (z. B. wenn
    gerade nur ein Layover ansteht, siehe Punkt 6). Gibt es mehrere Flüge
    heute, lässt sich mit den Pfeilen oben zwischen ihnen blättern;
-   automatisch ausgewählt ist der aktuell aktive bzw. der nächste
-   anstehende Flug des Tages. Statt eines Status-Textes zeigt die Karte
+   automatisch ausgewählt ist der aktuell aktive Flug. Ist keiner aktiv,
+   bleibt bei mehreren Flügen am Tag der zuletzt abgeschlossene Flug
+   sichtbar, bis **45 Minuten vor dem Abflug** des nächsten Flugs – erst
+   dann wechselt die App automatisch dorthin (beim allerersten Flug des
+   Tages wird stattdessen sofort dieser gezeigt, auch wenn er noch weiter
+   als 45 Minuten entfernt ist). Statt eines Status-Textes zeigt die Karte
    einen Live-Countdown zur geplanten Abflugzeit (grün „-N min“ davor, rot
    „+N min“ danach) – außer bei einem **Deadhead-Flug** (`crew_position`,
    `duty_code` oder `remarks` = `"DH"` bei OpenAirLog), dann steht dort

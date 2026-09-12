@@ -47,6 +47,7 @@ const els = {
   layoverCode: document.getElementById("layoverCode"),
   layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
+  roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
   layoverCrew: document.getElementById("layoverCrew"),
   layoverCrewList: document.getElementById("layoverCrewList"),
@@ -893,12 +894,16 @@ function setRoomNumber(key, value) {
   } catch { /* private mode etc. */ }
 }
 
+let currentLayoverKey = null; // roomKeyFor(arrCode, hotel) for the own room-number input
+
 function renderLayover() {
   const layover = findApiLayover(state.allFlights);
   els.layoverCard.hidden = !layover;
+  currentLayoverKey = null;
   if (!layover) return;
 
   const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
+  currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -906,6 +911,7 @@ function renderLayover() {
   els.layoverCode.textContent = layover.arrCode;
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
+  els.roomNumberInput.value = getRoomNumber(currentLayoverKey);
 
   const pickup = findPickupLocal(state.pdfLines);
   els.layoverPickup.hidden = !pickup;
@@ -1123,6 +1129,10 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
 els.ownNameInput.addEventListener("input", () => {
   setOwnName(els.ownNameInput.value);
   renderLayover();
+});
+
+els.roomNumberInput.addEventListener("input", () => {
+  if (currentLayoverKey) setRoomNumber(currentLayoverKey, els.roomNumberInput.value);
 });
 
 if (window.pdfjsLib) {

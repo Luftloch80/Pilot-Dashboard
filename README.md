@@ -48,19 +48,21 @@ Vercel als statisches Verzeichnis).
    `ICAO_CITY` in `assets/app.js` – den Städtenamen, falls der Code darin
    bekannt ist (nicht erschöpfend: deckt größere europäische und
    internationale Flughäfen ab, unbekannte Codes zeigen einfach nur den
-   Code). Ist zusätzlich eine passende Umlaufcrewliste als PDF hochgeladen
-   (gleicher Ankunftsort), wird deren Hotelname ergänzt – die PDF liefert
-   hier nur diese Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein
-   PDF hochgeladen **und** als Crew-Quelle akzeptiert (s. o., also mit
+   Code). Dazu ein Eingabefeld für die eigene Zimmernummer (pro Ort+Hotel
+   lokal gespeichert, übersteht einen Refresh). Ist zusätzlich eine
+   passende Umlaufcrewliste als PDF hochgeladen (gleicher Ankunftsort),
+   wird deren Hotelname ergänzt – die PDF liefert hier nur diese
+   Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein PDF
+   hochgeladen **und** als Crew-Quelle akzeptiert (s. o., also mit
    Namensüberschneidung zu OpenAirLog), erscheint die daraus erkannte Crew
-   direkt unter der Übernachtung, jeweils mit eigenem Zimmernummer-Feld
-   (lokal gespeichert) – vereinfachend wird angenommen, dass die komplette
-   PDF-Crew im selben Hotel wohnt, da sich eine zuverlässige
-   Pro-Flugabschnitt-Zuordnung aus der PDF nicht extrahieren lässt. Die
-   eigene Person taucht dort nicht auf: In den Settings lässt sich unter
-   „Eigener Name“ der eigene Name (wie er in der Crewliste steht) hinterlegen,
-   der dann aus dieser Liste herausgefiltert wird (kein Zimmernummer-Feld
-   für sich selbst, da man ja ohnehin weiß, wo man wohnt). Ein
+   zusätzlich direkt unter der Übernachtung, jeweils mit eigenem
+   Zimmernummer-Feld (ebenfalls lokal gespeichert) – vereinfachend wird
+   angenommen, dass die komplette PDF-Crew im selben Hotel wohnt, da sich
+   eine zuverlässige Pro-Flugabschnitt-Zuordnung aus der PDF nicht
+   extrahieren lässt. Die eigene Person taucht in dieser Crew-Liste nicht
+   auf: In den Settings lässt sich unter „Eigener Name“ der eigene Name
+   (wie er in der Crewliste steht) hinterlegen, der dann herausgefiltert
+   wird – für die eigene Zimmernummer gibt es ja bereits das Feld oben. Ein
    „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
    PDF-Zeilen ein Wort wie „Pickup“/„Abholung“ enthalten – das Format ist
    nicht bekannt/bestätigt, daher Best-Effort-Erkennung einer Uhrzeit

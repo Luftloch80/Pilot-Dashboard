@@ -308,6 +308,43 @@ body {
 }
 #layoverPickup { margin-top: 12px; }
 
+.layover-crew { margin-top: 16px; }
+.layover-crew-title { margin-bottom: 8px; }
+.layover-crew-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.layover-crew-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.layover-crew-name { font-size: 0.9rem; }
+.layover-crew-name .crew-role {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  margin-left: 6px;
+}
+.layover-card .layover-crew-room {
+  width: 72px !important;
+  flex: 0 0 auto;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+  font-size: 0.9rem !important;
+  text-align: center;
+}
+
 /* Crew */
 .crew-card-head {
   display: flex;

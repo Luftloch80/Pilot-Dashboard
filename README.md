@@ -43,11 +43,16 @@ Vercel als statisches Verzeichnis).
    `ICAO_CITY` in `assets/app.js` – den Städtenamen, falls der Code darin
    bekannt ist (nicht erschöpfend: deckt größere europäische und
    internationale Flughäfen ab, unbekannte Codes zeigen einfach nur den
-   Code). Dazu ein Eingabefeld für die Zimmernummer (pro Ort+Hotel lokal
-   gespeichert, übersteht einen Refresh).
+   Code). Dazu ein Eingabefeld für die eigene Zimmernummer (pro Ort+Hotel
+   lokal gespeichert, übersteht einen Refresh).
    Ist zusätzlich eine passende Umlaufcrewliste als PDF hochgeladen (gleicher
    Ankunftsort), wird deren Hotelname ergänzt – die PDF liefert hier nur
-   diese Zusatzinfo, nicht die Layover-Erkennung selbst. Ein
+   diese Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein PDF
+   hochgeladen, erscheint außerdem die daraus erkannte Crew direkt unter der
+   Übernachtung, jeweils mit eigenem Zimmernummer-Feld (ebenfalls lokal
+   gespeichert) – vereinfachend wird angenommen, dass die komplette
+   PDF-Crew im selben Hotel wohnt, da sich eine zuverlässige
+   Pro-Flugabschnitt-Zuordnung aus der PDF nicht extrahieren lässt. Ein
    „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
    PDF-Zeilen ein Wort wie „Pickup“/„Abholung“ enthalten – das Format ist
    nicht bekannt/bestätigt, daher Best-Effort-Erkennung einer Uhrzeit

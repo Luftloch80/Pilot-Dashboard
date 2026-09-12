@@ -125,6 +125,11 @@
     <label for="roomNumberInput">Zimmernummer</label>
     <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
     <p id="layoverPickup" class="muted small" hidden></p>
+
+    <div id="layoverCrew" class="layover-crew" hidden>
+      <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>
+      <ul id="layoverCrewList" class="layover-crew-list"></ul>
+    </div>
   </section>
 
   <!-- Crew: aus OpenAirLog, wahlweise überschrieben durch eine hochgeladene PDF -->

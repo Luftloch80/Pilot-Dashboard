@@ -35,6 +35,8 @@ const els = {
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
+  layoverCrew: document.getElementById("layoverCrew"),
+  layoverCrewList: document.getElementById("layoverCrewList"),
 
   crewCard: document.getElementById("crewCard"),
   crewSource: document.getElementById("crewSource"),
@@ -853,6 +855,9 @@ const ROOM_STORAGE_KEY = "oal_room_numbers";
 function roomKeyFor(arrCode, hotel) {
   return `${arrCode}|${hotel || ""}`;
 }
+function crewRoomKeyFor(arrCode, hotel, name) {
+  return `${roomKeyFor(arrCode, hotel)}|${name}`;
+}
 function getRoomNumber(key) {
   try {
     const all = JSON.parse(localStorage.getItem(ROOM_STORAGE_KEY) || "{}");
@@ -889,6 +894,45 @@ function renderLayover() {
   const pickup = findPickupLocal(state.pdfLines);
   els.layoverPickup.hidden = !pickup;
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
+
+  renderLayoverCrew(layover.arrCode, hotel);
+}
+
+// Only shown once a PDF has been uploaded - the PDF crew list is assumed
+// to share this layover (the PDF has no reliable way to tell us which
+// crew member is on which specific leg/hotel).
+function renderLayoverCrew(arrCode, hotel) {
+  const crew = state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  els.layoverCrew.hidden = !crew.length;
+  els.layoverCrewList.innerHTML = "";
+  if (!crew.length) return;
+
+  for (const member of crew) {
+    const li = document.createElement("li");
+
+    const name = document.createElement("span");
+    name.className = "layover-crew-name";
+    name.textContent = member.name;
+    if (member.role) {
+      const role = document.createElement("span");
+      role.className = "crew-role";
+      role.textContent = member.role;
+      name.appendChild(role);
+    }
+
+    const roomInput = document.createElement("input");
+    roomInput.type = "text";
+    roomInput.className = "layover-crew-room";
+    roomInput.placeholder = "Zimmer";
+    roomInput.autocomplete = "off";
+    const key = crewRoomKeyFor(arrCode, hotel, member.name);
+    roomInput.value = getRoomNumber(key);
+    roomInput.addEventListener("input", () => setRoomNumber(key, roomInput.value));
+
+    li.appendChild(name);
+    li.appendChild(roomInput);
+    els.layoverCrewList.appendChild(li);
+  }
 }
 
 async function handleCrewPdf(file) {

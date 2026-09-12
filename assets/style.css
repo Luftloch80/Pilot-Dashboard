@@ -183,6 +183,10 @@ body {
   margin-top: 12px;
 }
 
+.setup-card #resetKeyBtn {
+  margin-top: 16px;
+}
+
 /* Status banner */
 .status-banner {
   padding: 12px 14px;

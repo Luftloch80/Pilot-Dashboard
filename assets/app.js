@@ -898,11 +898,39 @@ function renderLayover() {
   renderLayoverCrew(layover.arrCode, hotel);
 }
 
-// Only shown once a PDF has been uploaded - the PDF crew list is assumed
-// to share this layover (the PDF has no reliable way to tell us which
-// crew member is on which specific leg/hotel).
+// First name only: OpenAirLog partly anonymizes crew (colleagues show as
+// "H., Nicolas" - initial + full first name, only "is_self" gets a full
+// surname), so the first name is the one part reliably comparable between
+// OpenAirLog and a PDF's full names.
+function firstNameOf(name) {
+  const idx = name.indexOf(",");
+  return (idx >= 0 ? name.slice(idx + 1) : name).trim().toLowerCase();
+}
+
+function allKnownApiCrewNames() {
+  const names = new Set();
+  for (const f of state.allFlights) {
+    for (const m of f.embeddedCrew) names.add(firstNameOf(m.name));
+  }
+  return names;
+}
+
+// True if there's nothing to compare against (no OpenAirLog crew data
+// loaded yet) or the PDF crew shares at least one first name with it -
+// false only when both have data and share *no* names at all, i.e. the
+// PDF is very likely for a different/stale rotation.
+function crewListsPlausiblyMatch(pdfCrew) {
+  const apiNames = allKnownApiCrewNames();
+  if (!apiNames.size) return true;
+  return pdfCrew.some((m) => apiNames.has(firstNameOf(m.name)));
+}
+
+// Only shown once a PDF has been uploaded *and* accepted as the active
+// crew source - the PDF crew list is assumed to share this layover (the
+// PDF has no reliable way to tell us which crew member is on which
+// specific leg/hotel).
 function renderLayoverCrew(arrCode, hotel) {
-  const crew = state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  const crew = state.crewSource === "pdf" && state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
   els.layoverCrew.hidden = !crew.length;
   els.layoverCrewList.innerHTML = "";
   if (!crew.length) return;
@@ -959,15 +987,26 @@ async function handleCrewPdf(file) {
     els.crewPdfResult.textContent = rawText || "Kein Text im PDF gefunden.";
 
     if (crew.length) {
-      // Overwrites the OpenAirLog crew above; the switch button there lets
-      // the pilot go back to the OpenAirLog data if this wasn't wanted.
       state.pdfCrew = { crew, rotation, fileName: file.name };
-      state.crewSource = "pdf";
-      els.crewPdfStatus.hidden = false;
-      els.crewPdfStatus.textContent =
-        `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
-        (rotation ? ` (Umlauf ${rotation.rotation})` : "");
       els.crewPdfResult.hidden = true; // available via "Rohtext anzeigen"
+      els.crewPdfStatus.hidden = false;
+
+      // Only auto-apply the PDF crew if it plausibly belongs to this
+      // rotation - if OpenAirLog's crew names have nothing in common with
+      // the PDF's, it's likely a stale/wrong PDF, so keep OpenAirLog
+      // active instead (still switchable by hand via the button below).
+      if (crewListsPlausiblyMatch(crew)) {
+        state.crewSource = "pdf";
+        els.crewPdfStatus.textContent =
+          `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
+          (rotation ? ` (Umlauf ${rotation.rotation})` : "");
+      } else {
+        state.crewSource = "api";
+        els.crewPdfStatus.textContent =
+          `${crew.length} Crewmitglied(er) erkannt, aber die Namen stimmen mit keinem ` +
+          `OpenAirLog-Flug überein - vermutlich die falsche/eine alte PDF. OpenAirLog-Crew ` +
+          `bleibt aktiv; über den Button unten lässt sich manuell zur PDF-Crew wechseln.`;
+      }
     } else {
       // Couldn't recognize crew rows in this layout: nothing to overwrite
       // with, show the raw text directly instead of hiding it behind a

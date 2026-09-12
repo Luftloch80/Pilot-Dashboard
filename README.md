@@ -27,11 +27,16 @@ Vercel als statisches Verzeichnis).
    weiteres) und ist optional. Werden darin Crew-Zeilen erkannt,
    **überschreibt sie automatisch die Crew-Anzeige** (statt sie nur zu
    ergänzen) – z. B. wenn die offizielle Umlaufcrewliste aktueller ist als
-   OpenAirLog. Über den Button unter der Crew-Liste lässt sich jederzeit
-   zurück zur OpenAirLog-Crew wechseln (und wieder zurück zur PDF-Crew).
-   Das PDF wird nur lokal im Browser gelesen (per pdf.js), nicht
-   hochgeladen. Werden keine Crew-Zeilen erkannt, wird nichts überschrieben
-   und stattdessen der extrahierte Rohtext angezeigt.
+   OpenAirLog – **aber nur, wenn mindestens ein Vorname mit der
+   OpenAirLog-Crew übereinstimmt** (Vergleich per Vorname, da OpenAirLog
+   Kolleg:innen teils anonymisiert als „H., Nicolas“ statt vollem Nachnamen
+   liefert). Stimmt kein einziger Name überein, bleibt die OpenAirLog-Crew
+   aktiv (vermutlich falsche/alte PDF) – ein Hinweis erklärt das, manuell
+   lässt sich trotzdem zur PDF-Crew wechseln. Über den Button unter der
+   Crew-Liste lässt sich jederzeit zurück zur OpenAirLog-Crew wechseln (und
+   wieder zurück zur PDF-Crew). Das PDF wird nur lokal im Browser gelesen
+   (per pdf.js), nicht hochgeladen. Werden keine Crew-Zeilen erkannt, wird
+   nichts überschrieben und stattdessen der extrahierte Rohtext angezeigt.
 6. **Übernachtung/Layover:** Wird **aus OpenAirLog erkannt**, nicht aus der
    PDF: Landet der letzte Flug irgendwann in der Vergangenheit an einem Ort
    und ist seitdem kein weiterer Abflug erfolgt, gilt das als aktueller
@@ -48,10 +53,11 @@ Vercel als statisches Verzeichnis).
    Ist zusätzlich eine passende Umlaufcrewliste als PDF hochgeladen (gleicher
    Ankunftsort), wird deren Hotelname ergänzt – die PDF liefert hier nur
    diese Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein PDF
-   hochgeladen, erscheint außerdem die daraus erkannte Crew direkt unter der
-   Übernachtung, jeweils mit eigenem Zimmernummer-Feld (ebenfalls lokal
-   gespeichert) – vereinfachend wird angenommen, dass die komplette
-   PDF-Crew im selben Hotel wohnt, da sich eine zuverlässige
+   hochgeladen **und** als Crew-Quelle akzeptiert (s. o., also mit
+   Namensüberschneidung zu OpenAirLog), erscheint die daraus erkannte Crew
+   direkt unter der Übernachtung, jeweils mit eigenem Zimmernummer-Feld
+   (ebenfalls lokal gespeichert) – vereinfachend wird angenommen, dass die
+   komplette PDF-Crew im selben Hotel wohnt, da sich eine zuverlässige
    Pro-Flugabschnitt-Zuordnung aus der PDF nicht extrahieren lässt. Ein
    „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
    PDF-Zeilen ein Wort wie „Pickup“/„Abholung“ enthalten – das Format ist

@@ -47,7 +47,6 @@ const els = {
   layoverCode: document.getElementById("layoverCode"),
   layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
-  roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
   layoverCrew: document.getElementById("layoverCrew"),
   layoverCrewList: document.getElementById("layoverCrewList"),
@@ -67,6 +66,8 @@ const els = {
 
   refreshBtn: document.getElementById("refreshBtn"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
+  ownNameCard: document.getElementById("ownNameCard"),
+  ownNameInput: document.getElementById("ownNameInput"),
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
@@ -326,6 +327,7 @@ function loadStoredPdfCrew() {
 // reappear only if there's actually something to show.
 function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
+  els.ownNameCard.hidden = !open;
   els.crewPdfCard.hidden = !open;
   if (open) {
     els.flightNav.hidden = true;
@@ -891,16 +893,12 @@ function setRoomNumber(key, value) {
   } catch { /* private mode etc. */ }
 }
 
-let currentLayover = null; // {arrCode, hotel|null} for the room-number input handler
-
 function renderLayover() {
   const layover = findApiLayover(state.allFlights);
   els.layoverCard.hidden = !layover;
-  currentLayover = null;
   if (!layover) return;
 
   const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
-  currentLayover = { arrCode: layover.arrCode, hotel };
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -908,7 +906,6 @@ function renderLayover() {
   els.layoverCode.textContent = layover.arrCode;
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
-  els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover.arrCode, hotel));
 
   const pickup = findPickupLocal(state.pdfLines);
   els.layoverPickup.hidden = !pickup;
@@ -924,6 +921,28 @@ function renderLayover() {
 function firstNameOf(name) {
   const idx = name.indexOf(",");
   return (idx >= 0 ? name.slice(idx + 1) : name).trim().toLowerCase();
+}
+
+const OWN_NAME_STORAGE_KEY = "oal_own_name";
+function getOwnName() {
+  try { return localStorage.getItem(OWN_NAME_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setOwnName(name) {
+  try { localStorage.setItem(OWN_NAME_STORAGE_KEY, name); } catch { /* private mode etc. */ }
+}
+
+// Full-name match first (works when typed exactly as in the PDF), falling
+// back to first name only - the same anonymization-robust comparison used
+// for the OpenAirLog/PDF crew match, since "own name" might be typed to
+// match either source's formatting.
+function isOwnName(memberName, ownName) {
+  if (!ownName) return false;
+  const a = memberName.trim().toLowerCase();
+  const b = ownName.trim().toLowerCase();
+  if (!b) return false;
+  if (a === b) return true;
+  const fa = firstNameOf(memberName);
+  return !!fa && fa === firstNameOf(ownName);
 }
 
 function allKnownApiCrewNames() {
@@ -949,7 +968,9 @@ function crewListsPlausiblyMatch(pdfCrew) {
 // PDF has no reliable way to tell us which crew member is on which
 // specific leg/hotel).
 function renderLayoverCrew(arrCode, hotel) {
-  const crew = state.crewSource === "pdf" && state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  const allCrew = state.crewSource === "pdf" && state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  const ownName = getOwnName();
+  const crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
   els.layoverCrew.hidden = !crew.length;
   els.layoverCrewList.innerHTML = "";
   if (!crew.length) return;
@@ -1099,8 +1120,9 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
   if (f) renderCrew(f);
 });
 
-els.roomNumberInput.addEventListener("input", () => {
-  if (currentLayover) setRoomNumber(roomKeyFor(currentLayover.arrCode, currentLayover.hotel), els.roomNumberInput.value);
+els.ownNameInput.addEventListener("input", () => {
+  setOwnName(els.ownNameInput.value);
+  renderLayover();
 });
 
 if (window.pdfjsLib) {
@@ -1110,6 +1132,7 @@ if (window.pdfjsLib) {
 
 // ---------- init ----------
 
+els.ownNameInput.value = getOwnName();
 loadStoredPdfCrew();
 renderLayover();
 loadFlights();

@@ -784,15 +784,16 @@ const ICAO_CITY = {
   LFBD: "Bordeaux", EHAM: "Amsterdam", EBBR: "Brüssel",
   // Iberia
   LEMD: "Madrid", LEBL: "Barcelona", LEPA: "Palma de Mallorca", LEMG: "Málaga",
-  LEZL: "Sevilla", LEVC: "Valencia", LEAL: "Alicante", GCLP: "Gran Canaria",
-  GCTS: "Teneriffa Süd", LPPT: "Lissabon", LPPR: "Porto", LPFR: "Faro",
+  LEZL: "Sevilla", LEVC: "Valencia", LEAL: "Alicante", LEBB: "Bilbao",
+  GCLP: "Gran Canaria", GCTS: "Teneriffa Süd", LPPT: "Lissabon", LPPR: "Porto",
+  LPFR: "Faro",
   // Italy
   LIRF: "Rom (Fiumicino)", LIRA: "Rom (Ciampino)", LIML: "Mailand (Linate)",
   LIMC: "Mailand (Malpensa)", LIRN: "Neapel", LIRQ: "Florenz", LIPZ: "Venedig",
   LICJ: "Palermo", LICC: "Catania", LIBD: "Bari",
   // Nordics / Baltics
-  ESSA: "Stockholm", ENGM: "Oslo", EKCH: "Kopenhagen", EFHK: "Helsinki",
-  EYVI: "Vilnius", EVRA: "Riga", EETN: "Tallinn",
+  ESSA: "Stockholm", ENGM: "Oslo", EKCH: "Kopenhagen", EKBI: "Billund",
+  EFHK: "Helsinki", EYVI: "Vilnius", EVRA: "Riga", EETN: "Tallinn",
   // Central / Eastern Europe
   EPWA: "Warschau", EPKK: "Krakau", EPPO: "Posen", EPWR: "Breslau", EPGD: "Danzig",
   LKPR: "Prag", LHBP: "Budapest", LROP: "Bukarest", LBSF: "Sofia",

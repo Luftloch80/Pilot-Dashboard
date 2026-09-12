@@ -187,3 +187,11 @@ netlify deploy --prod
 
 Keine Umgebungsvariablen nötig – der API-Schlüssel wird ausschließlich
 vom Nutzer im Browser eingegeben und dort gespeichert.
+
+**Cache-Busting:** `index.html` bindet `assets/app.js` und
+`assets/style.css` mit einem `?v=N`-Query-Parameter ein. iOS Safari
+(besonders als „Zum Home-Bildschirm“ hinzugefügte App) cacht diese Dateien
+sonst hartnäckig und zeigt nach einem Deploy weiter die alte Version, auch
+wenn `index.html` selbst schon aktuell ist. Bei jeder inhaltlichen Änderung
+an `app.js` oder `style.css` muss deshalb `N` in `index.html` erhöht
+werden, sonst kommt das Update auf den Geräten nicht an.

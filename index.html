@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css" />
+<link rel="stylesheet" href="assets/style.css?v=1" />
 </head>
 <body>
 
@@ -172,7 +172,10 @@
 
 </main>
 
+<!-- Bump ?v= on assets/app.js and assets/style.css above whenever either
+     file changes - iOS Safari (especially as a Home Screen app) otherwise
+     keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js"></script>
+<script src="assets/app.js?v=1"></script>
 </body>
 </html>

@@ -24,7 +24,10 @@
     <span class="brand-dot" aria-hidden="true"></span>
     <span>Pilot Dashboard</span>
   </div>
-  <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
+  <div class="topbar-actions">
+    <button id="refreshBtn" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren" hidden>↻</button>
+    <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
+  </div>
 </header>
 
 <main id="app" class="app">
@@ -151,12 +154,7 @@
     <button id="crewSourceSwitchBtn" class="btn ghost small" hidden></button>
   </section>
 
-
 </main>
-
-<footer class="foot">
-  <button id="refreshBtn" class="btn secondary" hidden>Aktualisieren</button>
-</footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="assets/app.js"></script>

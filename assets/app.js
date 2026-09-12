@@ -883,6 +883,15 @@ function findPdfHotelFor(arrCode, legs) {
 // local half) or a plain HH:MM, falling back to the raw line if neither
 // pattern matches - better than hiding a pickup note we can't fully parse.
 function findPickupLocal(lines) {
+  // "PU 4:20" - the actual abbreviation used in real rosters - checked
+  // first since it directly gives an unambiguous clock time.
+  const puRe = /\bPU\b\s*(\d{1,2}):(\d{2})\b/;
+  for (const line of lines) {
+    const m = line.match(puRe);
+    if (m) return `${m[1].padStart(2, "0")}:${m[2]} (lokal)`;
+  }
+
+  // Fallback: a spelled-out "Pickup"/"Abholung" mention, format unconfirmed.
   const mentionRe = /pick[- ]?up|abholung/i;
   for (const line of lines) {
     if (!mentionRe.test(line)) continue;

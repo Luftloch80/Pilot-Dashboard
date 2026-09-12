@@ -72,10 +72,14 @@ Vercel als statisches Verzeichnis).
    auf: In den Settings lässt sich unter „Eigener Name“ der eigene Name
    (wie er in der Crewliste steht) hinterlegen, der dann herausgefiltert
    wird – für die eigene Zimmernummer gibt es ja bereits das Feld oben. Ein
-   „Pickup“-Hinweis für den nächsten Tag wird nur angezeigt, wenn die
-   PDF-Zeilen ein Wort wie „Pickup“/„Abholung“ enthalten – das Format ist
-   nicht bekannt/bestätigt, daher Best-Effort-Erkennung einer Uhrzeit
-   darin, sonst wird die gefundene Zeile unverändert gezeigt.
+   „Pickup“-Hinweis für den nächsten Tag wird angezeigt, wenn eine
+   PDF-Zeile die Abkürzung „PU 4:20“ (bestätigtes Format aus echten
+   Rosters) oder ersatzweise ein Wort wie „Pickup“/„Abholung“ enthält;
+   im zweiten Fall ist das genaue Zeit-Format nicht bekannt/bestätigt,
+   daher nur Best-Effort-Erkennung einer Uhrzeit darin, sonst wird die
+   gefundene Zeile unverändert gezeigt. Über die OpenAirLog-API/den
+   Connector ist keine Pickup-Zeit verfügbar (`remarks`/`duty_code` sind
+   dort leer) – wie Umlaufnummer und Hotelname bleibt das PDF-only.
 
 ## API-Endpunkte
 

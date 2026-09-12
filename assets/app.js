@@ -31,7 +31,7 @@ const els = {
 
   layoverCard: document.getElementById("layoverCard"),
   layoverCode: document.getElementById("layoverCode"),
-  layoverCity: document.getElementById("layoverCity"),
+  layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
@@ -884,9 +884,9 @@ function renderLayover() {
   currentLayover = { arrCode: layover.arrCode, hotel };
 
   const city = cityForIcao(layover.arrCode);
+  els.layoverPlace.textContent = city || layover.arrCode;
+  els.layoverCode.hidden = !city; // only worth repeating the code separately if the big text is the city name
   els.layoverCode.textContent = layover.arrCode;
-  els.layoverCity.hidden = !city;
-  els.layoverCity.textContent = city || "";
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
   els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover.arrCode, hotel));

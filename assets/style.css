@@ -282,14 +282,12 @@ body {
 
 /* Layover */
 .layover-place {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
-.layover-code { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; }
-.layover-city { font-size: 1rem; }
-.layover-hotel { font-size: 0.95rem; margin-bottom: 4px; }
+.layover-code { margin-top: 2px; }
+.layover-hotel { font-size: 0.95rem; margin-top: 8px; margin-bottom: 4px; }
 
 .layover-card label {
   display: block;

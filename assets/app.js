@@ -246,6 +246,13 @@ function normalizeFlight(raw) {
   const registration = pick(raw, ["aircraft_registration", "registration", "reg", "tail_number", "tailNumber", "aircraft.registration"]);
   const status = pick(raw, ["status", "flight_status", "state"]);
 
+  // Deadhead: this pilot is a passenger on this flight, not operating it.
+  // OpenAirLog marks it in more than one field for the same flight
+  // (crew_position, duty_code, remarks all showed "DH" on a real example);
+  // checking all of them is cheap and more robust than picking just one.
+  const isDeadhead = ["crew_position", "duty_code", "remarks"]
+    .some((key) => String(raw[key] || "").toUpperCase() === "DH");
+
   // Crew can be embedded directly in the flight object (confirmed) and/or
   // fetched separately via GET /flights/{id}/crew (crew:read scope) -
   // ensureCrewLoaded() prefers this embedded copy when non-empty.
@@ -261,6 +268,7 @@ function normalizeFlight(raw) {
     aircraft: aircraft || "–",
     registration: registration || "–",
     status: status ? String(status) : "",
+    isDeadhead,
     embeddedCrew,
   };
 }
@@ -375,6 +383,11 @@ function renderFlightNav() {
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
 function renderTimerPill(f) {
+  if (f.isDeadhead) {
+    els.flightStatus.textContent = "DH";
+    els.flightStatus.className = "status-pill deadhead";
+    return;
+  }
   if (!f.depSchedDate) {
     els.flightStatus.textContent = "–";
     els.flightStatus.className = "status-pill";

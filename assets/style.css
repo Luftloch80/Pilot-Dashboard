@@ -238,6 +238,10 @@ body {
 }
 .status-pill.timer-before { background: var(--ok-bg); color: var(--ok); }
 .status-pill.timer-after { background: var(--danger-bg); color: var(--danger); }
+.status-pill.deadhead {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
 
 .route {
   display: flex;

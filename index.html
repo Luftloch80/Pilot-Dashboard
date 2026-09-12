@@ -139,7 +139,17 @@
 
     <div id="layoverCurrency" class="layover-currency" hidden>
       <div class="layover-crew-title muted small">Umrechnung (<span id="currencyCode">–</span>)</div>
-      <div id="currencyTable" class="currency-table"></div>
+      <div class="currency-calc">
+        <div class="currency-calc-field">
+          <input id="currencyLocalInput" type="number" inputmode="decimal" placeholder="0" />
+          <span id="currencyLocalUnit" class="currency-unit">–</span>
+        </div>
+        <span class="currency-calc-eq">=</span>
+        <div class="currency-calc-field currency-calc-output">
+          <span id="currencyEurOutput">0</span>
+          <span class="currency-unit">€</span>
+        </div>
+      </div>
       <p id="currencyNote" class="muted small" hidden></p>
     </div>
 

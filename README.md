@@ -80,17 +80,20 @@ Vercel als statisches Verzeichnis).
    gefundene Zeile unverändert gezeigt. Über die OpenAirLog-API/den
    Connector ist keine Pickup-Zeit verfügbar (`remarks`/`duty_code` sind
    dort leer) – wie Umlaufnummer und Hotelname bleibt das PDF-only.
-   Liegt der Layover-Ort in einem Land ohne Euro, erscheint zusätzlich
-   eine kleine **Umrechnungstabelle** (5/10/20/50/100 € in die
-   Landeswährung) – über eine lokale Zuordnungstabelle `CURRENCY_BY_ICAO`
-   in `assets/app.js` vom ICAO-Code zur ISO-Währung (deckt gängige
-   Layover-Ziele außerhalb der Eurozone ab, z. B. `LUKK` → `MDL`); für
-   Eurozone-Ziele oder unbekannte Codes bleibt die Karte ausgeblendet.
-   Der Kurs wird bei Bedarf live von `open.er-api.com` (kostenlos, kein
-   API-Key) geladen und für 6 Stunden im Speicher gecacht; ist der Dienst
-   nicht erreichbar, greift eine statische Näherungstabelle
-   (`APPROX_EUR_RATES`) mit sichtbarem Hinweis „Ungefährer Kurs (keine
-   Live-Kursdaten verfügbar, ggf. veraltet).“ darunter.
+   Liegt der Layover-Ort in einem Land ohne Euro, erscheint zusätzlich ein
+   kleiner **Umrechner**: links ein Eingabefeld für einen Betrag in der
+   Landeswährung, rechts live daneben der entsprechende Euro-Betrag (bei
+   jeder Eingabe direkt neu berechnet, kein Button nötig) – über eine
+   lokale Zuordnungstabelle `CURRENCY_BY_ICAO` in `assets/app.js` vom
+   ICAO-Code zur ISO-Währung (deckt gängige Layover-Ziele außerhalb der
+   Eurozone ab, z. B. `LUKK` → `MDL`); für Eurozone-Ziele oder unbekannte
+   Codes bleibt die Karte ausgeblendet. Der Kurs wird bei Bedarf live von
+   `open.er-api.com` (kostenlos, kein API-Key) geladen und für 6 Stunden im
+   Speicher gecacht; ist der Dienst nicht erreichbar, greift eine statische
+   Näherungstabelle (`APPROX_EUR_RATES`) mit sichtbarem Hinweis „Ungefährer
+   Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).“ darunter. Das
+   Eingabefeld wird nur beim Wechsel auf eine andere Landeswährung
+   zurückgesetzt, nicht bei jedem automatischen Neuladen der Daten.
 
 ## API-Endpunkte
 

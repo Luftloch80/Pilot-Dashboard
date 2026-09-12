@@ -50,7 +50,9 @@ const els = {
   layoverPickup: document.getElementById("layoverPickup"),
   layoverCurrency: document.getElementById("layoverCurrency"),
   currencyCode: document.getElementById("currencyCode"),
-  currencyTable: document.getElementById("currencyTable"),
+  currencyLocalInput: document.getElementById("currencyLocalInput"),
+  currencyLocalUnit: document.getElementById("currencyLocalUnit"),
+  currencyEurOutput: document.getElementById("currencyEurOutput"),
   currencyNote: document.getElementById("currencyNote"),
   layoverCrew: document.getElementById("layoverCrew"),
   layoverCrewList: document.getElementById("layoverCrewList"),
@@ -907,17 +909,37 @@ async function getEurRates() {
   }
 }
 
-const CURRENCY_TABLE_AMOUNTS = [5, 10, 20, 50, 100];
-
 // Guards against a slow/late fetch from an earlier call overwriting the UI
 // after a newer renderLayover() already moved on to a different airport.
 let layoverCurrencyToken = 0;
+
+// rate = units of the local currency per 1 EUR (as returned by the API,
+// EUR-based). Kept at module scope so the input listener can recompute
+// without re-fetching.
+let currentCurrencyCode = null;
+let currentCurrencyRate = null;
+
+function updateCurrencyOutput() {
+  if (!currentCurrencyRate) {
+    els.currencyEurOutput.textContent = "0";
+    return;
+  }
+  const raw = parseFloat(els.currencyLocalInput.value);
+  const local = Number.isFinite(raw) ? raw : 0;
+  const eur = local / currentCurrencyRate;
+  const decimals = eur >= 100 ? 0 : 2;
+  els.currencyEurOutput.textContent = eur.toLocaleString("de-DE", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
 
 async function renderLayoverCurrency(arrCode) {
   const token = ++layoverCurrencyToken;
   const currency = CURRENCY_BY_ICAO[arrCode];
   if (!currency) {
     els.layoverCurrency.hidden = true;
+    currentCurrencyRate = null;
     return;
   }
 
@@ -927,26 +949,22 @@ async function renderLayoverCurrency(arrCode) {
   const rate = rates[currency];
   if (!rate) {
     els.layoverCurrency.hidden = true;
+    currentCurrencyRate = null;
     return;
   }
 
   els.layoverCurrency.hidden = false;
   els.currencyCode.textContent = currency;
-  els.currencyTable.innerHTML = "";
-  for (const eur of CURRENCY_TABLE_AMOUNTS) {
-    const local = eur * rate;
-    const decimals = local >= 100 ? 0 : 2;
-    const row = document.createElement("div");
-    row.className = "currency-row";
-    const eurSpan = document.createElement("span");
-    eurSpan.textContent = `${eur} €`;
-    const localSpan = document.createElement("span");
-    localSpan.className = "local";
-    localSpan.textContent = `${local.toLocaleString("de-DE", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })} ${currency}`;
-    row.appendChild(eurSpan);
-    row.appendChild(localSpan);
-    els.currencyTable.appendChild(row);
+  els.currencyLocalUnit.textContent = currency;
+  // Only clear what the pilot typed when the currency itself changed
+  // (new layover country), not on every periodic re-render.
+  if (currency !== currentCurrencyCode) {
+    els.currencyLocalInput.value = "";
+    currentCurrencyCode = currency;
   }
+  currentCurrencyRate = rate;
+  updateCurrencyOutput();
+
   els.currencyNote.hidden = live;
   els.currencyNote.textContent = live ? "" : "Ungefährer Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).";
 }
@@ -1272,6 +1290,8 @@ els.ownNameInput.addEventListener("input", () => {
 els.roomNumberInput.addEventListener("input", () => {
   if (currentLayoverKey) setRoomNumber(currentLayoverKey, els.roomNumberInput.value);
 });
+
+els.currencyLocalInput.addEventListener("input", updateCurrencyOutput);
 
 if (window.pdfjsLib) {
   pdfjsLib.GlobalWorkerOptions.workerSrc =

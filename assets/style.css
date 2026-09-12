@@ -316,22 +316,43 @@ body {
 #layoverPickup { margin-top: 12px; }
 
 .layover-currency { margin-top: 16px; }
-.currency-table {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-.currency-row {
+.currency-calc {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+.currency-calc-field {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
-  font-size: 0.9rem;
+}
+.currency-calc-field input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0;
+}
+.currency-calc-field input[type="number"]:focus { outline: none; }
+.currency-calc-output {
+  font-size: 1.05rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
-.currency-row .local { font-weight: 600; }
+.currency-unit {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  flex: 0 0 auto;
+}
+.currency-calc-eq { color: var(--text-muted); flex: 0 0 auto; }
 #currencyNote { margin-top: 8px; }
 
 .layover-crew { margin-top: 16px; }

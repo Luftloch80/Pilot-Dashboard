@@ -45,6 +45,27 @@
     <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
+  <!-- PDF-Crew-Upload (optional, nur in den Settings): überschreibt bei Erfolg die Crew -->
+  <section id="crewPdfCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>Crewliste als PDF</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Ersetzt bei Erfolg die Crew im Dashboard (z. B. für ein separates
+      Briefing-PDF). Die Datei wird nur lokal im Browser gelesen, nicht
+      hochgeladen.
+    </p>
+    <label for="crewPdfInput" class="btn secondary file-btn">
+      <span id="crewPdfLabel">PDF auswählen</span>
+      <input id="crewPdfInput" type="file" accept="application/pdf" hidden />
+    </label>
+
+    <p id="crewPdfStatus" class="muted small" hidden></p>
+    <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
+    <div id="crewPdfResult" class="pdf-text" hidden></div>
+  </section>
+
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
 
@@ -114,26 +135,6 @@
     <ul id="crewList" class="crew-list"></ul>
     <p id="crewEmpty" class="muted" hidden></p>
     <button id="crewSourceSwitchBtn" class="btn ghost small" hidden></button>
-  </section>
-
-  <!-- PDF-Crew-Upload (optional): überschreibt bei Erfolg die Crew oben -->
-  <section id="crewPdfCard" class="card crew-pdf-card">
-    <div class="crew-pdf-head">
-      <h2>Crewliste als PDF</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Ersetzt bei Erfolg die Crew oben (z. B. für ein separates Briefing-PDF).
-      Die Datei wird nur lokal im Browser gelesen, nicht hochgeladen.
-    </p>
-    <label for="crewPdfInput" class="btn secondary file-btn">
-      <span id="crewPdfLabel">PDF auswählen</span>
-      <input id="crewPdfInput" type="file" accept="application/pdf" hidden />
-    </label>
-
-    <p id="crewPdfStatus" class="muted small" hidden></p>
-    <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
-    <div id="crewPdfResult" class="pdf-text" hidden></div>
   </section>
 
   <!-- Rohdaten zum Debuggen -->

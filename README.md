@@ -16,12 +16,15 @@ Vercel als statisches Verzeichnis).
 3. Optional: „Zum Home-Bildschirm“ in Safari, damit die App wie eine
    native App startet (Statusleiste, eigenes Icon).
 4. Angezeigt werden **nur Flüge des heutigen Tages** (lokales Gerätedatum,
-   keine Historie). Gibt es an dem Tag laut OpenAirLog keinen Flug, zeigt
-   die App nur einen kurzen Hinweis statt einer Flugkarte. Gibt es mehrere
-   Flüge heute, lässt sich mit den Pfeilen unter der Karte zwischen ihnen
-   blättern; automatisch ausgewählt ist der aktuell aktive bzw. der nächste
+   keine Historie). Gibt es an dem Tag laut OpenAirLog keinen Flug, bleibt
+   die Flugkarte einfach leer/ausgeblendet – ohne Hinweistext (z. B. wenn
+   gerade nur ein Layover ansteht, siehe Punkt 6). Gibt es mehrere Flüge
+   heute, lässt sich mit den Pfeilen oben zwischen ihnen blättern;
+   automatisch ausgewählt ist der aktuell aktive bzw. der nächste
    anstehende Flug des Tages.
-5. Crewliste als PDF ist optional. Werden darin Crew-Zeilen erkannt,
+5. Crewliste als PDF liegt in den **Settings** (Zahnrad-Icon oben rechts,
+   zusammen mit dem API-Schlüssel – sonst enthalten die Settings nichts
+   weiteres) und ist optional. Werden darin Crew-Zeilen erkannt,
    **überschreibt sie automatisch die Crew-Anzeige** (statt sie nur zu
    ergänzen) – z. B. wenn die offizielle Umlaufcrewliste aktueller ist als
    OpenAirLog. Über den Button unter der Crew-Liste lässt sich jederzeit

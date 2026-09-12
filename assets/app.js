@@ -126,10 +126,6 @@ function localDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function localDateLabel(d) {
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.`;
-}
-
 // ---------- normalization (defensive: field names are inferred, not confirmed) ----------
 
 function extractFlightsArray(json) {
@@ -310,14 +306,14 @@ function loadStoredPdfCrew() {
 
 // ---------- rendering ----------
 
-// Settings (the API-key card) is a focused screen: opening it hides the
-// rest of the dashboard (flight, layover, crew, PDF upload, raw data)
-// instead of just adding a card above them. Closing it re-runs the normal
-// render functions so flight/crew/layover reappear only if there's
-// actually something to show.
+// Settings is a focused screen containing only the API key and the PDF
+// upload: opening it hides the rest of the dashboard (flight, layover,
+// crew, raw data) and shows the PDF upload card, which otherwise stays
+// hidden. Closing it re-runs the normal render functions so flight/crew/
+// layover reappear only if there's actually something to show.
 function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
-  els.crewPdfCard.hidden = open;
+  els.crewPdfCard.hidden = !open;
   els.rawCard.hidden = open;
   if (open) {
     els.flightNav.hidden = true;
@@ -602,12 +598,14 @@ async function loadFlights() {
   renderLayover();
 
   if (!flights.length) {
-    let msg = `Heute (${localDateLabel(new Date())}) sind keine Flüge für dich hinterlegt.`;
+    // No visible hint when today simply has no flight - the layover card
+    // (rendered above) or an empty dashboard speaks for itself. Still fill
+    // "Rohdaten anzeigen" for debugging in case OpenAirLog did return
+    // flights for the queried window but none matched today.
     if (allFlights.length) {
-      msg += ` OpenAirLog liefert für den abgefragten Zeitraum ${allFlights.length} Flug(e), aber keiner davon liegt heute – bitte Datum/Uhrzeit auf dem Gerät und in „Rohdaten anzeigen“ prüfen.`;
       els.rawData.textContent = JSON.stringify(allFlights.map((f) => f.raw), null, 2);
     }
-    showBanner(msg, "");
+    showBanner("", "");
     renderFlight();
     return;
   }

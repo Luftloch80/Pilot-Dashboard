@@ -43,12 +43,13 @@ Vercel als statisches Verzeichnis).
    Layover dort ("wenn der Tag davor in RMO endet, ist das eine
    Übernachtung dort") – dafür wird `/flights` intern bis zu 7 Tage zurück
    abgefragt (angezeigt wird weiterhin nur der heutige Flug). Die Karte
-   zeigt den ICAO-Flughafencode (so liefert ihn OpenAirLog, z. B. `LUKK`,
-   nicht den 3-stelligen IATA-Code) plus – über eine lokale Zuordnungstabelle
-   `ICAO_CITY` in `assets/app.js` – den Städtenamen, falls der Code darin
-   bekannt ist (nicht erschöpfend: deckt größere europäische und
-   internationale Flughäfen ab, unbekannte Codes zeigen einfach nur den
-   Code). Dazu ein Eingabefeld für die eigene Zimmernummer (pro Ort+Hotel
+   zeigt groß nur den Ort – über eine lokale Zuordnungstabelle `ICAO_CITY`
+   in `assets/app.js` den Städtenamen zum ICAO-Flughafencode, den
+   OpenAirLog liefert (z. B. `LUKK` → „Chișinău“; nicht erschöpfend, deckt
+   größere europäische und internationale Flughäfen ab). Ist der Code
+   darin nicht bekannt, wird ersatzweise der rohe Code angezeigt; der Code
+   selbst steht sonst nirgends mehr auf der Karte. Dazu ein Eingabefeld für
+   die eigene Zimmernummer (pro Ort+Hotel
    lokal gespeichert, übersteht einen Refresh). Ist zusätzlich eine
    passende Umlaufcrewliste als PDF hochgeladen (gleicher Ankunftsort),
    wird deren Hotelname ergänzt – die PDF liefert hier nur diese

@@ -44,7 +44,6 @@ const els = {
   registration: document.getElementById("registration"),
 
   layoverCard: document.getElementById("layoverCard"),
-  layoverCode: document.getElementById("layoverCode"),
   layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
@@ -907,8 +906,6 @@ function renderLayover() {
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
-  els.layoverCode.hidden = !city; // only worth repeating the code separately if the big text is the city name
-  els.layoverCode.textContent = layover.arrCode;
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
   els.roomNumberInput.value = getRoomNumber(currentLayoverKey);

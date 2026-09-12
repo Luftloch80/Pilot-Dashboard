@@ -288,7 +288,8 @@ body {
   margin-bottom: 4px;
 }
 .layover-code { font-size: 1.5rem; font-weight: 800; letter-spacing: 0.02em; }
-.layover-hotel { font-size: 0.95rem; }
+.layover-city { font-size: 1rem; }
+.layover-hotel { font-size: 0.95rem; margin-bottom: 4px; }
 
 .layover-card label {
   display: block;

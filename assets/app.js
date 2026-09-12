@@ -31,6 +31,7 @@ const els = {
 
   layoverCard: document.getElementById("layoverCard"),
   layoverCode: document.getElementById("layoverCode"),
+  layoverCity: document.getElementById("layoverCity"),
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
@@ -736,6 +737,66 @@ function reviveLeg(leg) {
   };
 }
 
+// City name for the ICAO airport codes OpenAirLog uses (departure/arrival
+// are 4-letter ICAO, e.g. "EDDF" - not 3-letter IATA). Not exhaustive:
+// covers major European and world airports; anything missing just shows
+// the bare code, which is still correct, just less friendly.
+const ICAO_CITY = {
+  // Germany
+  EDDF: "Frankfurt", EDDM: "München", EDDB: "Berlin", EDDH: "Hamburg",
+  EDDL: "Düsseldorf", EDDK: "Köln/Bonn", EDDS: "Stuttgart", EDDN: "Nürnberg",
+  EDDW: "Bremen", EDDP: "Leipzig/Halle", EDDR: "Saarbrücken", EDDV: "Hannover",
+  EDDC: "Dresden", EDDG: "Münster/Osnabrück",
+  // Austria / Switzerland
+  LOWW: "Wien", LOWS: "Salzburg", LOWI: "Innsbruck", LOWG: "Graz", LOWL: "Linz",
+  LSZH: "Zürich", LSGG: "Genf", LSZB: "Bern", LFSB: "Basel/Mulhouse",
+  // UK / Ireland
+  EGLL: "London (Heathrow)", EGKK: "London (Gatwick)", EGSS: "London (Stansted)",
+  EGGW: "London (Luton)", EGLC: "London (City)", EGCC: "Manchester",
+  EGBB: "Birmingham", EGPH: "Edinburgh", EGPF: "Glasgow", EGNT: "Newcastle",
+  EIDW: "Dublin",
+  // France / Benelux
+  LFPG: "Paris (CDG)", LFPO: "Paris (Orly)", LFLL: "Lyon", LFMN: "Nizza",
+  LFML: "Marseille", LFBO: "Toulouse", LFRS: "Nantes", LFST: "Straßburg",
+  LFBD: "Bordeaux", EHAM: "Amsterdam", EBBR: "Brüssel",
+  // Iberia
+  LEMD: "Madrid", LEBL: "Barcelona", LEPA: "Palma de Mallorca", LEMG: "Málaga",
+  LEZL: "Sevilla", LEVC: "Valencia", LEAL: "Alicante", GCLP: "Gran Canaria",
+  GCTS: "Teneriffa Süd", LPPT: "Lissabon", LPPR: "Porto", LPFR: "Faro",
+  // Italy
+  LIRF: "Rom (Fiumicino)", LIRA: "Rom (Ciampino)", LIML: "Mailand (Linate)",
+  LIMC: "Mailand (Malpensa)", LIRN: "Neapel", LIRQ: "Florenz", LIPZ: "Venedig",
+  LICJ: "Palermo", LICC: "Catania", LIBD: "Bari",
+  // Nordics / Baltics
+  ESSA: "Stockholm", ENGM: "Oslo", EKCH: "Kopenhagen", EFHK: "Helsinki",
+  EYVI: "Vilnius", EVRA: "Riga", EETN: "Tallinn",
+  // Central / Eastern Europe
+  EPWA: "Warschau", EPKK: "Krakau", EPPO: "Posen", EPWR: "Breslau", EPGD: "Danzig",
+  LKPR: "Prag", LHBP: "Budapest", LROP: "Bukarest", LBSF: "Sofia",
+  LDZA: "Zagreb", LDSP: "Split", LDDU: "Dubrovnik", LJLJ: "Ljubljana",
+  LYBE: "Belgrad", LUKK: "Chișinău",
+  // Southeastern Europe / Mediterranean
+  LGAV: "Athen", LGTS: "Thessaloniki", LGIR: "Heraklion", LGRP: "Rhodos",
+  LTFM: "Istanbul", LTAI: "Antalya", LTFJ: "Istanbul (Sabiha Gökçen)",
+  LCLK: "Larnaka", LMML: "Malta",
+  // North Africa / Middle East
+  GMMN: "Casablanca", HECA: "Kairo", HEGN: "Hurghada", HESH: "Sharm El-Sheikh",
+  OMDB: "Dubai", OTHH: "Doha", OMAA: "Abu Dhabi", OERK: "Riad", OEJN: "Jeddah",
+  // North America
+  KJFK: "New York (JFK)", KEWR: "Newark", KLAX: "Los Angeles", KORD: "Chicago",
+  KMIA: "Miami", KIAD: "Washington", KBOS: "Boston", KSFO: "San Francisco",
+  KATL: "Atlanta", CYYZ: "Toronto", CYUL: "Montreal",
+  // Asia / Pacific / Africa / South America
+  RJAA: "Tokio (Narita)", RJTT: "Tokio (Haneda)", ZBAA: "Peking",
+  VHHH: "Hongkong", WSSS: "Singapur", VABB: "Mumbai", VIDP: "Delhi",
+  RKSI: "Seoul", FAOR: "Johannesburg", HKJK: "Nairobi", YSSY: "Sydney",
+  SBGR: "São Paulo",
+};
+
+function cityForIcao(code) {
+  return ICAO_CITY[code] || null;
+}
+
 // Primary layover detection: OpenAirLog flight data, not the PDF. The most
 // recent completed arrival that hasn't been followed by a later departure
 // means we're still there - "if the day before ended in RMO, that's an
@@ -817,7 +878,10 @@ function renderLayover() {
   const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
   currentLayover = { arrCode: layover.arrCode, hotel };
 
+  const city = cityForIcao(layover.arrCode);
   els.layoverCode.textContent = layover.arrCode;
+  els.layoverCity.hidden = !city;
+  els.layoverCity.textContent = city || "";
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
   els.roomNumberInput.value = getRoomNumber(roomKeyFor(layover.arrCode, hotel));

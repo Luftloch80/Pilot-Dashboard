@@ -391,6 +391,7 @@ body {
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .route-toggle {
   display: flex;

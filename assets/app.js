@@ -57,8 +57,7 @@ const els = {
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
   dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
-  dutyStatusLayovers: document.getElementById("dutyStatusLayovers"),
-  dutyStatusLayoverList: document.getElementById("dutyStatusLayoverList"),
+  dutyStatusRoute: document.getElementById("dutyStatusRoute"),
 
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
@@ -1333,31 +1332,35 @@ function daysUntil(dateKey) {
   return Math.round((target - today) / 86400000);
 }
 
-// Overnight stops on the trip that starts with startFlight: walks the
-// already-fetched upcoming flights and flags an arrival as a layover
-// whenever the next flight doesn't depart the same calendar day from the
-// same airport - stops once back at the trip's origin (home base) or once
-// the fetched window (3 weeks out, see loadFlights()) runs out.
-function upcomingLayovers(startFlight) {
+// Full route chain for the upcoming trip, e.g. "EDDF-LUKK-EPPO-EDDF" -
+// starts at home base, one code per overnight stop (the *last* airport
+// reached each day, per the pilot's own phrasing), ending back at home
+// base once the rotation returns there.
+function upcomingRouteChain(startFlight) {
   const homeBase = startFlight.depCode;
   const startIdx = state.allFlights.indexOf(startFlight);
-  if (startIdx === -1) return [];
+  if (startIdx === -1) return null;
 
-  const layovers = [];
+  const chain = [homeBase];
   for (let i = startIdx; i < state.allFlights.length; i++) {
     const cur = state.allFlights[i];
-    if (i > startIdx && cur.arrCode === homeBase) break; // back home - trip over
     const next = state.allFlights[i + 1];
-    if (!next) break; // fetch window ran out - can't tell what follows
 
+    // cur is the last flight reaching a given stop before an overnight -
+    // either there's nothing after it (fetch window ran out), or the next
+    // flight departs a later calendar day, or from a different airport
+    // (a gap the data doesn't explain, treated the same way).
     const curArrKey = localDateKey(cur.arrSchedDate || cur.arrActualDate);
-    const nextDepKey = localDateKey(next.depSchedDate || next.depActualDate);
-    if (curArrKey !== nextDepKey || cur.arrCode !== next.depCode) {
-      layovers.push(cur.arrCode);
-    }
-    if (layovers.length >= 8) break; // sanity cap against malformed data
+    const nextDepKey = next ? localDateKey(next.depSchedDate || next.depActualDate) : null;
+    const isOvernightStop = !next || curArrKey !== nextDepKey || cur.arrCode !== next.depCode;
+    if (!isOvernightStop) continue;
+
+    chain.push(cur.arrCode);
+    if (cur.arrCode === homeBase) break; // back home - rotation complete
+    if (!next) break; // fetch window ran out - chain is incomplete but as far as we can tell
+    if (chain.length >= 10) break; // sanity cap against malformed data
   }
-  return layovers;
+  return chain.join("-");
 }
 
 function renderDutyStatus() {
@@ -1374,6 +1377,7 @@ function renderDutyStatus() {
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
     els.dutyStatusBriefing.hidden = true;
+    els.dutyStatusRoute.hidden = true;
   } else {
     const nextDate = next.depSchedDate || next.depActualDate;
     const days = daysUntil(localDateKey(nextDate));
@@ -1392,19 +1396,12 @@ function renderDutyStatus() {
     } else {
       els.dutyStatusBriefing.hidden = true;
     }
-  }
 
-  if (type === "homeday" && next) {
-    const cities = upcomingLayovers(next);
-    els.dutyStatusLayovers.hidden = cities.length === 0;
-    els.dutyStatusLayoverList.innerHTML = "";
-    for (const code of cities) {
-      const li = document.createElement("li");
-      li.textContent = cityForIcao(code) || code;
-      els.dutyStatusLayoverList.appendChild(li);
-    }
-  } else {
-    els.dutyStatusLayovers.hidden = true;
+    // Route chain (e.g. "EDDF-LUKK-EPPO-EDDF") - shown on both Urlaub and
+    // Ortstag alike, not just Ortstag as before.
+    const route = upcomingRouteChain(next);
+    els.dutyStatusRoute.hidden = !route;
+    els.dutyStatusRoute.textContent = route ? `Route: ${route}` : "";
   }
 }
 

@@ -173,15 +173,18 @@ Vercel als statisches Verzeichnis).
    Zukunft, nicht nur 1 Tag wie zuvor), und die Zählung läuft einfach bis
    zum nächsten echten Flug durch, unabhängig davon, ob dazwischen noch
    weitere Urlaubs- oder Ortstage liegen (z. B. Ortstage direkt nach dem
-   Urlaub zählen automatisch mit). Bei **Ortstag** zusätzlich eine Liste
-   „Erwartete Layover-Orte“: Die App geht ab dem nächsten Flug die
-   bevorstehende Rotation durch und erkennt jeden Ankunftsort als Layover,
-   an dem der nächste Abflug an einem anderen Kalendertag oder von einem
-   anderen Flughafen erfolgt – die Liste endet, sobald wieder der
-   Heimatbasis-Flughafen der Rotation (der Abflugort des ersten Fluges)
-   erreicht wird. Bei **Urlaub** wird diese Liste bewusst nicht gezeigt, da
-   zu weit in die Zukunft geschaut werden müsste, um sie sinnvoll zu
-   befüllen. **Automatischer Wechsel nach der Landung:** Landet der letzte
+   Urlaub zählen automatisch mit). Direkt unter der Briefing-Zeit (siehe
+   unten) steht zusätzlich – auf **beiden** Kartentypen, Urlaub wie
+   Ortstag – die **Route der bevorstehenden Rotation als Kette**, z. B.
+   „Route: EDDF-LUKK-EPPO-EDDF“: Startpunkt ist der Heimatbasis-Flughafen
+   (Abflugort des nächsten Fluges), danach für jeden Tag der Rotation der
+   Code des **letzten** an diesem Tag erreichten Flughafens (bei mehreren
+   Flügen an einem Tag zählt also nur der letzte, nicht jeder
+   Zwischenstopp) – die Kette endet, sobald wieder der
+   Heimatbasis-Flughafen erreicht wird. Fehlen dafür Daten (z. B. weil der
+   nächste Flug bei einem langen Urlaub außerhalb des 3-Wochen-Fensters
+   liegt), bleibt die Zeile ausgeblendet. **Automatischer Wechsel nach der
+   Landung:** Landet der letzte
    Flug des Tages am Heimatbasis-Flughafen **EDDF** (Frankfurt), schaltet
    das Dashboard **30 Minuten nach der planmäßigen Landezeit** automatisch
    in denselben „Zuhause (Ortstag)“-Modus wie oben – auch ohne einen

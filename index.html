@@ -15,13 +15,15 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=15" />
+<link rel="stylesheet" href="assets/style.css?v=16" />
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-dot" aria-hidden="true"></span>
+    <span id="brandAirlineBadge" class="brand-airline-badge" aria-hidden="true">
+      <span id="brandAirlineBadgeCode"></span>
+    </span>
     <span id="brandName">Pilot Dashboard</span>
   </div>
   <div class="topbar-actions">
@@ -210,6 +212,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=21"></script>
+<script src="assets/app.js?v=22"></script>
 </body>
 </html>

@@ -80,12 +80,36 @@ body {
   white-space: nowrap;
 }
 
-.brand-dot {
+/* Airline badge (see .airline-badge below for why it's a styled badge, not
+   a real logo image) for whichever flight is currently relevant - falls
+   back to a plain accent dot (its original look) when none is known, e.g.
+   before data loads or on an Ortstag/Urlaub day. */
+.brand-airline-badge {
+  flex-shrink: 0;
   width: 9px;
   height: 9px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width 0.15s ease, height 0.15s ease, border-radius 0.15s ease;
+}
+.brand-airline-badge span { display: none; }
+.brand-airline-badge.has-airline {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--airline-bg, var(--accent));
+  box-shadow: none;
+}
+.brand-airline-badge.has-airline span {
+  display: inline;
+  color: var(--airline-fg, var(--accent-text));
+  font-weight: 800;
+  font-size: 0.62rem;
+  letter-spacing: 0.01em;
 }
 
 .topbar-actions {

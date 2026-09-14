@@ -31,6 +31,8 @@ const els = {
   setupError: document.getElementById("setupError"),
   settingsBtn: document.getElementById("settingsBtn"),
   brandName: document.getElementById("brandName"),
+  brandAirlineBadge: document.getElementById("brandAirlineBadge"),
+  brandAirlineBadgeCode: document.getElementById("brandAirlineBadgeCode"),
 
   statusBanner: document.getElementById("statusBanner"),
 
@@ -497,18 +499,36 @@ const AIRLINE_BY_PREFIX = {
   "4Y": { name: "Eurowings Discover", bg: "#f5a623", fg: "#1c1c1c" },
 };
 
+// Updates both the flight-card badge and the small header badge (which
+// falls back to a plain dot - see .brand-airline-badge) - always the same
+// airline, so the two never disagree. Pass null when there's no current
+// flight to show an airline for (e.g. Ortstag/Urlaub).
 function renderAirlineBadge(flightNumber) {
   const prefix = (flightNumber || "").slice(0, 2).toUpperCase();
+
   if (!prefix) {
     els.airlineBadge.hidden = true;
+    els.brandAirlineBadge.classList.remove("has-airline");
+    els.brandAirlineBadge.title = "";
     return;
   }
+
   const airline = AIRLINE_BY_PREFIX[prefix];
+  const bg = airline ? airline.bg : "";
+  const fg = airline ? airline.fg : "";
+  const title = airline ? airline.name : prefix;
+
   els.airlineBadge.hidden = false;
   els.airlineBadgeCode.textContent = prefix;
-  els.airlineBadge.title = airline ? airline.name : prefix;
-  els.airlineBadge.style.setProperty("--airline-bg", airline ? airline.bg : "");
-  els.airlineBadge.style.setProperty("--airline-fg", airline ? airline.fg : "");
+  els.airlineBadge.title = title;
+  els.airlineBadge.style.setProperty("--airline-bg", bg);
+  els.airlineBadge.style.setProperty("--airline-fg", fg);
+
+  els.brandAirlineBadge.classList.add("has-airline");
+  els.brandAirlineBadgeCode.textContent = prefix;
+  els.brandAirlineBadge.title = title;
+  els.brandAirlineBadge.style.setProperty("--airline-bg", bg);
+  els.brandAirlineBadge.style.setProperty("--airline-fg", fg);
 }
 
 // Freshness signal, shown as the refresh icon's color (green/red) - not
@@ -582,6 +602,7 @@ function renderFlight() {
 
   if (!showFlightCard) {
     els.flightNav.hidden = true;
+    renderAirlineBadge(null);
     renderDutyStatus();
     return;
   }

@@ -12,7 +12,16 @@ Vercel als statisches Verzeichnis).
    eingeben. Der Schlüssel wird **nur lokal im Browser** (`localStorage`)
    gespeichert und bei jeder Anfrage direkt im `Authorization`-Header an
    `https://openairlog.de/api/v1` gesendet – er landet nie im Code oder
-   Repo.
+   Repo. **Kein automatisches Nachladen:** Von OpenAirLog geholt werden die
+   Daten (Flüge, eingebettete Crew) nur beim ersten Öffnen der Seite und
+   bei jedem Tap auf das ↻-Icon oben – bewusst kein Hintergrund-Polling.
+   Der 30-Sekunden-Timer im Hintergrund aktualisiert nur den Countdown und
+   den Layover-Status aus den bereits geladenen Daten, ruft OpenAirLog
+   aber nicht erneut auf. Ändert sich etwas bei OpenAirLog (z. B. ein neuer
+   P1), während die Seite schon offen ist, zeigt das ↻-Icon das also erst
+   nach einem manuellen Tap – der Fetch nutzt zudem `cache: "no-store"`,
+   damit dabei garantiert der aktuelle Stand geholt wird und nicht eine vom
+   Browser zwischengespeicherte Antwort.
 3. Optional: „Zum Home-Bildschirm“ in Safari, damit die App wie eine
    native App startet (Statusleiste, eigenes Icon).
 4. Angezeigt werden **nur Flüge des heutigen Tages** (lokales Gerätedatum,

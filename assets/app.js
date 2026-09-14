@@ -571,6 +571,7 @@ async function ensureCrewLoaded(f) {
   try {
     res = await fetchWithTimeout(`${API_BASE}/flights/${encodeURIComponent(f.id)}/crew`, {
       headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      cache: "no-store",
     });
   } catch (err) {
     const message = err && err.name === "AbortError"
@@ -638,6 +639,7 @@ async function loadFlights() {
         Authorization: `Bearer ${key}`,
         Accept: "application/json",
       },
+      cache: "no-store",
     });
   } catch (err) {
     showBanner(

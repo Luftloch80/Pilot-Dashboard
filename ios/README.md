@@ -3,8 +3,9 @@
 This is a complete native SwiftUI re-implementation of the web dashboard
 (`/index.html`, `/assets/app.js`) — same OpenAirLog data, same feature set
 (currency calculator, room numbers, airline badge, layover/duty status,
-route chain, briefing time, staleness check, PDF crew import), written as
-plain `.swift` source files with no `.xcodeproj` included.
+route chain with a per-city weather overview, briefing time, staleness
+check, PDF crew import), written as plain `.swift` source files with no
+`.xcodeproj` included.
 
 **Important:** this project was written and reviewed in a Linux cloud
 environment with no macOS/Xcode available, so it has **not been compiled
@@ -40,9 +41,10 @@ uses only `Foundation`, `SwiftUI`, `PDFKit`, `Combine`, and `Security`
 ## 3. Capabilities / entitlements
 
 None needed beyond the defaults:
-- Network access (HTTPS to `openairlog.de` and `open.er-api.com`) works
-  out of the box under App Transport Security's default HTTPS-only policy
-  — no `Info.plist` exceptions required.
+- Network access (HTTPS to `openairlog.de`, `open.er-api.com`, and
+  `open-meteo.com`/`geocoding-api.open-meteo.com` for the route weather)
+  works out of the box under App Transport Security's default HTTPS-only
+  policy — no `Info.plist` exceptions required.
 - Keychain access for the app's own items needs no special entitlement.
 - Importing a PDF uses `.fileImporter`, which needs no extra Info.plist
   entries either.
@@ -89,6 +91,17 @@ None needed beyond the defaults:
   guessing an airline-internal 3-letter code (same policy as the web
   app, established after the ATC-callsign guessing mistake earlier in
   this project).
+- **The route weather feature (`WeatherService.swift`) could not be
+  tested live.** The Linux cloud environment this was written in blocks
+  outbound access to `open-meteo.com` and its geocoding subdomain at the
+  network level, so unlike the rest of this project it was only verified
+  by mirroring and re-testing the equivalent logic in the web app (with
+  Open-Meteo's responses mocked) — the real network calls here have not
+  been exercised end to end. Test this one specifically on your first
+  run: tap "Route: …" on an Urlaub/Ortstag day and confirm each city
+  shows a temperature range rather than "Ort nicht gefunden" for every
+  row (a geocoding query that doesn't resolve, or an API shape that's
+  shifted since this was written, would show that way).
 
 ## Architecture at a glance
 
@@ -100,7 +113,9 @@ None needed beyond the defaults:
   and `RawFlightEntry`/`FlightsResponseParser` for the raw JSON schema.
 - `Services/` — pure business logic ported 1:1 from the web app's
   functions: `FlightParsing`, `FlightSelection`, `LayoverDetector`,
-  `DutyStatusService`, `CrewMerge`, `AirlineBadge`, `PDFCrewParser`.
+  `DutyStatusService`, `CrewMerge`, `AirlineBadge`, `PDFCrewParser`, and
+  `WeatherService` (an actor, geocoding + forecast via Open-Meteo, same
+  shape as `CurrencyRateClient`).
 - `ViewModels/DashboardViewModel.swift` — the single `@MainActor
   ObservableObject` source of truth, including the two background loops
   (30s UI ticker, 5-minute passive staleness check — see the file's own
@@ -108,4 +123,5 @@ None needed beyond the defaults:
 - `Views/` — `ContentView` (setup vs. dashboard), `SetupView`,
   `SettingsView`, and `Views/Components/` for the individual cards
   (flight, crew, layover + currency calculator + room numbers, duty
-  status) plus the data-freshness stamp and airline badge.
+  status + expandable per-city route weather) plus the data-freshness
+  stamp and airline badge.

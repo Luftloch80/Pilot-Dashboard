@@ -376,7 +376,51 @@ body {
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-#dutyStatusRoute { margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.route-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.route-toggle::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.route-toggle[aria-expanded="true"]::after { transform: rotate(-135deg); }
+
+.route-weather {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.route-weather-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.85rem;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.route-weather-city { font-weight: 600; }
+.route-weather-info { font-variant-numeric: tabular-nums; }
 
 /* Layover */
 .layover-place {

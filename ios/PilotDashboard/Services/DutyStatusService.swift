@@ -1,10 +1,20 @@
 import Foundation
 
+/// One overnight stop of the upcoming trip - see
+/// DutyStatusService.computeRouteStops. `dateKey` is OpenAirLog's own
+/// operationalDate for the flight that reaches this stop, used both for
+/// display and to look up that day's weather.
+struct RouteStop: Equatable, Hashable, Sendable {
+    let icao: String
+    let dateKey: String?
+}
+
 struct DutyStatusInfo {
     let type: DutyType
     let countdownText: String
     let briefingText: String?
     let routeText: String?
+    let routeStops: [RouteStop]?
 }
 
 enum DutyStatusService {
@@ -33,12 +43,13 @@ enum DutyStatusService {
         return comps.day ?? 0
     }
 
-    /// Full route chain for the upcoming trip, e.g. "FRA-LIS-BLL-WAW-HAM-FRA"
-    /// - starts at home base, one code per overnight stop (the *last*
-    /// airport reached each day - a multi-sector day only contributes its
-    /// final stop, not every intermediate one), ending back at home base
-    /// once the rotation returns there. Converted to 3-letter codes only
-    /// at the very end for display; compared internally in ICAO.
+    /// One entry per overnight stop of the upcoming trip - home base on
+    /// the departure day, then each layover (the *last* airport reached
+    /// each day - a multi-sector day only contributes its final stop, not
+    /// every intermediate one), then home base again on the day the
+    /// rotation ends. Feeds both the compact "FRA-LIS-…" route-chain
+    /// string and the per-city weather popup, so the two always agree on
+    /// which day belongs to which city.
     ///
     /// Same-day-vs-overnight is decided from each flight's own
     /// `operationalDate` (OpenAirLog's unambiguous "date" field), not a
@@ -49,10 +60,10 @@ enum DutyStatusService {
     /// in between (e.g. an EDDF-LPPT arrival at 22:35Z reads as 00:35
     /// local in CEST - one local day "too late", silently dropping that
     /// stop from the chain).
-    static func upcomingRouteChain(startFlight: Flight, allFlights: [Flight], homeBase: String = Constants.homeBase) -> String? {
+    static func computeRouteStops(startFlight: Flight, allFlights: [Flight], homeBase: String = Constants.homeBase) -> [RouteStop]? {
         guard let startIdx = allFlights.firstIndex(of: startFlight) else { return nil }
 
-        var chain: [String] = [homeBase]
+        var stops: [RouteStop] = [RouteStop(icao: homeBase, dateKey: startFlight.operationalDate)]
         var i = startIdx
         while i < allFlights.count {
             let cur = allFlights[i]
@@ -61,14 +72,18 @@ enum DutyStatusService {
             let isOvernightStop = next == nil || cur.operationalDate != next!.operationalDate || cur.arrCode != next!.depCode
 
             if isOvernightStop {
-                chain.append(cur.arrCode)
+                stops.append(RouteStop(icao: cur.arrCode, dateKey: cur.operationalDate))
                 if cur.arrCode == homeBase { break }
                 if next == nil { break }
-                if chain.count >= 10 { break } // sanity cap against malformed data
+                if stops.count >= 10 { break } // sanity cap against malformed data
             }
             i += 1
         }
-        return chain.map { Lookups.threeLetterCode($0) }.joined(separator: "-")
+        return stops
+    }
+
+    static func routeChainString(_ stops: [RouteStop]) -> String {
+        stops.map { Lookups.threeLetterCode($0.icao) }.joined(separator: "-")
     }
 
     /// Once today's last flight has landed back at home base, switch into
@@ -102,7 +117,7 @@ enum DutyStatusService {
         }
 
         guard let next = nextDutyFlight(allFlights: allFlights, todayKey: todayKey) else {
-            return DutyStatusInfo(type: type, countdownText: "Kein weiterer Dienst in den nächsten 3 Wochen geplant.", briefingText: nil, routeText: nil)
+            return DutyStatusInfo(type: type, countdownText: "Kein weiterer Dienst in den nächsten 3 Wochen geplant.", briefingText: nil, routeText: nil, routeStops: nil)
         }
 
         let nextDate = next.depSchedDate ?? next.depActualDate ?? now
@@ -119,8 +134,9 @@ enum DutyStatusService {
             briefing = "Briefing: \(briefingDateLabel) - \(FlightParsing.fmtLocalTime(briefingDate)) LT"
         }
 
-        let route = upcomingRouteChain(startFlight: next, allFlights: allFlights).map { "Route: \($0)" }
+        let stops = computeRouteStops(startFlight: next, allFlights: allFlights)
+        let route = stops.map { "Route: \(routeChainString($0))" }
 
-        return DutyStatusInfo(type: type, countdownText: countdown, briefingText: briefing, routeText: route)
+        return DutyStatusInfo(type: type, countdownText: countdown, briefingText: briefing, routeText: route, routeStops: stops)
     }
 }

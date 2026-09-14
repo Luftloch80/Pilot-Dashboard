@@ -58,7 +58,8 @@ const els = {
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
   dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
-  dutyStatusRoute: document.getElementById("dutyStatusRoute"),
+  dutyStatusRouteBtn: document.getElementById("dutyStatusRouteBtn"),
+  dutyStatusWeather: document.getElementById("dutyStatusWeather"),
 
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
@@ -1374,16 +1375,18 @@ function daysUntil(dateKey) {
   return Math.round((target - today) / 86400000);
 }
 
-// Full route chain for the upcoming trip, e.g. "EDDF-LUKK-EPPO-EDDF" -
-// starts at home base, one code per overnight stop (the *last* airport
-// reached each day, per the pilot's own phrasing), ending back at home
-// base once the rotation returns there.
-function upcomingRouteChain(startFlight) {
+// One entry per overnight stop of the upcoming trip, e.g. home base on the
+// departure day, then each layover (the *last* airport reached each day,
+// per the pilot's own phrasing), then home base again on the day the
+// rotation ends. Feeds both the compact "FRA-LIS-…" route-chain string and
+// the per-city weather popup, so the two always agree on which day
+// belongs to which city.
+function computeRouteStops(startFlight) {
   const homeBase = startFlight.depCode;
   const startIdx = state.allFlights.indexOf(startFlight);
   if (startIdx === -1) return null;
 
-  const chain = [homeBase];
+  const stops = [{ icao: homeBase, dateKey: startFlight.raw && startFlight.raw.date }];
   for (let i = startIdx; i < state.allFlights.length; i++) {
     const cur = state.allFlights[i];
     const next = state.allFlights[i + 1];
@@ -1405,14 +1408,170 @@ function upcomingRouteChain(startFlight) {
     const isOvernightStop = !next || curDateKey !== nextDepDateKey || cur.arrCode !== next.depCode;
     if (!isOvernightStop) continue;
 
-    chain.push(cur.arrCode);
+    stops.push({ icao: cur.arrCode, dateKey: curDateKey });
     if (cur.arrCode === homeBase) break; // back home - rotation complete
     if (!next) break; // fetch window ran out - chain is incomplete but as far as we can tell
-    if (chain.length >= 10) break; // sanity cap against malformed data
+    if (stops.length >= 10) break; // sanity cap against malformed data
   }
-  // Built and compared above in ICAO (what the data actually is), only
-  // converted to 3-letter codes for display at the very end.
-  return chain.map(threeLetterCode).join("-");
+  return stops;
+}
+
+// ---------- per-city weather for the route chain (tap "Route: …") ----------
+//
+// Uses Open-Meteo (open-meteo.com) - free, no API key, CORS-enabled for
+// direct browser use. Two calls per city: geocode the city name to
+// coordinates, then a one-day forecast for that date. Forecasts are only
+// available a limited number of days out (Open-Meteo's free tier: ~16
+// days); a stop further out than that just shows as unavailable rather
+// than guessing.
+
+// WMO weather codes, as returned in Open-Meteo's `daily.weathercode` -
+// https://open-meteo.com/en/docs - a short, stable public standard, not
+// airline-internal data, so hardcoding it here is safe (unlike e.g. the
+// 3-letter station codes elsewhere in this file).
+const WEATHER_CODE_INFO = {
+  0: { label: "Klar", icon: "☀️" },
+  1: { label: "Meist klar", icon: "🌤️" },
+  2: { label: "Teils bewölkt", icon: "⛅" },
+  3: { label: "Bewölkt", icon: "☁️" },
+  45: { label: "Nebel", icon: "🌫️" },
+  48: { label: "Nebel (Reif)", icon: "🌫️" },
+  51: { label: "Niesel leicht", icon: "🌦️" },
+  53: { label: "Niesel", icon: "🌦️" },
+  55: { label: "Niesel stark", icon: "🌦️" },
+  56: { label: "Gefr. Niesel", icon: "🌧️" },
+  57: { label: "Gefr. Niesel stark", icon: "🌧️" },
+  61: { label: "Regen leicht", icon: "🌧️" },
+  63: { label: "Regen", icon: "🌧️" },
+  65: { label: "Regen stark", icon: "🌧️" },
+  66: { label: "Gefr. Regen", icon: "🌧️" },
+  67: { label: "Gefr. Regen stark", icon: "🌧️" },
+  71: { label: "Schnee leicht", icon: "🌨️" },
+  73: { label: "Schnee", icon: "🌨️" },
+  75: { label: "Schnee stark", icon: "❄️" },
+  77: { label: "Schneegriesel", icon: "❄️" },
+  80: { label: "Schauer leicht", icon: "🌦️" },
+  81: { label: "Schauer", icon: "🌦️" },
+  82: { label: "Schauer stark", icon: "⛈️" },
+  85: { label: "Schneeschauer", icon: "🌨️" },
+  86: { label: "Schneeschauer stark", icon: "🌨️" },
+  95: { label: "Gewitter", icon: "⛈️" },
+  96: { label: "Gewitter mit Hagel", icon: "⛈️" },
+  99: { label: "Gewitter mit Hagel", icon: "⛈️" },
+};
+
+function weatherInfoForCode(code) {
+  return WEATHER_CODE_INFO[code] || { label: "Unbekannt", icon: "🌡️" };
+}
+
+// City labels from ICAO_CITY sometimes carry a disambiguating airport name
+// in parentheses (e.g. "Rom (Fiumicino)", "London (Heathrow)") - strip
+// that for the geocoding query, the plain city name resolves better.
+function geocodeQueryFor(cityLabel) {
+  return cityLabel.replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+
+const geocodeCache = new Map(); // query -> {lat, lon} | null (null = not found/failed)
+
+async function geocodeCity(cityLabel) {
+  const query = geocodeQueryFor(cityLabel);
+  if (geocodeCache.has(query)) return geocodeCache.get(query);
+
+  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=de&format=json`;
+  let coords = null;
+  try {
+    const res = await fetchWithTimeout(url, {});
+    if (res.ok) {
+      const json = await res.json();
+      const hit = json && Array.isArray(json.results) && json.results[0];
+      if (hit) coords = { lat: hit.latitude, lon: hit.longitude };
+    }
+  } catch {
+    // leave coords null - shown as "not found" to the pilot, not guessed
+  }
+  geocodeCache.set(query, coords);
+  return coords;
+}
+
+async function fetchDailyWeather(lat, lon, dateKey) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&daily=weathercode,temperature_2m_max,temperature_2m_min&timezone=auto` +
+    `&start_date=${dateKey}&end_date=${dateKey}`;
+  try {
+    const res = await fetchWithTimeout(url, {});
+    if (!res.ok) return null;
+    const json = await res.json();
+    const d = json && json.daily;
+    if (!d || !Array.isArray(d.time) || !d.time.length) return null;
+    return { code: d.weathercode[0], tMax: d.temperature_2m_max[0], tMin: d.temperature_2m_min[0] };
+  } catch {
+    return null;
+  }
+}
+
+let currentRouteStops = null;   // [{icao, dateKey}] for the route currently shown, or null
+let routeWeatherLoaded = false; // avoid re-fetching every time the panel is toggled open again
+
+function buildRouteWeatherRow(stop) {
+  const row = document.createElement("div");
+  row.className = "route-weather-row";
+
+  const cityLabel = ICAO_CITY[stop.icao] || threeLetterCode(stop.icao);
+  const dateLabel = stop.dateKey
+    ? new Date(`${stop.dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+    : "–";
+
+  const city = document.createElement("span");
+  city.className = "route-weather-city";
+  city.textContent = `${cityLabel} (${dateLabel})`;
+
+  const info = document.createElement("span");
+  info.className = "route-weather-info muted";
+  info.textContent = "…";
+
+  row.appendChild(city);
+  row.appendChild(info);
+  return { row, infoEl: info };
+}
+
+async function loadRouteWeather() {
+  if (!currentRouteStops || routeWeatherLoaded) return;
+  routeWeatherLoaded = true;
+
+  els.dutyStatusWeather.innerHTML = "";
+  const rows = currentRouteStops.map((stop) => {
+    const { row, infoEl } = buildRouteWeatherRow(stop);
+    els.dutyStatusWeather.appendChild(row);
+    return { stop, infoEl };
+  });
+
+  await Promise.all(rows.map(async ({ stop, infoEl }) => {
+    if (!stop.dateKey) {
+      infoEl.textContent = "Kein Datum";
+      return;
+    }
+    const cityLabel = ICAO_CITY[stop.icao] || stop.icao;
+    const coords = await geocodeCity(cityLabel);
+    if (!coords) {
+      infoEl.textContent = "Ort nicht gefunden";
+      return;
+    }
+    const weather = await fetchDailyWeather(coords.lat, coords.lon, stop.dateKey);
+    if (!weather) {
+      infoEl.textContent = "Kein Forecast (zu weit voraus)";
+      return;
+    }
+    const info = weatherInfoForCode(weather.code);
+    infoEl.textContent = `${info.icon} ${Math.round(weather.tMin)}–${Math.round(weather.tMax)}°C`;
+    infoEl.title = info.label;
+  }));
+}
+
+function toggleRouteWeather() {
+  const willOpen = els.dutyStatusWeather.hidden;
+  els.dutyStatusWeather.hidden = !willOpen;
+  els.dutyStatusRouteBtn.setAttribute("aria-expanded", String(willOpen));
+  if (willOpen) loadRouteWeather();
 }
 
 function renderDutyStatus() {
@@ -1438,7 +1597,9 @@ function renderDutyStatus() {
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
     els.dutyStatusBriefing.hidden = true;
-    els.dutyStatusRoute.hidden = true;
+    els.dutyStatusRouteBtn.hidden = true;
+    els.dutyStatusWeather.hidden = true;
+    currentRouteStops = null;
   } else {
     const nextDate = next.depSchedDate || next.depActualDate;
     const days = daysUntil(localDateKey(nextDate));
@@ -1458,10 +1619,17 @@ function renderDutyStatus() {
     }
 
     // Route chain (e.g. "EDDF-LUKK-EPPO-EDDF") - shown on both Urlaub and
-    // Ortstag alike, not just Ortstag as before.
-    const route = upcomingRouteChain(next);
-    els.dutyStatusRoute.hidden = !route;
-    els.dutyStatusRoute.textContent = route ? `Route: ${route}` : "";
+    // Ortstag alike, not just Ortstag as before. Tapping it shows a short
+    // per-city weather overview (see toggleRouteWeather()).
+    const stops = computeRouteStops(next);
+    const route = stops ? stops.map((s) => threeLetterCode(s.icao)).join("-") : null;
+    currentRouteStops = stops;
+    routeWeatherLoaded = false;
+    els.dutyStatusWeather.hidden = true;
+    els.dutyStatusWeather.innerHTML = "";
+    els.dutyStatusRouteBtn.hidden = !route;
+    els.dutyStatusRouteBtn.setAttribute("aria-expanded", "false");
+    els.dutyStatusRouteBtn.textContent = route ? `Route: ${route}` : "";
   }
 }
 
@@ -1710,6 +1878,8 @@ els.resetKeyBtn.addEventListener("click", () => {
 });
 
 els.refreshBtn.addEventListener("click", loadFlights);
+
+els.dutyStatusRouteBtn.addEventListener("click", toggleRouteWeather);
 
 els.prevFlightBtn.addEventListener("click", () => {
   if (state.index > 0) { state.index--; renderFlight(); }

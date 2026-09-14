@@ -56,7 +56,7 @@ struct ContentView: View {
                     // Vacation/Ortstag (incl. post-landing) always takes
                     // priority - there's no flight or layover to show
                     // alongside it (see DutyStatusService.effectiveDutyType).
-                    DutyStatusCardView(info: dutyStatus)
+                    DutyStatusCardView(viewModel: viewModel, info: dutyStatus)
                 } else {
                     if viewModel.showFlightCard, let flight = viewModel.currentFlight {
                         FlightCardView(viewModel: viewModel, flight: flight)

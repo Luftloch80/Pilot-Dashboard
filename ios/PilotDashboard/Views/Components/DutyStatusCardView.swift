@@ -1,9 +1,13 @@
 import SwiftUI
 
 /// The Urlaub / Ortstag (incl. post-landing) card: countdown to the next
-/// duty, briefing time, and the upcoming rotation's route chain.
+/// duty, briefing time, and the upcoming rotation's route chain. Tapping
+/// the route reveals a short per-city weather overview (see
+/// DashboardViewModel.loadRouteWeather() and RouteWeatherRowView).
 struct DutyStatusCardView: View {
+    @ObservedObject var viewModel: DashboardViewModel
     let info: DutyStatusInfo
+    @State private var showWeather = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -30,10 +34,31 @@ struct DutyStatusCardView: View {
                     .padding(.top, 2)
             }
 
-            if let routeText = info.routeText {
-                Label(routeText, systemImage: "arrow.triangle.swap")
+            if let routeText = info.routeText, let stops = info.routeStops, !stops.isEmpty {
+                Button {
+                    showWeather.toggle()
+                    if showWeather {
+                        Task { await viewModel.loadRouteWeather() }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Label(routeText, systemImage: "arrow.triangle.swap")
+                        Image(systemName: showWeather ? "chevron.up" : "chevron.down")
+                            .font(.caption2)
+                    }
                     .font(.footnote)
                     .foregroundStyle(Theme.textMuted)
+                }
+                .buttonStyle(.plain)
+
+                if showWeather {
+                    VStack(spacing: 6) {
+                        ForEach(stops, id: \.self) { stop in
+                            RouteWeatherRowView(stop: stop, state: viewModel.routeWeather[DashboardViewModel.weatherKey(for: stop)])
+                        }
+                    }
+                    .padding(.top, 4)
+                }
             }
         }
         .cardStyle()

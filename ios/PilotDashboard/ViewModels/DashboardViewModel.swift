@@ -48,6 +48,13 @@ final class DashboardViewModel: ObservableObject {
     /// not just on the flight card. See checkForUpdate().
     @Published private(set) var dataStampFresh = true
 
+    // MARK: - Route weather (tap "Route: …" on the duty status card)
+
+    /// Keyed by "\(icao)|\(dateKey)" - see DutyStatusCardView. Populated
+    /// by loadRouteWeather(), called when the pilot expands the panel.
+    @Published private(set) var routeWeather: [String: RouteWeatherState] = [:]
+    private var routeWeatherLoadedForStops: [RouteStop] = []
+
     // MARK: - Crew source (OpenAirLog vs. uploaded PDF)
 
     @Published private(set) var crewSource: CrewSource = .api
@@ -86,6 +93,7 @@ final class DashboardViewModel: ObservableObject {
 
     private let client = OpenAirLogClient()
     private let currencyClient = CurrencyRateClient()
+    private let weatherClient = WeatherService()
     private var tickerTask: Task<Void, Never>?
     private var stalenessTask: Task<Void, Never>?
 
@@ -383,6 +391,47 @@ final class DashboardViewModel: ObservableObject {
         let (rates, live) = await currencyClient.rates()
         guard let rate = rates[code] else { return nil }
         return (code, rate, live)
+    }
+
+    // MARK: - Route weather
+
+    nonisolated static func weatherKey(for stop: RouteStop) -> String {
+        "\(stop.icao)|\(stop.dateKey ?? "")"
+    }
+
+    /// Fetches weather for every stop of the currently shown route chain
+    /// in parallel, called when the pilot expands the "Route: …" panel.
+    /// A no-op if already loaded for this exact route (so re-expanding
+    /// doesn't refetch), but a genuinely new route (e.g. after a manual
+    /// refresh changed the rotation) fetches fresh.
+    func loadRouteWeather() async {
+        guard let stops = dutyStatus?.routeStops, !stops.isEmpty else { return }
+        if routeWeatherLoadedForStops == stops { return }
+        routeWeatherLoadedForStops = stops
+
+        for stop in stops {
+            routeWeather[Self.weatherKey(for: stop)] = .loading
+        }
+
+        let client = weatherClient
+        await withTaskGroup(of: (String, RouteWeatherState).self) { group in
+            for stop in stops {
+                group.addTask {
+                    let key = Self.weatherKey(for: stop)
+                    guard let dateKey = stop.dateKey, !dateKey.isEmpty else { return (key, .noDate) }
+                    let cityLabel = Lookups.icaoCity[stop.icao] ?? stop.icao
+                    guard let coords = await client.geocodeCity(cityLabel) else { return (key, .notFound) }
+                    guard let weather = await client.fetchDailyWeather(lat: coords.lat, lon: coords.lon, dateKey: dateKey) else {
+                        return (key, .unavailable)
+                    }
+                    let info = WeatherService.infoForCode(weather.code)
+                    return (key, .ok(icon: info.icon, tMin: weather.tMin, tMax: weather.tMax))
+                }
+            }
+            for await (key, state) in group {
+                routeWeather[key] = state
+            }
+        }
     }
 
     // MARK: - Background loops

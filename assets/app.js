@@ -42,6 +42,8 @@ const els = {
   arrTime: document.getElementById("arrTime"),
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
+  airlineBadge: document.getElementById("airlineBadge"),
+  airlineBadgeCode: document.getElementById("airlineBadgeCode"),
 
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
@@ -423,6 +425,35 @@ function renderTimerPill(f) {
   }
 }
 
+// IATA airline designator (the leading 2 chars of the flight number, which
+// can include a digit, e.g. "4Y") -> a styled badge instead of an actual
+// logo image (avoids bundling trademarked logo assets into the repo).
+// Covers Lufthansa Group carriers a Frankfurt-based pilot is likely to see
+// on a deadhead; unrecognized prefixes fall back to the app's own accent
+// color with the raw code.
+const AIRLINE_BY_PREFIX = {
+  LH: { name: "Lufthansa", bg: "#05164d", fg: "#f9ba00" },
+  LX: { name: "Swiss", bg: "#dc0018", fg: "#ffffff" },
+  OS: { name: "Austrian Airlines", bg: "#c00d0d", fg: "#ffffff" },
+  SN: { name: "Brussels Airlines", bg: "#00286e", fg: "#ffffff" },
+  EW: { name: "Eurowings", bg: "#4b0a63", fg: "#ffffff" },
+  "4Y": { name: "Eurowings Discover", bg: "#f5a623", fg: "#1c1c1c" },
+};
+
+function renderAirlineBadge(flightNumber) {
+  const prefix = (flightNumber || "").slice(0, 2).toUpperCase();
+  if (!prefix) {
+    els.airlineBadge.hidden = true;
+    return;
+  }
+  const airline = AIRLINE_BY_PREFIX[prefix];
+  els.airlineBadge.hidden = false;
+  els.airlineBadgeCode.textContent = prefix;
+  els.airlineBadge.title = airline ? airline.name : prefix;
+  els.airlineBadge.style.setProperty("--airline-bg", airline ? airline.bg : "");
+  els.airlineBadge.style.setProperty("--airline-fg", airline ? airline.fg : "");
+}
+
 function renderFlight() {
   const f = state.flights[state.index];
   els.flightCard.hidden = !f;
@@ -439,6 +470,7 @@ function renderFlight() {
 
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;
+  renderAirlineBadge(f.flightNumber);
 
   renderCrew(f);
   ensureCrewLoaded(f);

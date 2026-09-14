@@ -282,13 +282,41 @@ body {
 
 .meta-row {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 14px;
   border-top: 1px solid var(--border);
-  padding-top: 12px;
+  padding-top: 14px;
 }
-.meta-item { flex: 1; }
-.meta-key { font-size: 0.72rem; color: var(--text-muted); text-transform: uppercase; }
-.meta-val { font-weight: 600; margin-top: 2px; }
+.meta-item { flex: 1; min-width: 0; text-align: center; }
+.meta-key {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.meta-val {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  margin-top: 3px;
+}
+#registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
+
+.airline-badge {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  background: var(--airline-bg, var(--accent));
+  color: var(--airline-fg, var(--accent-text));
+  box-shadow: 0 1px 3px color-mix(in srgb, black 20%, transparent);
+}
 
 /* Layover */
 .layover-place {

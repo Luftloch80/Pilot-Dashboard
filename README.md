@@ -29,7 +29,15 @@ Vercel als statisches Verzeichnis).
    einen Live-Countdown zur geplanten Abflugzeit (grün „-N min“ davor, rot
    „+N min“ danach) – außer bei einem **Deadhead-Flug** (`crew_position`,
    `duty_code` oder `remarks` = `"DH"` bei OpenAirLog), dann steht dort
-   stattdessen ein „DH“-Badge.
+   stattdessen ein „DH“-Badge. Zwischen Flugzeugtyp und Kennzeichen sitzt
+   mittig ein kleines **Airline-Badge**: der zweistellige IATA-Code aus der
+   Flugnummer (z. B. `LH` bei `LH1556`), farblich an die Airline angelehnt
+   – über eine lokale Tabelle `AIRLINE_BY_PREFIX` in `assets/app.js`
+   (deckt die Lufthansa-Group-Carrier ab, die auf einem Deadhead realistisch
+   vorkommen: LH, LX, OS, SN, EW, 4Y). Bewusst **kein echtes Logo-Bild**,
+   um keine markenrechtlich geschützten Logo-Dateien ins Repo aufzunehmen –
+   bei einem unbekannten Code fällt das Badge auf die App-eigene Akzentfarbe
+   zurück und zeigt trotzdem den rohen Code.
 5. Crewliste als PDF liegt in den **Settings** (Zahnrad-Icon oben rechts,
    zusammen mit dem API-Schlüssel – sonst enthalten die Settings nichts
    weiteres) und ist optional. Werden darin Crew-Zeilen erkannt,

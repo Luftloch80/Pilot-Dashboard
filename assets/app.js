@@ -367,9 +367,10 @@ function setSettingsOpen(open) {
     els.crewCard.hidden = true;
     els.dutyStatusCard.hidden = true;
   } else {
+    // renderFlight() already decides flight card vs. duty status card
+    // internally (including the post-landing "Ortstag" switch).
     renderFlight();
     renderLayover();
-    if (!state.flights.length) renderDutyStatus();
   }
 }
 
@@ -553,14 +554,25 @@ async function checkForUpdate() {
 
 function renderFlight() {
   const f = state.flights[state.index];
-  els.flightCard.hidden = !f;
-  els.crewCard.hidden = !f;
+  // 30+ min after today's last flight lands back at home base, show the
+  // Ortstag-style duty status view instead of the (by then stale-feeling)
+  // completed flight card - see shouldShowPostLandingHomeView().
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView();
+
+  els.flightCard.hidden = !showFlightCard;
+  els.crewCard.hidden = !showFlightCard;
   // Whatever's now shown (a fresh load, or switching to another already-
   // loaded flight) is the current baseline - mark it fresh again until the
   // next background check says otherwise.
   dataStampFresh = true;
-  renderDataStamp(f);
-  if (!f) return;
+  renderDataStamp(showFlightCard ? f : null);
+
+  if (!showFlightCard) {
+    els.flightNav.hidden = true;
+    renderDutyStatus();
+    return;
+  }
+  els.dutyStatusCard.hidden = true;
 
   els.flightNumber.textContent = f.flightNumber;
   renderTimerPill(f);
@@ -816,24 +828,25 @@ async function loadFlights() {
   state.allDuties = allDuties;
   renderLayover();
 
-  if (!flights.length) {
-    renderDutyStatus();
+  state.index = flights.length ? pickInitialIndex(flights) : 0;
+  // renderFlight() itself decides flight card vs. duty status card -
+  // including the post-landing switch to "Ortstag" mode once today's last
+  // flight landed at home base 30+ minutes ago (shouldShowPostLandingHomeView()).
+  renderFlight();
+
+  if (els.flightCard.hidden) {
     // A short hint only when the dashboard would otherwise show nothing at
-    // all (no flight, no layover, no recognized vacation/Ortstag status) -
-    // so it's clear the app loaded fine rather than looking broken/blank.
+    // all (no flight card, no layover, no recognized vacation/Ortstag/
+    // post-landing status) - so it's clear the app loaded fine rather than
+    // looking broken/blank.
     const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
     showBanner(nothingToShow ? "Heute nichts geplant." : "", "");
-    renderFlight();
-    return;
+  } else {
+    showBanner("", "");
+    // Land on the flight that matches the current time, not wherever the
+    // page happened to be scrolled (e.g. after a refresh from further down).
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
-  els.dutyStatusCard.hidden = true;
-  state.index = pickInitialIndex(flights);
-  showBanner("", "");
-  renderFlight();
-  // Land on the flight that matches the current time, not wherever the
-  // page happened to be scrolled (e.g. after a refresh from further down).
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // ---------- PDF crew list (optional, supplementary) ----------
@@ -1249,6 +1262,35 @@ function todayDutyType() {
   return null;
 }
 
+// Home base the rotation returns to - confirmed by the pilot as Frankfurt
+// (OpenAirLog uses the ICAO code EDDF throughout, not the IATA "FRA").
+const HOME_BASE = "EDDF";
+const POST_LANDING_SWITCH_MS = 30 * 60 * 1000;
+
+// Once today's last flight has landed back at home base, the pilot wants
+// the dashboard to switch into the same "Ortstag" view as an actual
+// ORTSTAG duty_code would produce - 30 minutes after that flight's
+// *scheduled* arrival, not the actual one (matches the rest of the app,
+// which times things off the schedule rather than waiting on actual
+// block times that may never get filled in). Only applies while looking
+// at the last flight of the day, so manually browsing an earlier leg via
+// the nav arrows isn't interrupted by the switch.
+function shouldShowPostLandingHomeView() {
+  const n = state.flights.length;
+  if (!n || state.index !== n - 1) return false;
+  const last = state.flights[n - 1];
+  if (last.arrCode !== HOME_BASE || !last.arrSchedDate) return false;
+  return Date.now() - last.arrSchedDate.getTime() >= POST_LANDING_SWITCH_MS;
+}
+
+// What renderDutyStatus() actually shows: either a real duty_code
+// (vacation/Ortstag) or, absent that, the post-landing override above -
+// both end up looking like "Ortstag" since either way there's no more
+// flying scheduled for the rest of today.
+function effectiveDutyType() {
+  return todayDutyType() || (shouldShowPostLandingHomeView() ? "homeday" : null);
+}
+
 // First real flight strictly after today - "next duty" for both vacation
 // and Ortstag alike, since a home day right after a vacation isn't duty
 // either and should just extend the count (any non-flight day in between
@@ -1296,7 +1338,7 @@ function upcomingLayovers(startFlight) {
 }
 
 function renderDutyStatus() {
-  const type = todayDutyType();
+  const type = effectiveDutyType();
   if (!type) {
     els.dutyStatusCard.hidden = true;
     return;
@@ -1328,6 +1370,21 @@ function renderDutyStatus() {
   } else {
     els.dutyStatusLayovers.hidden = true;
   }
+}
+
+// Called every 30s (see the ticker below) to catch the post-landing switch
+// live, without going through the full renderFlight() - that would reset
+// dataStampFresh on every tick, which is about OpenAirLog data staleness
+// and has nothing to do with this purely time-based UI transition.
+function tickPostLandingSwitch() {
+  if (els.flightCard.hidden || !shouldShowPostLandingHomeView()) return;
+  els.flightCard.hidden = true;
+  els.crewCard.hidden = true;
+  els.flightNav.hidden = true;
+  els.dataStamp.hidden = true; // tied to a specific flight, no longer relevant once switched
+  renderDutyStatus();
+  const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
+  showBanner(nothingToShow ? "Heute nichts geplant." : "", "");
 }
 
 let currentLayoverKey = null; // roomKeyFor(arrCode, hotel) for the own room-number input
@@ -1615,6 +1672,7 @@ setInterval(() => {
   const f = state.flights[state.index];
   if (f) renderTimerPill(f);
   renderLayover();
+  tickPostLandingSwitch();
 }, 30000);
 
 // Passive background check only - never auto-applies new data, just flips

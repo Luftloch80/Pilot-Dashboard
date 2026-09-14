@@ -181,7 +181,21 @@ Vercel als statisches Verzeichnis).
    Heimatbasis-Flughafen der Rotation (der Abflugort des ersten Fluges)
    erreicht wird. Bei **Urlaub** wird diese Liste bewusst nicht gezeigt, da
    zu weit in die Zukunft geschaut werden müsste, um sie sinnvoll zu
-   befüllen.
+   befüllen. **Automatischer Wechsel nach der Landung:** Landet der letzte
+   Flug des Tages am Heimatbasis-Flughafen **EDDF** (Frankfurt), schaltet
+   das Dashboard **30 Minuten nach der planmäßigen Landezeit** automatisch
+   in denselben „Zuhause (Ortstag)“-Modus wie oben – auch ohne einen
+   echten `ORTSTAG`-Eintrag für diesen Tag, da nach der Landung ja ohnehin
+   kein weiterer Dienst mehr ansteht. Das gilt bewusst nur für die
+   *letzte* Flugkarte des Tages (nicht z. B. beim manuellen Zurückblättern
+   auf einen früheren Flug per Pfeil) und richtet sich nach der
+   **planmäßigen**, nicht der tatsächlichen Landezeit – landet der letzte
+   Flug woanders als EDDF, bleibt es bei der gewohnten Flugkarte. Der
+   Wechsel selbst passiert im Hintergrund über den ohnehin laufenden
+   30-Sekunden-Timer (`tickPostLandingSwitch()` in `assets/app.js`), ohne
+   dabei die grün/rot-Frische-Anzeige neben ↻ zu beeinflussen – die wird
+   beim Umschalten einfach ausgeblendet, da sie sich auf einen bestimmten
+   Flug bezieht, der dann nicht mehr im Fokus steht.
 
 ## API-Endpunkte
 

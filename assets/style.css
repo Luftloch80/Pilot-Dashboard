@@ -369,8 +369,24 @@ body {
 
 /* Duty status (Urlaub / Ortstag) */
 #dutyStatusCountdown { margin-top: 4px; }
-.duty-briefing {
+
+/* Briefing/Ende as a two-column grid so "Briefing:" and "Ende:" (different
+   lengths) still leave their colons lined up under each other - the label
+   column sizes to the longer of the two, both rows share it. */
+.duty-briefing-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 10px;
+  row-gap: 4px;
   margin-top: 10px;
+}
+.duty-briefing-rows .duty-briefing {
+  display: contents; /* let the label/value spans sit directly in the grid */
+  margin-top: 0;
+}
+.duty-briefing-rows .duty-briefing[hidden] { display: none; }
+.duty-briefing-label,
+.duty-briefing-value {
   font-size: 1.3rem;
   font-weight: 700;
   color: var(--text);

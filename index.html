@@ -155,8 +155,10 @@
   <section id="dutyStatusCard" class="card duty-status-card" hidden>
     <h2 id="dutyStatusTitle">–</h2>
     <p id="dutyStatusCountdown" class="muted"></p>
-    <p id="dutyStatusBriefing" class="duty-briefing" hidden></p>
-    <p id="dutyStatusEnd" class="duty-briefing" hidden></p>
+    <div class="duty-briefing-rows">
+      <p id="dutyStatusBriefing" class="duty-briefing" hidden><span class="duty-briefing-label">Briefing:</span><span id="dutyStatusBriefingValue" class="duty-briefing-value"></span></p>
+      <p id="dutyStatusEnd" class="duty-briefing" hidden><span class="duty-briefing-label">Ende:</span><span id="dutyStatusEndValue" class="duty-briefing-value"></span></p>
+    </div>
     <button id="dutyStatusRouteBtn" type="button" class="route-toggle muted small" hidden aria-expanded="false"></button>
     <div id="dutyStatusWeather" class="route-weather" hidden></div>
   </section>
@@ -214,6 +216,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=28"></script>
+<script src="assets/app.js?v=29"></script>
 </body>
 </html>

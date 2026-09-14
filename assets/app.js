@@ -58,7 +58,9 @@ const els = {
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
   dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
+  dutyStatusBriefingValue: document.getElementById("dutyStatusBriefingValue"),
   dutyStatusEnd: document.getElementById("dutyStatusEnd"),
+  dutyStatusEndValue: document.getElementById("dutyStatusEndValue"),
   dutyStatusRouteBtn: document.getElementById("dutyStatusRouteBtn"),
   dutyStatusWeather: document.getElementById("dutyStatusWeather"),
 
@@ -1650,7 +1652,7 @@ function renderDutyStatus() {
       const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
       const briefingDateLabel = `${weekdayShortLocal(briefing)}, ${briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusBriefing.hidden = false;
-      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel} - ${fmtLocalTime(briefing)} LT`;
+      els.dutyStatusBriefingValue.textContent = `${briefingDateLabel} - ${fmtLocalTime(briefing)} LT`;
     } else {
       els.dutyStatusBriefing.hidden = true;
     }
@@ -1671,7 +1673,7 @@ function renderDutyStatus() {
       const end = new Date(endFlight.arrSchedDate.getTime() + POST_LANDING_SWITCH_MS);
       const endDateLabel = `${weekdayShortLocal(end)}, ${end.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusEnd.hidden = false;
-      els.dutyStatusEnd.textContent = `Ende: ${endDateLabel} - ${fmtLocalTime(end)} LT`;
+      els.dutyStatusEndValue.textContent = `${endDateLabel} - ${fmtLocalTime(end)} LT`;
     } else {
       els.dutyStatusEnd.hidden = true;
     }

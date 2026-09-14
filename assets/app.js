@@ -5,6 +5,12 @@ const STORAGE_KEY = "oal_api_key";
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const FETCH_TIMEOUT_MS = 15000;
 
+// Home base the rotation returns to - confirmed by the pilot as Frankfurt
+// (OpenAirLog uses the ICAO code EDDF throughout, not the IATA "FRA").
+// Used both to detect the post-landing Ortstag switch and to make sure
+// landing back home is never mistaken for a hotel layover.
+const HOME_BASE = "EDDF";
+
 // Plain fetch() never times out on its own - a stalled connection (bad
 // network, an unresponsive server) would otherwise leave the UI stuck on
 // "Lade Flugdaten …" forever. Aborts after FETCH_TIMEOUT_MS instead.
@@ -50,6 +56,7 @@ const els = {
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
+  dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
   dutyStatusLayovers: document.getElementById("dutyStatusLayovers"),
   dutyStatusLayoverList: document.getElementById("dutyStatusLayoverList"),
 
@@ -112,6 +119,17 @@ function fmtTime(d) {
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${hh}:${mm}Z`;
+}
+
+// Local (device) time, deliberately not UTC like fmtTime() - used only for
+// the briefing-time hint, where what matters is the wall-clock time to be
+// at the airport by, in the pilot's own timezone (home base and device are
+// both assumed to be the same timezone, i.e. Europe/Berlin).
+function fmtLocalTime(d) {
+  if (!d) return "–";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 // Confirmed OpenAirLog schema: scheduled/actual times are standalone
@@ -826,9 +844,12 @@ async function loadFlights() {
   state.flights = flights;
   state.allFlights = allFlights;
   state.allDuties = allDuties;
+  // Set before renderLayover(): it (indirectly, via effectiveDutyType())
+  // reads state.index to check whether the post-landing switch applies,
+  // which needs it to already reflect today's freshly loaded flights.
+  state.index = flights.length ? pickInitialIndex(flights) : 0;
   renderLayover();
 
-  state.index = flights.length ? pickInitialIndex(flights) : 0;
   // renderFlight() itself decides flight card vs. duty status card -
   // including the post-landing switch to "Ortstag" mode once today's last
   // flight landed at home base 30+ minutes ago (shouldShowPostLandingHomeView()).
@@ -1168,6 +1189,10 @@ function findApiLayover(allFlights) {
     if (!current || arr > currentArr) { current = f; currentArr = arr; }
   }
   if (!current) return null;
+  // Landing back at home base is being home, not a layover - without this,
+  // the most recent arrival being EDDF (e.g. right before a vacation or
+  // Ortstag) would otherwise show a nonsensical "layover" card for home.
+  if (current.arrCode === HOME_BASE) return null;
   const alreadyDeparted = allFlights.some((f) => {
     const dep = f.depActualDate || f.depSchedDate;
     return dep && dep > currentArr && dep <= now;
@@ -1262,10 +1287,8 @@ function todayDutyType() {
   return null;
 }
 
-// Home base the rotation returns to - confirmed by the pilot as Frankfurt
-// (OpenAirLog uses the ICAO code EDDF throughout, not the IATA "FRA").
-const HOME_BASE = "EDDF";
 const POST_LANDING_SWITCH_MS = 30 * 60 * 1000;
+const BRIEFING_LEAD_MS = 120 * 60 * 1000;
 
 // Once today's last flight has landed back at home base, the pilot wants
 // the dashboard to switch into the same "Ortstag" view as an actual
@@ -1350,12 +1373,25 @@ function renderDutyStatus() {
 
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
+    els.dutyStatusBriefing.hidden = true;
   } else {
     const nextDate = next.depSchedDate || next.depActualDate;
     const days = daysUntil(localDateKey(nextDate));
     const dayWord = days === 1 ? "Tag" : "Tage";
     const dateLabel = nextDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
     els.dutyStatusCountdown.textContent = `Noch ${days} ${dayWord} bis zum nächsten Dienst (${dateLabel}).`;
+
+    // Briefing = 120 min before the next duty's scheduled departure, shown
+    // in local (not Zulu) time since that's what actually determines when
+    // to leave for the airport.
+    if (next.depSchedDate) {
+      const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
+      const briefingDateLabel = briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+      els.dutyStatusBriefing.hidden = false;
+      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel}, ${fmtLocalTime(briefing)} (lokal)`;
+    } else {
+      els.dutyStatusBriefing.hidden = true;
+    }
   }
 
   if (type === "homeday" && next) {
@@ -1390,7 +1426,10 @@ function tickPostLandingSwitch() {
 let currentLayoverKey = null; // roomKeyFor(arrCode, hotel) for the own room-number input
 
 function renderLayover() {
-  const layover = findApiLayover(state.allFlights);
+  // Belt-and-suspenders on top of the HOME_BASE check in findApiLayover():
+  // no layover card (and thus no room-number field) while on vacation or
+  // an Ortstag - there's nowhere to have a hotel room on either.
+  const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   els.layoverCard.hidden = !layover;
   currentLayoverKey = null;
   if (!layover) return;

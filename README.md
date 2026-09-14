@@ -195,7 +195,21 @@ Vercel als statisches Verzeichnis).
    30-Sekunden-Timer (`tickPostLandingSwitch()` in `assets/app.js`), ohne
    dabei die grün/rot-Frische-Anzeige neben ↻ zu beeinflussen – die wird
    beim Umschalten einfach ausgeblendet, da sie sich auf einen bestimmten
-   Flug bezieht, der dann nicht mehr im Fokus steht.
+   Flug bezieht, der dann nicht mehr im Fokus steht. **Keine Zimmernummer
+   auf Urlaub/Ortstag:** Landet der letzte bekannte Flug am
+   Heimatbasis-Flughafen `HOME_BASE` (`EDDF`), zählt das nicht mehr als
+   Layover (`findApiLayover()` gibt dafür explizit `null` zurück) – sonst
+   hätte die App nach jeder Heimkehr fälschlich eine Layover-Karte mit
+   Zimmernummer-Feld für „Frankfurt“ gezeigt. Zusätzlich blendet
+   `renderLayover()` die Layover-Karte generell aus, solange Urlaub,
+   Ortstag oder der automatische Nach-der-Landung-Modus aktiv sind – für
+   eine Hotel-Zimmernummer gibt es dort ja ohnehin keinen Anlass.
+   **Briefing-Zeit:** Auf der Urlaub- wie der Ortstag-Karte steht
+   zusätzlich zum Tage-Countdown die Uhrzeit des nächsten Diensts **minus
+   120 Minuten** als „Briefing: TT.MM., HH:MM (lokal)“ – bewusst in
+   **lokaler Zeit** (Gerätezeitzone, über `fmtLocalTime()`), nicht in Zulu
+   wie sonst auf dem Dashboard üblich, weil dafür die tatsächliche Uhrzeit
+   zum Losfahren zählt.
 
 ## API-Endpunkte
 

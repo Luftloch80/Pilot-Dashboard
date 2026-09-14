@@ -334,6 +334,7 @@ body {
 
 /* Duty status (Urlaub / Ortstag) */
 #dutyStatusCountdown { margin-top: 4px; }
+#dutyStatusBriefing { margin-top: 8px; font-variant-numeric: tabular-nums; }
 
 .duty-status-layovers { margin-top: 16px; }
 .duty-status-layover-list {

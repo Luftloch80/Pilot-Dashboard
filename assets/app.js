@@ -133,6 +133,24 @@ function fmtLocalTime(d) {
   return `${hh}:${mm}`;
 }
 
+const WEEKDAY_SHORT_DE = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+
+// Weekday for a plain "yyyy-MM-dd" calendar date (route weather rows) -
+// computed from its own UTC components, independent of the device's
+// timezone, matching how these dates are defined elsewhere (OpenAirLog's
+// own "date" field, not a calendar day derived from local time).
+function weekdayShortForDateKey(dateKey) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey || "");
+  if (!m) return "";
+  return WEEKDAY_SHORT_DE[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()];
+}
+
+// Weekday for a real Date moment already shown in local time (the
+// briefing line) - local calendar day, matching fmtLocalTime().
+function weekdayShortLocal(d) {
+  return WEEKDAY_SHORT_DE[d.getDay()];
+}
+
 // Confirmed OpenAirLog schema: scheduled/actual times are standalone
 // "HH:MM:SS" strings, not full datetimes - combine with the flight's
 // separate "date" field. Cross-checked as UTC against a real response
@@ -1518,7 +1536,7 @@ function buildRouteWeatherRow(stop) {
 
   const cityLabel = ICAO_CITY[stop.icao] || threeLetterCode(stop.icao);
   const dateLabel = stop.dateKey
-    ? new Date(`${stop.dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+    ? `${weekdayShortForDateKey(stop.dateKey)}, ${new Date(`${stop.dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`
     : "–";
 
   const city = document.createElement("span");
@@ -1615,7 +1633,7 @@ function renderDutyStatus() {
     // to leave for the airport.
     if (next.depSchedDate) {
       const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
-      const briefingDateLabel = briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+      const briefingDateLabel = `${weekdayShortLocal(briefing)}, ${briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusBriefing.hidden = false;
       els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel} - ${fmtLocalTime(briefing)} LT`;
     } else {

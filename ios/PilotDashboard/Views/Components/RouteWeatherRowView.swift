@@ -21,12 +21,13 @@ struct RouteWeatherRowView: View {
 
     private var cityLabel: String {
         let city = Lookups.cityForIcao(stop.icao) ?? Lookups.threeLetterCode(stop.icao)
-        let dateLabel = stop.dateKey.flatMap(DateKey.date(from:)).map { d -> String in
-            let f = DateFormatter()
-            f.dateFormat = "dd.MM."
-            return f.string(from: d)
-        } ?? "–"
-        return "\(city) (\(dateLabel))"
+        guard let dateKey = stop.dateKey, let date = DateKey.date(from: dateKey) else {
+            return "\(city) (–)"
+        }
+        let f = DateFormatter()
+        f.dateFormat = "dd.MM."
+        let weekday = DateKey.weekdayShort(for: date)
+        return "\(city) (\(weekday), \(f.string(from: date)))"
     }
 
     private var infoText: String {

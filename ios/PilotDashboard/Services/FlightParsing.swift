@@ -30,6 +30,20 @@ enum DateKey {
         let dc = utc.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", dc.year ?? 0, dc.month ?? 0, dc.day ?? 0)
     }
+
+    private static let weekdayShortDE = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"]
+
+    /// "Mo"/"Di"/… for a real Date moment - local calendar day.
+    static func weekdayShort(for date: Date) -> String {
+        weekdayShortDE[Calendar.current.component(.weekday, from: date) - 1]
+    }
+
+    /// "Mo"/"Di"/… for a "yyyy-MM-dd" key, via the same local-calendar
+    /// parsing as date(from:) - always matches whatever calendar day that
+    /// key already resolves to elsewhere.
+    static func weekdayShort(forKey key: String) -> String? {
+        date(from: key).map(weekdayShort(for:))
+    }
 }
 
 enum FlightParsing {

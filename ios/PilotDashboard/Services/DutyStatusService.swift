@@ -130,7 +130,7 @@ enum DutyStatusService {
         var briefing: String?
         if let depSched = next.depSchedDate {
             let briefingDate = depSched.addingTimeInterval(-Constants.briefingLeadSeconds)
-            let briefingDateLabel = dateFormatter.string(from: briefingDate)
+            let briefingDateLabel = "\(DateKey.weekdayShort(for: briefingDate)), \(dateFormatter.string(from: briefingDate))"
             briefing = "Briefing: \(briefingDateLabel) - \(FlightParsing.fmtLocalTime(briefingDate)) LT"
         }
 

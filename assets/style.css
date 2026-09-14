@@ -224,11 +224,6 @@ body {
   margin-bottom: 14px;
 }
 .flight-number { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; }
-.flight-callsign {
-  margin-top: 2px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-}
 
 .status-pill {
   font-size: 0.78rem;

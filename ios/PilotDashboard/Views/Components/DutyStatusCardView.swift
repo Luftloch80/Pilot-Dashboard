@@ -34,6 +34,12 @@ struct DutyStatusCardView: View {
                     .padding(.top, 2)
             }
 
+            if let endText = info.endText {
+                Label(endText, systemImage: "flag.checkered")
+                    .font(.title3.bold())
+                    .foregroundStyle(Theme.text)
+            }
+
             if let routeText = info.routeText, let stops = info.routeStops, !stops.isEmpty {
                 Button {
                     showWeather.toggle()

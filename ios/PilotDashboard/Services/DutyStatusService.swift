@@ -3,16 +3,26 @@ import Foundation
 /// One overnight stop of the upcoming trip - see
 /// DutyStatusService.computeRouteStops. `dateKey` is OpenAirLog's own
 /// operationalDate for the flight that reaches this stop, used both for
-/// display and to look up that day's weather.
+/// display and to look up that day's weather. `arrSchedDate` (only set for
+/// stops reached by an actual flight, not the initial home-base anchor) is
+/// that flight's real scheduled arrival, used by rotationEndArrival().
 struct RouteStop: Equatable, Hashable, Sendable {
     let icao: String
     let dateKey: String?
+    let arrSchedDate: Date?
+
+    init(icao: String, dateKey: String?, arrSchedDate: Date? = nil) {
+        self.icao = icao
+        self.dateKey = dateKey
+        self.arrSchedDate = arrSchedDate
+    }
 }
 
 struct DutyStatusInfo {
     let type: DutyType
     let countdownText: String
     let briefingText: String?
+    let endText: String?
     let routeText: String?
     let routeStops: [RouteStop]?
 }
@@ -72,7 +82,7 @@ enum DutyStatusService {
             let isOvernightStop = next == nil || cur.operationalDate != next!.operationalDate || cur.arrCode != next!.depCode
 
             if isOvernightStop {
-                stops.append(RouteStop(icao: cur.arrCode, dateKey: cur.operationalDate))
+                stops.append(RouteStop(icao: cur.arrCode, dateKey: cur.operationalDate, arrSchedDate: cur.arrSchedDate))
                 if cur.arrCode == homeBase { break }
                 if next == nil { break }
                 if stops.count >= 10 { break } // sanity cap against malformed data
@@ -84,6 +94,14 @@ enum DutyStatusService {
 
     static func routeChainString(_ stops: [RouteStop]) -> String {
         stops.map { Lookups.threeLetterCode($0.icao) }.joined(separator: "-")
+    }
+
+    /// Scheduled arrival of the flight that lands the upcoming trip back
+    /// at home base, or nil if the rotation doesn't return home within the
+    /// fetched window, or is a "trip" that never leaves in the first place.
+    static func rotationEndArrival(_ stops: [RouteStop], homeBase: String = Constants.homeBase) -> Date? {
+        guard stops.count > 1, let last = stops.last, last.icao == homeBase else { return nil }
+        return last.arrSchedDate
     }
 
     /// Once today's last flight has landed back at home base, switch into
@@ -117,7 +135,7 @@ enum DutyStatusService {
         }
 
         guard let next = nextDutyFlight(allFlights: allFlights, todayKey: todayKey) else {
-            return DutyStatusInfo(type: type, countdownText: "Kein weiterer Dienst in den nächsten 3 Wochen geplant.", briefingText: nil, routeText: nil, routeStops: nil)
+            return DutyStatusInfo(type: type, countdownText: "Kein weiterer Dienst in den nächsten 3 Wochen geplant.", briefingText: nil, endText: nil, routeText: nil, routeStops: nil)
         }
 
         let nextDate = next.depSchedDate ?? next.depActualDate ?? now
@@ -137,6 +155,17 @@ enum DutyStatusService {
         let stops = computeRouteStops(startFlight: next, allFlights: allFlights)
         let route = stops.map { "Route: \(routeChainString($0))" }
 
-        return DutyStatusInfo(type: type, countdownText: countdown, briefingText: briefing, routeText: route, routeStops: stops)
+        // Ende der Tour = letzte Landung in Frankfurt + 30 Minuten - the
+        // same "30 min after landing" moment that switches today's own
+        // view into Ortstag mode (shouldShowPostLandingHomeView), just for
+        // the *end* of the upcoming trip instead of today.
+        var end: String?
+        if let stops, let arrival = rotationEndArrival(stops) {
+            let endDate = arrival.addingTimeInterval(Constants.postLandingSwitchSeconds)
+            let endDateLabel = "\(DateKey.weekdayShort(for: endDate)), \(dateFormatter.string(from: endDate))"
+            end = "Ende: \(endDateLabel) - \(FlightParsing.fmtLocalTime(endDate)) LT"
+        }
+
+        return DutyStatusInfo(type: type, countdownText: countdown, briefingText: briefing, endText: end, routeText: route, routeStops: stops)
     }
 }

@@ -58,6 +58,7 @@ const els = {
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
   dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
+  dutyStatusEnd: document.getElementById("dutyStatusEnd"),
   dutyStatusRouteBtn: document.getElementById("dutyStatusRouteBtn"),
   dutyStatusWeather: document.getElementById("dutyStatusWeather"),
 
@@ -1426,12 +1427,25 @@ function computeRouteStops(startFlight) {
     const isOvernightStop = !next || curDateKey !== nextDepDateKey || cur.arrCode !== next.depCode;
     if (!isOvernightStop) continue;
 
-    stops.push({ icao: cur.arrCode, dateKey: curDateKey });
+    // `flight` (the actual leg that reaches this stop, not just its ICAO/
+    // date) lets rotationEndFlight() below find the real scheduled arrival
+    // time for the "Ende: …" line - the chain string itself only needs
+    // icao/dateKey.
+    stops.push({ icao: cur.arrCode, dateKey: curDateKey, flight: cur });
     if (cur.arrCode === homeBase) break; // back home - rotation complete
     if (!next) break; // fetch window ran out - chain is incomplete but as far as we can tell
     if (stops.length >= 10) break; // sanity cap against malformed data
   }
   return stops;
+}
+
+// The flight that lands the upcoming trip back at home base, or null if
+// the rotation doesn't return home within the fetched window (fetch
+// window ran out) or is a "trip" that never leaves in the first place.
+function rotationEndFlight(stops) {
+  if (!stops || stops.length < 2) return null;
+  const last = stops[stops.length - 1];
+  return last.icao === HOME_BASE ? last.flight : null;
 }
 
 // ---------- per-city weather for the route chain (tap "Route: …") ----------
@@ -1619,6 +1633,7 @@ function renderDutyStatus() {
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
     els.dutyStatusBriefing.hidden = true;
+    els.dutyStatusEnd.hidden = true;
     els.dutyStatusRouteBtn.hidden = true;
     els.dutyStatusWeather.hidden = true;
     currentRouteStops = null;
@@ -1646,6 +1661,20 @@ function renderDutyStatus() {
     const stops = computeRouteStops(next);
     const route = stops ? stops.map((s) => threeLetterCode(s.icao)).join("-") : null;
     currentRouteStops = stops;
+
+    // Ende der Tour = letzte Landung in Frankfurt + 30 Minuten - the same
+    // "30 min after landing" moment that switches today's own view into
+    // Ortstag mode (shouldShowPostLandingHomeView), just for the *end* of
+    // the upcoming trip instead of today. Local time, like the briefing.
+    const endFlight = rotationEndFlight(stops);
+    if (endFlight && endFlight.arrSchedDate) {
+      const end = new Date(endFlight.arrSchedDate.getTime() + POST_LANDING_SWITCH_MS);
+      const endDateLabel = `${weekdayShortLocal(end)}, ${end.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
+      els.dutyStatusEnd.hidden = false;
+      els.dutyStatusEnd.textContent = `Ende: ${endDateLabel} - ${fmtLocalTime(end)} LT`;
+    } else {
+      els.dutyStatusEnd.hidden = true;
+    }
     routeWeatherLoaded = false;
     els.dutyStatusWeather.hidden = true;
     els.dutyStatusWeather.innerHTML = "";

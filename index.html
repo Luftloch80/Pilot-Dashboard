@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=13" />
+<link rel="stylesheet" href="assets/style.css?v=14" />
 </head>
 <body>
 
@@ -26,8 +26,26 @@
   </div>
   <div class="topbar-actions">
     <span id="dataStamp" class="data-stamp muted small" hidden></span>
-    <button id="refreshBtn" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren" hidden>↻</button>
-    <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">⚙︎</button>
+    <button id="refreshBtn" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren" hidden>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M23 4v6h-6" />
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+      </svg>
+    </button>
+    <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="7" />
+        <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(45 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(90 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(135 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(180 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(225 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(270 12 12)" />
+        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(315 12 12)" />
+      </svg>
+    </button>
   </div>
 </header>
 

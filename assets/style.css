@@ -115,10 +115,16 @@ body {
   justify-content: center;
 }
 
-/* Same button box as #refreshBtn, but the gear glyph (⚙︎) renders visibly
-   smaller than the refresh arrow (↻) at an identical font-size - bumped up
-   so both icons read as the same size. */
-#settingsBtn { font-size: 1.4rem; }
+/* #refreshBtn and #settingsBtn draw their icon as an inline SVG (not a
+   Unicode glyph) specifically so they're guaranteed the same visual size -
+   text glyphs like ↻/⚙︎ render at inconsistent, platform-dependent sizes
+   (emoji-style presentation, different intrinsic glyph metrics) that a
+   font-size tweak alone can't reliably equalize. */
+.icon-btn svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
 
 .app {
   max-width: 560px;

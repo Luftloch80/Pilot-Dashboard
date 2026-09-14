@@ -7,10 +7,16 @@ struct DutyStatusCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: info.type == .vacation ? "sun.max" : "house")
-                    .foregroundStyle(Theme.accent)
-                Text(info.type.title).font(.title3.bold())
+            // "Ortstag" itself isn't shown - the countdown/briefing/route
+            // text already makes clear there's no flight today without
+            // needing the label spelled out. "Urlaub" still gets a title,
+            // since nothing else on the card says so otherwise.
+            if info.type == .vacation {
+                HStack {
+                    Image(systemName: "sun.max")
+                        .foregroundStyle(Theme.accent)
+                    Text(info.type.title).font(.title3.bold())
+                }
             }
 
             Text(info.countdownText)

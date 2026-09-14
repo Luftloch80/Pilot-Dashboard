@@ -1428,7 +1428,12 @@ function renderDutyStatus() {
   // all to show one for.
   renderAirlineBadge(next ? next.flightNumber : null);
   els.dutyStatusCard.hidden = false;
-  els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "Ortstag";
+  // "Ortstag" itself isn't shown - the countdown/briefing/route text
+  // already makes clear there's no flight today without needing the
+  // label spelled out. "Urlaub" still gets a title, since nothing else
+  // on the card says so otherwise.
+  els.dutyStatusTitle.hidden = type !== "vacation";
+  els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "";
 
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";

@@ -1239,7 +1239,7 @@ function findPickupLocal(lines) {
   const puRe = /\bPU\b\s*(\d{1,2}):(\d{2})\b/;
   for (const line of lines) {
     const m = line.match(puRe);
-    if (m) return `${m[1].padStart(2, "0")}:${m[2]} (lokal)`;
+    if (m) return `${m[1].padStart(2, "0")}:${m[2]} LT`;
   }
 
   // Fallback: a spelled-out "Pickup"/"Abholung" mention, format unconfirmed.
@@ -1249,10 +1249,10 @@ function findPickupLocal(lines) {
     const pair = line.match(/(\d{3,4})\s*\/\s*(\d{3,4})/);
     if (pair) {
       const local = pair[2].padStart(4, "0");
-      return `${local.slice(0, 2)}:${local.slice(2)} (lokal)`;
+      return `${local.slice(0, 2)}:${local.slice(2)} LT`;
     }
     const single = line.match(/\b(\d{1,2}):(\d{2})\b/);
-    if (single) return `${single[1].padStart(2, "0")}:${single[2]} (lokal)`;
+    if (single) return `${single[1].padStart(2, "0")}:${single[2]} LT`;
     return line.trim();
   }
   return null;
@@ -1421,7 +1421,7 @@ function renderDutyStatus() {
       const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
       const briefingDateLabel = briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
       els.dutyStatusBriefing.hidden = false;
-      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel}, ${fmtLocalTime(briefing)} (lokal)`;
+      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel}, ${fmtLocalTime(briefing)} LT`;
     } else {
       els.dutyStatusBriefing.hidden = true;
     }

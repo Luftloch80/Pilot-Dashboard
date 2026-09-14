@@ -60,7 +60,7 @@ enum PDFCrewParser {
             if let m = puRegex.firstMatch(in: line, range: range), m.numberOfRanges >= 3 {
                 let hh = substring(line, m.range(at: 1))
                 let mm = substring(line, m.range(at: 2))
-                return "\(pad(hh)):\(mm) (lokal)"
+                return "\(pad(hh)):\(mm) LT"
             }
         }
 
@@ -72,7 +72,7 @@ enum PDFCrewParser {
             if let m = timeRegex.firstMatch(in: line, range: fullRange), m.numberOfRanges >= 3 {
                 let hh = substring(line, m.range(at: 1))
                 let mm = substring(line, m.range(at: 2))
-                return "\(pad(hh)):\(mm) (lokal)"
+                return "\(pad(hh)):\(mm) LT"
             }
             return line
         }

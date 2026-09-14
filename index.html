@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=1" />
+<link rel="stylesheet" href="assets/style.css?v=2" />
 </head>
 <body>
 
@@ -133,25 +133,30 @@
     <h2>Layover</h2>
     <div class="layover-place" id="layoverPlace">---</div>
     <div class="layover-hotel" id="layoverHotel" hidden></div>
-    <label for="roomNumberInput">Eigene Zimmernummer</label>
-    <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
     <p id="layoverPickup" class="muted small" hidden></p>
 
-    <div id="layoverCurrency" class="layover-currency" hidden>
-      <div class="layover-crew-title muted small">Umrechnung (<span id="currencyCode">–</span>)</div>
-      <div class="currency-calc">
-        <div class="currency-calc-field">
-          <input id="currencyLocalInput" type="number" inputmode="decimal" placeholder="0" />
-          <span id="currencyLocalUnit" class="currency-unit">–</span>
+    <details id="layoverDetails" class="layover-details">
+      <summary>Zimmer &amp; Währung</summary>
+
+      <label for="roomNumberInput">Eigene Zimmernummer</label>
+      <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
+
+      <div id="layoverCurrency" class="layover-currency" hidden>
+        <div class="layover-crew-title muted small">Umrechnung (<span id="currencyCode">–</span>)</div>
+        <div class="currency-calc">
+          <div class="currency-calc-field">
+            <input id="currencyLocalInput" type="number" inputmode="decimal" placeholder="0" />
+            <span id="currencyLocalUnit" class="currency-unit">–</span>
+          </div>
+          <span class="currency-calc-eq">=</span>
+          <div class="currency-calc-field currency-calc-output">
+            <span id="currencyEurOutput">0</span>
+            <span class="currency-unit">€</span>
+          </div>
         </div>
-        <span class="currency-calc-eq">=</span>
-        <div class="currency-calc-field currency-calc-output">
-          <span id="currencyEurOutput">0</span>
-          <span class="currency-unit">€</span>
-        </div>
+        <p id="currencyNote" class="muted small" hidden></p>
       </div>
-      <p id="currencyNote" class="muted small" hidden></p>
-    </div>
+    </details>
 
     <div id="layoverCrew" class="layover-crew" hidden>
       <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>

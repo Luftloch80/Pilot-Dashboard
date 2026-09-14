@@ -56,7 +56,12 @@ Vercel als statisches Verzeichnis).
    OpenAirLog liefert (z. B. `LUKK` → „Chișinău“; nicht erschöpfend, deckt
    größere europäische und internationale Flughäfen ab). Ist der Code
    darin nicht bekannt, wird ersatzweise der rohe Code angezeigt; der Code
-   selbst steht sonst nirgends mehr auf der Karte. Dazu ein Eingabefeld für
+   selbst steht sonst nirgends mehr auf der Karte. Zimmernummer und
+   Währungsrechner (siehe unten) liegen hinter einem eingeklappten
+   „Zimmer & Währung“-Aufklapper (natives `<details>`/`<summary>`) und
+   sind standardmäßig zugeklappt – sie werden ja typischerweise erst am
+   Layover-Ort selbst gebraucht, nicht sofort beim Blick aufs Dashboard.
+   Ein Tap auf die Zeile klappt sie auf/zu. Darin: ein Eingabefeld für
    die eigene Zimmernummer (pro Ort+Hotel
    lokal gespeichert, übersteht einen Refresh). Ist zusätzlich eine
    passende Umlaufcrewliste als PDF hochgeladen (gleicher Ankunftsort),

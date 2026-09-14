@@ -44,6 +44,7 @@ const els = {
   registration: document.getElementById("registration"),
 
   layoverCard: document.getElementById("layoverCard"),
+  layoverTitle: document.getElementById("layoverTitle"),
   layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
   roomNumberInput: document.getElementById("roomNumberInput"),
@@ -1061,6 +1062,13 @@ function renderLayover() {
 
   const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
+
+  // On a flight day the flight card already anchors the location; the
+  // "Layover" heading and city name would just repeat what's shown there,
+  // so only show them on a pure rest day (no flight of the day at all).
+  const isFlightDay = state.flights.length > 0;
+  els.layoverTitle.hidden = isFlightDay;
+  els.layoverPlace.hidden = isFlightDay;
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;

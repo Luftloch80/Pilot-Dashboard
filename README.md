@@ -56,8 +56,15 @@ Vercel als statisches Verzeichnis).
    OpenAirLog liefert (z. B. `LUKK` → „Chișinău“; nicht erschöpfend, deckt
    größere europäische und internationale Flughäfen ab). Ist der Code
    darin nicht bekannt, wird ersatzweise der rohe Code angezeigt; der Code
-   selbst steht sonst nirgends mehr auf der Karte. Direkt sichtbar bleiben
-   nur Ort, Hotelname und Pickup-Hinweis; Umrechner und Zimmernummern
+   selbst steht sonst nirgends mehr auf der Karte. **An einem Flugtag**
+   (mindestens ein Flug für heute vorhanden, also die Flugkarte zeigt
+   etwas) blendet die Layover-Karte die Überschrift „Layover“ und den
+   großen Städtenamen komplett aus – die Flugkarte nennt den Zielort ja
+   bereits, das wäre doppelt. An einem reinen Ruhetag ohne Flug (nur
+   Übernachtung, keine Flugkarte sichtbar) bleiben Überschrift und
+   Städtename dagegen wie gewohnt sichtbar, da sie dort die einzige
+   Ortsangabe sind. Direkt sichtbar bleiben in beiden Fällen Hotelname und
+   Pickup-Hinweis; Umrechner und Zimmernummern
    liegen dahinter in **zwei getrennten, standardmäßig zugeklappten
    Aufklappern** (native `<details>`/`<summary>`, ein Tap öffnet/schließt
    jeweils nur den einen) – auf einem Flugtag stehen so erst Flugdaten,

@@ -52,8 +52,10 @@ struct DutyStatusCardView: View {
                 .buttonStyle(.plain)
 
                 if showWeather {
+                    // Home base is skipped here too - see
+                    // DashboardViewModel.loadRouteWeather().
                     VStack(spacing: 6) {
-                        ForEach(stops, id: \.self) { stop in
+                        ForEach(stops.filter { $0.icao != Constants.homeBase }, id: \.self) { stop in
                             RouteWeatherRowView(stop: stop, state: viewModel.routeWeather[DashboardViewModel.weatherKey(for: stop)])
                         }
                     }

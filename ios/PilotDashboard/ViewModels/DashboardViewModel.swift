@@ -413,9 +413,12 @@ final class DashboardViewModel: ObservableObject {
             routeWeather[Self.weatherKey(for: stop)] = .loading
         }
 
+        // Home base is skipped - the pilot's already there (or about to
+        // be), its weather isn't the point of this panel. Doesn't affect
+        // the "FRA-LIS-…" route-chain text itself, only this fetch.
         let client = weatherClient
         await withTaskGroup(of: (String, RouteWeatherState).self) { group in
-            for stop in stops {
+            for stop in stops where stop.icao != Constants.homeBase {
                 group.addTask {
                     let key = Self.weatherKey(for: stop)
                     guard let dateKey = stop.dateKey, !dateKey.isEmpty else { return (key, .noDate) }

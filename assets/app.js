@@ -1539,7 +1539,11 @@ async function loadRouteWeather() {
   routeWeatherLoaded = true;
 
   els.dutyStatusWeather.innerHTML = "";
-  const rows = currentRouteStops.map((stop) => {
+  // Home base is skipped - the pilot's already there (or about to be),
+  // its weather isn't the point of this panel. Doesn't affect the
+  // "FRA-LIS-…" route-chain text itself, only this weather list.
+  const weatherStops = currentRouteStops.filter((s) => s.icao !== HOME_BASE);
+  const rows = weatherStops.map((stop) => {
     const { row, infoEl } = buildRouteWeatherRow(stop);
     els.dutyStatusWeather.appendChild(row);
     return { stop, infoEl };

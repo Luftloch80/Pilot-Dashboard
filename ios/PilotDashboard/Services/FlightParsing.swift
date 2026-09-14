@@ -109,7 +109,8 @@ enum FlightParsing {
             registration: raw.aircraftRegistration ?? "–",
             isDeadhead: isDeadhead,
             embeddedCrew: embeddedCrew,
-            updatedAt: parseISODate(raw.updatedAt)
+            updatedAt: parseISODate(raw.updatedAt),
+            operationalDate: raw.date ?? ""
         )
     }
 

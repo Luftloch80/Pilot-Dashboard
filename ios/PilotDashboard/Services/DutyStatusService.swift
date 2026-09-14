@@ -39,6 +39,16 @@ enum DutyStatusService {
     /// final stop, not every intermediate one), ending back at home base
     /// once the rotation returns there. Converted to 3-letter codes only
     /// at the very end for display; compared internally in ICAO.
+    ///
+    /// Same-day-vs-overnight is decided from each flight's own
+    /// `operationalDate` (OpenAirLog's unambiguous "date" field), not a
+    /// calendar day derived from the UTC arrival/departure times: deriving
+    /// it via the device's local timezone can shift a late-UTC arrival
+    /// into the next local calendar day, making it collide with the next
+    /// flight's departure date even though a real overnight layover sits
+    /// in between (e.g. an EDDF-LPPT arrival at 22:35Z reads as 00:35
+    /// local in CEST - one local day "too late", silently dropping that
+    /// stop from the chain).
     static func upcomingRouteChain(startFlight: Flight, allFlights: [Flight], homeBase: String = Constants.homeBase) -> String? {
         guard let startIdx = allFlights.firstIndex(of: startFlight) else { return nil }
 
@@ -48,9 +58,7 @@ enum DutyStatusService {
             let cur = allFlights[i]
             let next: Flight? = (i + 1 < allFlights.count) ? allFlights[i + 1] : nil
 
-            let curArrKey = (cur.arrSchedDate ?? cur.arrActualDate).map(DateKey.key(for:))
-            let nextDepKey = next.flatMap { ($0.depSchedDate ?? $0.depActualDate).map(DateKey.key(for:)) }
-            let isOvernightStop = next == nil || curArrKey != nextDepKey || cur.arrCode != next!.depCode
+            let isOvernightStop = next == nil || cur.operationalDate != next!.operationalDate || cur.arrCode != next!.depCode
 
             if isOvernightStop {
                 chain.append(cur.arrCode)

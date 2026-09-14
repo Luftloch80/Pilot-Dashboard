@@ -19,6 +19,11 @@ struct Flight: Identifiable, Equatable, Hashable {
     let isDeadhead: Bool
     let embeddedCrew: [CrewMember]
     let updatedAt: Date?
+    /// OpenAirLog's own "date" field ("yyyy-MM-dd") - this flight's
+    /// unambiguous operational day, straight from the API. Used (not a
+    /// calendar day derived from the UTC times) to detect overnight stops
+    /// in the route chain - see DutyStatusService.upcomingRouteChain.
+    let operationalDate: String
 
     static func == (lhs: Flight, rhs: Flight) -> Bool { lhs.id == rhs.id }
     func hash(into hasher: inout Hasher) { hasher.combine(id) }

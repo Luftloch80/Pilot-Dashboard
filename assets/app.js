@@ -1370,9 +1370,17 @@ function upcomingRouteChain(startFlight) {
     // either there's nothing after it (fetch window ran out), or the next
     // flight departs a later calendar day, or from a different airport
     // (a gap the data doesn't explain, treated the same way).
-    const curArrKey = localDateKey(cur.arrSchedDate || cur.arrActualDate);
-    const nextDepKey = next ? localDateKey(next.depSchedDate || next.depActualDate) : null;
-    const isOvernightStop = !next || curArrKey !== nextDepKey || cur.arrCode !== next.depCode;
+    //
+    // Compares OpenAirLog's own "date" field (raw.date) directly, not a
+    // calendar day derived from the UTC arrival/departure times - deriving
+    // it via the device's *local* timezone (as an earlier version did)
+    // could shift a late-UTC arrival into the next local calendar day,
+    // making it collide with the next flight's departure date even though
+    // a real overnight layover sits in between (e.g. an EDDF-LPPT arrival
+    // at 22:35Z reads as 00:35 local in CEST, one local day "too late").
+    const curDateKey = cur.raw && cur.raw.date;
+    const nextDepDateKey = next && next.raw && next.raw.date;
+    const isOvernightStop = !next || curDateKey !== nextDepDateKey || cur.arrCode !== next.depCode;
     if (!isOvernightStop) continue;
 
     chain.push(cur.arrCode);

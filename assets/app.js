@@ -35,6 +35,7 @@ const els = {
 
   flightCard: document.getElementById("flightCard"),
   flightNumber: document.getElementById("flightNumber"),
+  flightCallsign: document.getElementById("flightCallsign"),
   flightStatus: document.getElementById("flightStatus"),
   depCode: document.getElementById("depCode"),
   arrCode: document.getElementById("arrCode"),
@@ -430,9 +431,12 @@ function renderTimerPill(f) {
 // logo image (avoids bundling trademarked logo assets into the repo).
 // Covers Lufthansa Group carriers a Frankfurt-based pilot is likely to see
 // on a deadhead; unrecognized prefixes fall back to the app's own accent
-// color with the raw code.
+// color with the raw code. `icao` (the 3-letter ATC designator used to
+// build the radio callsign, e.g. "DLH") is only filled in once actually
+// confirmed - LH/DLH confirmed by the pilot directly ("Heute heißen wir
+// DLH1557"); left out for the others rather than guessing.
 const AIRLINE_BY_PREFIX = {
-  LH: { name: "Lufthansa", bg: "#05164d", fg: "#f9ba00" },
+  LH: { name: "Lufthansa", bg: "#05164d", fg: "#f9ba00", icao: "DLH" },
   LX: { name: "Swiss", bg: "#dc0018", fg: "#ffffff" },
   OS: { name: "Austrian Airlines", bg: "#c00d0d", fg: "#ffffff" },
   SN: { name: "Brussels Airlines", bg: "#00286e", fg: "#ffffff" },
@@ -444,6 +448,7 @@ function renderAirlineBadge(flightNumber) {
   const prefix = (flightNumber || "").slice(0, 2).toUpperCase();
   if (!prefix) {
     els.airlineBadge.hidden = true;
+    els.flightCallsign.hidden = true;
     return;
   }
   const airline = AIRLINE_BY_PREFIX[prefix];
@@ -452,6 +457,13 @@ function renderAirlineBadge(flightNumber) {
   els.airlineBadge.title = airline ? airline.name : prefix;
   els.airlineBadge.style.setProperty("--airline-bg", airline ? airline.bg : "");
   els.airlineBadge.style.setProperty("--airline-fg", airline ? airline.fg : "");
+
+  // ATC callsign = ICAO designator + the flight number's digits, e.g.
+  // "LH1557" -> "DLH1557" (spoken "Lufthansa one five five seven").
+  const digits = flightNumber.slice(2);
+  const callsign = airline && airline.icao && digits ? `${airline.icao}${digits}` : null;
+  els.flightCallsign.hidden = !callsign;
+  els.flightCallsign.textContent = callsign || "";
 }
 
 function renderFlight() {

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=4" />
+<link rel="stylesheet" href="assets/style.css?v=5" />
 </head>
 <body>
 
@@ -96,7 +96,10 @@
   <!-- Hauptkarte: der Flug, der jetzt zu Datum/Uhrzeit passt -->
   <section id="flightCard" class="card flight-card" hidden>
     <div class="flight-header">
-      <div class="flight-number" id="flightNumber">–</div>
+      <div>
+        <div class="flight-number" id="flightNumber">–</div>
+        <div class="flight-callsign muted small" id="flightCallsign" hidden>–</div>
+      </div>
       <div id="flightStatus" class="status-pill">–</div>
     </div>
 
@@ -184,6 +187,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=3"></script>
+<script src="assets/app.js?v=4"></script>
 </body>
 </html>

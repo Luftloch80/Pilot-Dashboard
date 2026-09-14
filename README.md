@@ -37,7 +37,14 @@ Vercel als statisches Verzeichnis).
    vorkommen: LH, LX, OS, SN, EW, 4Y). Bewusst **kein echtes Logo-Bild**,
    um keine markenrechtlich geschützten Logo-Dateien ins Repo aufzunehmen –
    bei einem unbekannten Code fällt das Badge auf die App-eigene Akzentfarbe
-   zurück und zeigt trotzdem den rohen Code.
+   zurück und zeigt trotzdem den rohen Code. Direkt unter der Flugnummer
+   erscheint zusätzlich das **ATC-Callsign** (z. B. „DLH1557“ zu „LH1557“ –
+   der ICAO-Drei-Buchstaben-Code der Airline plus die Ziffern der
+   Flugnummer, wie er im Funk verwendet wird), gebildet aus einem `icao`-
+   Feld in `AIRLINE_BY_PREFIX`. Dieses Feld ist bewusst nur dort gesetzt,
+   wo der Pilot es bestätigt hat (aktuell nur `LH` → `DLH`) statt für jede
+   Airline zu raten – ist es leer, bleibt die Callsign-Zeile schlicht
+   ausgeblendet, statt einen unsicheren Wert zu zeigen.
 5. Crewliste als PDF liegt in den **Settings** (Zahnrad-Icon oben rechts,
    zusammen mit dem API-Schlüssel – sonst enthalten die Settings nichts
    weiteres) und ist optional. Werden darin Crew-Zeilen erkannt,

@@ -99,6 +99,8 @@ body {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.data-stamp.fresh { color: var(--ok); }
+.data-stamp.stale { color: var(--danger); font-weight: 600; }
 
 .icon-btn {
   background: var(--bg-elev);

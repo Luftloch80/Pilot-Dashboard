@@ -12,21 +12,27 @@ Vercel als statisches Verzeichnis).
    eingeben. Der Schlüssel wird **nur lokal im Browser** (`localStorage`)
    gespeichert und bei jeder Anfrage direkt im `Authorization`-Header an
    `https://openairlog.de/api/v1` gesendet – er landet nie im Code oder
-   Repo. **Kein automatisches Nachladen:** Von OpenAirLog geholt werden die
-   Daten (Flüge, eingebettete Crew) nur beim ersten Öffnen der Seite und
-   bei jedem Tap auf das ↻-Icon oben – bewusst kein Hintergrund-Polling.
-   Der 30-Sekunden-Timer im Hintergrund aktualisiert nur den Countdown und
-   den Layover-Status aus den bereits geladenen Daten, ruft OpenAirLog
-   aber nicht erneut auf. Ändert sich etwas bei OpenAirLog (z. B. ein neuer
-   P1), während die Seite schon offen ist, zeigt das ↻-Icon das also erst
-   nach einem manuellen Tap – der Fetch nutzt zudem `cache: "no-store"`,
-   damit dabei garantiert der aktuelle Stand geholt wird und nicht eine vom
-   Browser zwischengespeicherte Antwort. Klein neben dem ↻-Icon steht dafür
-   „Stand: HH:MMZ“ – das ist `updated_at` des gerade angezeigten Flugs aus
-   OpenAirLog selbst (wann der Datensatz dort zuletzt geändert wurde, z. B.
-   durch einen Crew-Tausch), nicht wann die App zuletzt geladen hat. So
-   lässt sich auf einen Blick einschätzen, ob es sich lohnt, nochmal auf
-   ↻ zu tippen.
+   Repo. **Kein automatisches Übernehmen neuer Daten:** Die tatsächlich
+   angezeigten Flug-/Crew-Daten werden nur beim ersten Öffnen der Seite und
+   bei jedem Tap auf das ↻-Icon oben neu geladen – der Fetch nutzt dabei
+   `cache: "no-store"`, damit garantiert der aktuelle Stand geholt wird und
+   nicht eine vom Browser zwischengespeicherte Antwort. Der 30-Sekunden-
+   Timer im Hintergrund aktualisiert daneben nur den Countdown und den
+   Layover-Status aus den bereits geladenen Daten, ohne OpenAirLog dafür
+   erneut anzufragen. Klein neben dem ↻-Icon steht „Stand: HH:MMZ“ – das
+   ist `updated_at` des gerade angezeigten Flugs aus OpenAirLog selbst
+   (wann der Datensatz dort zuletzt geändert wurde, z. B. durch einen
+   Crew-Tausch), nicht wann die App zuletzt geladen hat. Dieser Stand wird
+   **alle 5 Minuten im Hintergrund geprüft** (`checkForUpdate()` in
+   `assets/app.js`, ruft `/flights` erneut ab, vergleicht aber nur den
+   `updated_at`-Zeitstempel und ersetzt nichts in der Anzeige): stimmt er
+   noch mit dem angezeigten Flug überein, bleibt „Stand: …“ **grün**;
+   findet OpenAirLog inzwischen eine neuere Version, färbt sich derselbe
+   Text **rot** – ein reiner Hinweis, dass ein Tap auf ↻ etwas Neues
+   zeigen würde, ohne die Anzeige selbst zu verändern. So bleibt die
+   Kontrolle, wann sich sichtbar etwas ändert, bewusst beim Piloten,
+   während die App trotzdem passiv mitbekommt, wenn sich bei OpenAirLog
+   etwas getan hat.
 3. Optional: „Zum Home-Bildschirm“ in Safari, damit die App wie eine
    native App startet (Statusleiste, eigenes Icon).
 4. Angezeigt werden **nur Flüge des heutigen Tages** (lokales Gerätedatum,

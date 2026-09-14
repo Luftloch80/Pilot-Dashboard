@@ -474,6 +474,12 @@ function renderAirlineBadge(flightNumber) {
 // updated_at for the currently shown flight, not when the app last
 // fetched, so it reflects an actual OpenAirLog-side change (e.g. a crew
 // swap) rather than just how recently the refresh button was tapped.
+// Colored green while that's still the newest version, red once the
+// background check (below) finds a newer updated_at on the server -
+// the pilot still decides when to actually pull it in via ↻, this is
+// only a signal that doing so would show something new.
+let dataStampFresh = true;
+
 function renderDataStamp(f) {
   if (!f || !f.updatedAt) {
     els.dataStamp.hidden = true;
@@ -481,13 +487,70 @@ function renderDataStamp(f) {
   }
   els.dataStamp.hidden = false;
   els.dataStamp.textContent = `Stand: ${fmtTime(f.updatedAt)}`;
-  els.dataStamp.title = "Letzte Änderung an diesem Flug laut OpenAirLog";
+  els.dataStamp.title = dataStampFresh
+    ? "Letzte Änderung an diesem Flug laut OpenAirLog - aktuell"
+    : "OpenAirLog hat neuere Daten für diesen Flug - zum Übernehmen auf ↻ tippen";
+  els.dataStamp.classList.toggle("fresh", dataStampFresh);
+  els.dataStamp.classList.toggle("stale", !dataStampFresh);
+}
+
+// Background freshness check, every 5 minutes: re-fetches the flight list
+// (same endpoint loadFlights() uses) but only compares the currently
+// shown flight's updated_at against what's on screen - never replaces the
+// rendered crew/flight data itself, since the pilot asked to keep that
+// manual (via ↻) and just wants an early, passive signal here.
+const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+async function checkForUpdate() {
+  const f = state.flights[state.index];
+  if (!f || f.id == null || !f.updatedAt) return;
+
+  const key = getApiKey();
+  if (!key) return;
+
+  const from = todayISO(-7);
+  const to = todayISO(1);
+  const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
+
+  let res;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+  } catch {
+    return; // silent - background check, no user-facing error for this
+  }
+  if (!res.ok) return;
+
+  let json;
+  try { json = await res.json(); } catch { return; }
+
+  const rawFlights = extractFlightsArray(json).filter(isRealFlightEntry);
+  const match = rawFlights.find((raw) => String(pick(raw, ["id", "flight_id", "flightId", "uuid"])) === String(f.id));
+  if (!match) return;
+
+  const freshUpdatedAt = toDateOrNull(pick(match, ["updated_at", "updatedAt"]));
+  if (!freshUpdatedAt) return;
+
+  // Only re-render if the freshness actually changed, so this doesn't
+  // fight with a manual refresh that happened in between.
+  const stillCurrent = state.flights[state.index] === f;
+  const nowFresh = freshUpdatedAt.getTime() <= f.updatedAt.getTime();
+  if (stillCurrent && nowFresh !== dataStampFresh) {
+    dataStampFresh = nowFresh;
+    renderDataStamp(f);
+  }
 }
 
 function renderFlight() {
   const f = state.flights[state.index];
   els.flightCard.hidden = !f;
   els.crewCard.hidden = !f;
+  // Whatever's now shown (a fresh load, or switching to another already-
+  // loaded flight) is the current baseline - mark it fresh again until the
+  // next background check says otherwise.
+  dataStampFresh = true;
   renderDataStamp(f);
   if (!f) return;
 
@@ -1423,3 +1486,8 @@ setInterval(() => {
   if (f) renderTimerPill(f);
   renderLayover();
 }, 30000);
+
+// Passive background check only - never auto-applies new data, just flips
+// the "Stand" stamp red when OpenAirLog has something newer than what's
+// shown (see checkForUpdate() above for why).
+setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);

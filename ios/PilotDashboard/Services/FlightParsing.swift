@@ -124,6 +124,14 @@ enum FlightParsing {
         }
     }
 
+    /// Newest updated_at across every entry (real flights *and* duty
+    /// entries alike) fetched in a window - the freshness signal isn't
+    /// tied to one specific flight (that breaks down on an Ortstag/Urlaub
+    /// day with no flight selected at all), so it compares this instead.
+    static func maxUpdatedAt(_ raw: [RawFlightEntry]) -> Date? {
+        raw.compactMap { parseISODate($0.updatedAt) }.max()
+    }
+
     /// Scheduled time only, shown as "HH:MMZ" (Zulu) - the dashboard's
     /// default time format everywhere except the briefing-time hint.
     static func fmtTime(_ d: Date?) -> String {

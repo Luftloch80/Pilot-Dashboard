@@ -42,6 +42,10 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var dutyStatus: DutyStatusInfo?
     @Published private(set) var currentCrew: [CrewMember] = []
     @Published private(set) var crewDisplayState: CrewDisplayState = .empty
+    /// Freshness signal for the whole -7d/+21d window, not one specific
+    /// flight (so it still means something on an Ortstag/Urlaub day with
+    /// no flight selected) - drives the refresh button's color everywhere,
+    /// not just on the flight card. See checkForUpdate().
     @Published private(set) var dataStampFresh = true
 
     // MARK: - Crew source (OpenAirLog vs. uploaded PDF)
@@ -75,6 +79,10 @@ final class DashboardViewModel: ObservableObject {
 
     private enum CrewCacheState { case loading, ok([CrewMember]), forbidden, error(String) }
     private var crewCache: [Int: CrewCacheState] = [:]
+    /// Newest updated_at seen across the whole -7d/+21d window as of the
+    /// last real load - the baseline checkForUpdate() compares against.
+    /// Not tied to one specific flight (see dataStampFresh).
+    private var lastKnownUpdatedAt: Date?
 
     private let client = OpenAirLogClient()
     private let currencyClient = CurrencyRateClient()
@@ -146,6 +154,8 @@ final class DashboardViewModel: ObservableObject {
         flights = []; allFlights = []; allDuties = []
         layover = nil; dutyStatus = nil; currentCrew = []
         statusMessage = ""
+        lastKnownUpdatedAt = nil
+        dataStampFresh = true
     }
 
     // MARK: - Loading
@@ -186,6 +196,9 @@ final class DashboardViewModel: ObservableObject {
             selectedIndex = todays.isEmpty ? 0 : (FlightSelection.pickInitialIndex(todays) ?? 0)
 
             recomputeDerived()
+            // Whatever just loaded is the new baseline - fresh again until
+            // the next background check finds something newer on the server.
+            lastKnownUpdatedAt = FlightParsing.maxUpdatedAt(raw)
             dataStampFresh = true
 
             if showFlightCard {
@@ -396,20 +409,19 @@ final class DashboardViewModel: ObservableObject {
     }
 
     /// Passive background check only - never auto-applies new data, just
-    /// flips the "Stand" flag when OpenAirLog has something newer than
-    /// what's shown for the currently viewed flight.
+    /// flips the freshness flag (see dataStampFresh) when OpenAirLog has
+    /// something newer than the last real load, anywhere in the loaded
+    /// window - not tied to one specific flight, so this still works on
+    /// an Ortstag/Urlaub day with no flight selected at all.
     private func checkForUpdate() async {
-        guard let flight = currentFlight, let updatedAt = flight.updatedAt,
-              let apiKey = KeychainStore.load() else { return }
+        guard let lastKnownUpdatedAt, let apiKey = KeychainStore.load() else { return }
 
         let from = DateKey.todayISO(offsetDays: -7)
         let to = DateKey.todayISO(offsetDays: 21)
         do {
             let raw = try await client.fetchFlights(apiKey: apiKey, from: from, to: to)
-            guard let match = raw.first(where: { $0.id == flight.id }) else { return }
-            guard let freshUpdatedAt = FlightParsing.parseISODate(match.updatedAt) else { return }
-            guard currentFlight?.id == flight.id else { return } // still the same flight
-            let nowFresh = freshUpdatedAt <= updatedAt
+            guard let freshMax = FlightParsing.maxUpdatedAt(raw) else { return }
+            let nowFresh = freshMax <= lastKnownUpdatedAt
             if nowFresh != dataStampFresh {
                 dataStampFresh = nowFresh
             }

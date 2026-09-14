@@ -31,7 +31,6 @@ const els = {
   setupError: document.getElementById("setupError"),
   settingsBtn: document.getElementById("settingsBtn"),
   brandName: document.getElementById("brandName"),
-  dataStamp: document.getElementById("dataStamp"),
 
   statusBanner: document.getElementById("statusBanner"),
 
@@ -94,7 +93,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], lastKnownUpdatedAt: null };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -159,6 +158,22 @@ function toDateOrNull(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
+}
+
+// Newest updated_at across every entry (real flights *and* duty entries
+// alike, e.g. ORTSTAG/U<n>) fetched in the -7d/+21d window - the freshness
+// signal shown on the refresh icon isn't tied to one specific flight (that
+// broke down on an Ortstag/Urlaub day with no flight selected at all), so
+// it compares this instead: "has OpenAirLog changed anything at all in the
+// currently loaded window" is a good-enough proxy for "there's something
+// new to pull in".
+function maxUpdatedAt(rawEntries) {
+  let max = null;
+  for (const raw of rawEntries) {
+    const d = toDateOrNull(pick(raw, ["updated_at", "updatedAt"]));
+    if (d && (!max || d > max)) max = d;
+  }
+  return max;
 }
 
 function todayISO(offsetDays) {
@@ -496,46 +511,39 @@ function renderAirlineBadge(flightNumber) {
   els.airlineBadge.style.setProperty("--airline-fg", airline ? airline.fg : "");
 }
 
-// "Stand: HH:MMZ" next to the refresh button - OpenAirLog's own
-// updated_at for the currently shown flight, not when the app last
-// fetched, so it reflects an actual OpenAirLog-side change (e.g. a crew
-// swap) rather than just how recently the refresh button was tapped.
-// Colored green while that's still the newest version, red once the
-// background check (below) finds a newer updated_at on the server -
-// the pilot still decides when to actually pull it in via ↻, this is
-// only a signal that doing so would show something new.
+// Freshness signal, shown as the refresh icon's color (green/red) - not
+// tied to one specific flight (that broke down on an Ortstag/Urlaub day,
+// where there's no selected flight to hang it off at all), but to the
+// whole -7d/+21d window loadFlights() pulls in. Green while nothing in
+// that window has changed since the last load; red once the background
+// check (below) finds something newer on the server. The pilot still
+// decides when to actually pull it in via ↻ - this is only a signal that
+// doing so would show something new. Always visible, on every view.
 let dataStampFresh = true;
 
-function renderDataStamp(f) {
-  if (!f || !f.updatedAt) {
-    els.dataStamp.hidden = true;
-    return;
-  }
-  els.dataStamp.hidden = false;
-  els.dataStamp.textContent = `Stand: ${fmtTime(f.updatedAt)}`;
-  els.dataStamp.title = dataStampFresh
-    ? "Letzte Änderung an diesem Flug laut OpenAirLog - aktuell"
-    : "OpenAirLog hat neuere Daten für diesen Flug - zum Übernehmen auf ↻ tippen";
-  els.dataStamp.classList.toggle("fresh", dataStampFresh);
-  els.dataStamp.classList.toggle("stale", !dataStampFresh);
+function renderDataStamp() {
+  els.refreshBtn.title = dataStampFresh
+    ? "Aktualisieren - aktuell"
+    : "Aktualisieren - OpenAirLog hat neuere Daten, zum Übernehmen tippen";
+  els.refreshBtn.classList.toggle("fresh", dataStampFresh);
+  els.refreshBtn.classList.toggle("stale", !dataStampFresh);
 }
 
-// Background freshness check, every 5 minutes: re-fetches the flight list
-// (same endpoint loadFlights() uses) but only compares the currently
-// shown flight's updated_at against what's on screen - never replaces the
-// rendered crew/flight data itself, since the pilot asked to keep that
-// manual (via ↻) and just wants an early, passive signal here.
+// Background freshness check, every 5 minutes: re-fetches the same window
+// loadFlights() uses and compares the newest updated_at across it against
+// what was there at the last load - never replaces the rendered crew/
+// flight data itself, since the pilot asked to keep that manual (via ↻)
+// and just wants an early, passive signal here.
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 async function checkForUpdate() {
-  const f = state.flights[state.index];
-  if (!f || f.id == null || !f.updatedAt) return;
+  if (!state.lastKnownUpdatedAt) return;
 
   const key = getApiKey();
   if (!key) return;
 
   const from = todayISO(-7);
-  const to = todayISO(1);
+  const to = todayISO(21);
   const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
 
   let res;
@@ -552,20 +560,13 @@ async function checkForUpdate() {
   let json;
   try { json = await res.json(); } catch { return; }
 
-  const rawFlights = extractFlightsArray(json).filter(isRealFlightEntry);
-  const match = rawFlights.find((raw) => String(pick(raw, ["id", "flight_id", "flightId", "uuid"])) === String(f.id));
-  if (!match) return;
+  const freshMax = maxUpdatedAt(extractFlightsArray(json));
+  if (!freshMax) return;
 
-  const freshUpdatedAt = toDateOrNull(pick(match, ["updated_at", "updatedAt"]));
-  if (!freshUpdatedAt) return;
-
-  // Only re-render if the freshness actually changed, so this doesn't
-  // fight with a manual refresh that happened in between.
-  const stillCurrent = state.flights[state.index] === f;
-  const nowFresh = freshUpdatedAt.getTime() <= f.updatedAt.getTime();
-  if (stillCurrent && nowFresh !== dataStampFresh) {
+  const nowFresh = freshMax.getTime() <= state.lastKnownUpdatedAt.getTime();
+  if (nowFresh !== dataStampFresh) {
     dataStampFresh = nowFresh;
-    renderDataStamp(f);
+    renderDataStamp();
   }
 }
 
@@ -578,11 +579,6 @@ function renderFlight() {
 
   els.flightCard.hidden = !showFlightCard;
   els.crewCard.hidden = !showFlightCard;
-  // Whatever's now shown (a fresh load, or switching to another already-
-  // loaded flight) is the current baseline - mark it fresh again until the
-  // next background check says otherwise.
-  dataStampFresh = true;
-  renderDataStamp(showFlightCard ? f : null);
 
   if (!showFlightCard) {
     els.flightNav.hidden = true;
@@ -843,6 +839,11 @@ async function loadFlights() {
   state.flights = flights;
   state.allFlights = allFlights;
   state.allDuties = allDuties;
+  // Whatever just loaded is the new baseline - mark it fresh again until
+  // the next background check finds something newer on the server.
+  state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);
+  dataStampFresh = true;
+  renderDataStamp();
   // Set before renderLayover(): it (indirectly, via effectiveDutyType())
   // reads state.index to check whether the post-landing switch applies,
   // which needs it to already reflect today's freshly loaded flights.
@@ -1435,15 +1436,13 @@ function renderDutyStatus() {
 }
 
 // Called every 30s (see the ticker below) to catch the post-landing switch
-// live, without going through the full renderFlight() - that would reset
-// dataStampFresh on every tick, which is about OpenAirLog data staleness
-// and has nothing to do with this purely time-based UI transition.
+// live, without going through the full renderFlight() - unnecessary here
+// since this is a purely time-based UI transition with no new data to load.
 function tickPostLandingSwitch() {
   if (els.flightCard.hidden || !shouldShowPostLandingHomeView()) return;
   els.flightCard.hidden = true;
   els.crewCard.hidden = true;
   els.flightNav.hidden = true;
-  els.dataStamp.hidden = true; // tied to a specific flight, no longer relevant once switched
   renderDutyStatus();
   const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
   showBanner(nothingToShow ? "Heute nichts geplant." : "", "");

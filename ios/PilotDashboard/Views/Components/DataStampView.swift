@@ -1,33 +1,27 @@
 import SwiftUI
 
-/// The "Stand: HH:MMZ" freshness indicator - green while the currently
-/// viewed flight's data matches what checkForUpdate() last saw on
-/// OpenAirLog, red once a newer update exists there (never auto-applied,
-/// see DashboardViewModel.checkForUpdate).
+/// The refresh button's own color is the freshness signal - green while
+/// the whole loaded window matches what checkForUpdate() last saw on
+/// OpenAirLog, red once something newer exists there (never auto-applied,
+/// see DashboardViewModel.checkForUpdate). Not tied to a specific flight,
+/// so it's shown the same way on every screen, including the Ortstag/
+/// Urlaub duty-status view where there's no flight selected at all.
 struct DataStampView: View {
     @ObservedObject var viewModel: DashboardViewModel
 
     var body: some View {
         HStack(spacing: 6) {
-            if let flight = viewModel.currentFlight, let updatedAt = flight.updatedAt {
-                Circle()
-                    .fill(viewModel.dataStampFresh ? Theme.ok : Theme.danger)
-                    .frame(width: 7, height: 7)
-                Text("Stand: \(FlightParsing.fmtTime(updatedAt))")
-                    .font(.caption)
-                    .foregroundStyle(viewModel.dataStampFresh ? Theme.ok : Theme.danger)
-                    .fontWeight(viewModel.dataStampFresh ? .regular : .semibold)
-            }
             Spacer()
             Button {
                 Task { await viewModel.loadFlights() }
             } label: {
                 Image(systemName: "arrow.clockwise")
+                    .foregroundStyle(viewModel.dataStampFresh ? Theme.ok : Theme.danger)
                     .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
                     .animation(viewModel.isLoading ? .linear(duration: 0.8).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
             }
             .disabled(viewModel.isLoading)
-            .accessibilityLabel("Aktualisieren")
+            .accessibilityLabel(viewModel.dataStampFresh ? "Aktualisieren - aktuell" : "Aktualisieren - neue Daten verfügbar")
         }
     }
 }

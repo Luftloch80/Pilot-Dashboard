@@ -95,13 +95,6 @@ body {
   flex-shrink: 0;
 }
 
-.data-stamp {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.data-stamp.fresh { color: var(--ok); }
-.data-stamp.stale { color: var(--danger); font-weight: 600; }
-
 .icon-btn {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -114,6 +107,13 @@ body {
   align-items: center;
   justify-content: center;
 }
+
+/* Freshness signal (see renderDataStamp() in app.js): the refresh icon's
+   own color, always visible regardless of which card is shown - green
+   while OpenAirLog has nothing newer than the last load, red once the
+   background check finds a change. */
+#refreshBtn.fresh { color: var(--ok); }
+#refreshBtn.stale { color: var(--danger); }
 
 /* #refreshBtn and #settingsBtn draw their icon as an inline SVG (not a
    Unicode glyph) specifically so they're guaranteed the same visual size -

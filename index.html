@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=12" />
+<link rel="stylesheet" href="assets/style.css?v=13" />
 </head>
 <body>
 
@@ -33,6 +33,17 @@
 
 <main id="app" class="app">
 
+  <!-- Eigener Name (nur in den Settings): blendet die eigene Person aus der Layover-Crewliste aus -->
+  <section id="ownNameCard" class="card setup-card" hidden>
+    <h2>Eigener Name</h2>
+    <p class="muted small">
+      Damit du dich selbst nicht in der Crewliste im Layover siehst (dort
+      geht es nur um die Zimmernummern der anderen).
+    </p>
+    <label for="ownNameInput">Name, wie er in der Crewliste steht</label>
+    <input id="ownNameInput" type="text" autocomplete="off" placeholder="z. B. Nachname, Vorname" />
+  </section>
+
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
   <section id="setupCard" class="card setup-card" hidden>
     <h2>OpenAirLog verbinden</h2>
@@ -47,17 +58,6 @@
     <button id="saveKeyBtn" class="btn primary">Speichern &amp; verbinden</button>
     <p id="setupError" class="error-text" hidden></p>
     <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
-  </section>
-
-  <!-- Eigener Name (nur in den Settings): blendet die eigene Person aus der Layover-Crewliste aus -->
-  <section id="ownNameCard" class="card setup-card" hidden>
-    <h2>Eigener Name</h2>
-    <p class="muted small">
-      Damit du dich selbst nicht in der Crewliste im Layover siehst (dort
-      geht es nur um die Zimmernummern der anderen).
-    </p>
-    <label for="ownNameInput">Name, wie er in der Crewliste steht</label>
-    <input id="ownNameInput" type="text" autocomplete="off" placeholder="z. B. Nachname, Vorname" />
   </section>
 
   <!-- PDF-Crew-Upload (optional, nur in den Settings): überschreibt bei Erfolg die Crew -->

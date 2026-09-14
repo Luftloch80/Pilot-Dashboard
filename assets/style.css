@@ -115,6 +115,11 @@ body {
   justify-content: center;
 }
 
+/* Same button box as #refreshBtn, but the gear glyph (⚙︎) renders visibly
+   smaller than the refresh arrow (↻) at an identical font-size - bumped up
+   so both icons read as the same size. */
+#settingsBtn { font-size: 1.4rem; }
+
 .app {
   max-width: 560px;
   margin: 0 auto;

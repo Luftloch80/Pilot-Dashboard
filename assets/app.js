@@ -1996,3 +1996,13 @@ setInterval(() => {
 // the "Stand" stamp red when OpenAirLog has something newer than what's
 // shown (see checkForUpdate() above for why).
 setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+
+// iOS Safari throttles/suspends setInterval timers while the tab is
+// backgrounded or the screen is locked - the 5-minute check above simply
+// doesn't run during that time, so re-opening the app can show "fresh"
+// long after that's stopped being true. Catch up immediately the moment
+// the pilot actually looks at the screen again, instead of waiting for
+// whatever's left of a timer that may not have ticked in hours.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkForUpdate();
+});

@@ -19,8 +19,9 @@ struct DutyStatusCardView: View {
 
             if let briefingText = info.briefingText {
                 Label(briefingText, systemImage: "clock")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textMuted)
+                    .font(.title3.bold())
+                    .foregroundStyle(Theme.text)
+                    .padding(.top, 2)
             }
 
             if let routeText = info.routeText {

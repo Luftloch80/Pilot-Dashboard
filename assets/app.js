@@ -1402,7 +1402,7 @@ function renderDutyStatus() {
 
   const next = nextDutyFlight();
   els.dutyStatusCard.hidden = false;
-  els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "Zuhause (Ortstag)";
+  els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "Ortstag";
 
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";

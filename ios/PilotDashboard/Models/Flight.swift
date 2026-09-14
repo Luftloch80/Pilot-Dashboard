@@ -44,7 +44,7 @@ enum DutyType: Equatable {
     var title: String {
         switch self {
         case .vacation: return "Urlaub"
-        case .homeday: return "Zuhause (Ortstag)"
+        case .homeday: return "Ortstag"
         }
     }
 }

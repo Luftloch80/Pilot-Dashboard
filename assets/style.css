@@ -334,8 +334,14 @@ body {
 
 /* Duty status (Urlaub / Ortstag) */
 #dutyStatusCountdown { margin-top: 4px; }
-#dutyStatusBriefing { margin-top: 8px; font-variant-numeric: tabular-nums; }
-#dutyStatusRoute { margin-top: 4px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.duty-briefing {
+  margin-top: 10px;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+#dutyStatusRoute { margin-top: 8px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 
 /* Layover */
 .layover-place {

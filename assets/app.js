@@ -1058,6 +1058,26 @@ function cityForIcao(code) {
   return ICAO_CITY[code] || null;
 }
 
+// 3-letter station code per ICAO code, for the route chain on the
+// Urlaub/Ortstag cards. Deliberately only populated with codes the pilot
+// has actually confirmed (EDDF/LUKK/LPPT/EKBI/EPWA/EDDH so far) rather
+// than assumed IATA codes - the earlier mistake with a guessed ATC
+// callsign (DLH1557 vs the real DLH8KF) showed that airline-internal
+// station codes can't be reliably derived, only confirmed one by one.
+// Falls back to the raw ICAO code for anything not yet in this table.
+const THREE_LETTER_CODE = {
+  EDDF: "FRA",
+  LUKK: "RMO",
+  LPPT: "LIS",
+  EKBI: "BLL",
+  EPWA: "WAW",
+  EDDH: "HAM",
+};
+
+function threeLetterCode(icao) {
+  return THREE_LETTER_CODE[icao] || icao;
+}
+
 // ISO 4217 currency per ICAO code - only for airports outside the eurozone
 // (a code from ICAO_CITY that's absent here uses the euro, needs no table).
 // Not exhaustive: covers the airports already in ICAO_CITY.
@@ -1360,7 +1380,9 @@ function upcomingRouteChain(startFlight) {
     if (!next) break; // fetch window ran out - chain is incomplete but as far as we can tell
     if (chain.length >= 10) break; // sanity cap against malformed data
   }
-  return chain.join("-");
+  // Built and compared above in ICAO (what the data actually is), only
+  // converted to 3-letter codes for display at the very end.
+  return chain.map(threeLetterCode).join("-");
 }
 
 function renderDutyStatus() {

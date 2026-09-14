@@ -176,12 +176,22 @@ Vercel als statisches Verzeichnis).
    Urlaub zählen automatisch mit). Direkt unter der Briefing-Zeit (siehe
    unten) steht zusätzlich – auf **beiden** Kartentypen, Urlaub wie
    Ortstag – die **Route der bevorstehenden Rotation als Kette**, z. B.
-   „Route: EDDF-LUKK-EPPO-EDDF“: Startpunkt ist der Heimatbasis-Flughafen
-   (Abflugort des nächsten Fluges), danach für jeden Tag der Rotation der
-   Code des **letzten** an diesem Tag erreichten Flughafens (bei mehreren
-   Flügen an einem Tag zählt also nur der letzte, nicht jeder
-   Zwischenstopp) – die Kette endet, sobald wieder der
-   Heimatbasis-Flughafen erreicht wird. Fehlen dafür Daten (z. B. weil der
+   „Route: FRA-LIS-BLL-WAW-HAM-FRA“: Startpunkt ist der
+   Heimatbasis-Flughafen (Abflugort des nächsten Fluges), danach für jeden
+   Tag der Rotation der Code des **letzten** an diesem Tag erreichten
+   Flughafens (bei mehreren Flügen an einem Tag zählt also nur der
+   letzte, nicht jeder Zwischenstopp) – die Kette endet, sobald wieder der
+   Heimatbasis-Flughafen erreicht wird. Angezeigt werden dabei **3-Buchstaben-Codes**
+   statt der ICAO-Codes, über eine lokale Tabelle `THREE_LETTER_CODE` in
+   `assets/app.js` – anders als bei den (öffentlichen, stabilen)
+   IATA/ICAO-Flughafenpaaren sonst im Code ist hier bewusst **nur das
+   eingetragen, was der Pilot direkt bestätigt hat** (`EDDF`→`FRA`,
+   `LUKK`→`RMO`, `LPPT`→`LIS`, `EKBI`→`BLL`, `EPWA`→`WAW`, `EDDH`→`HAM`),
+   da diese Codes offenbar keine Standard-IATA-Codes sind, sondern
+   airline-interne Stationskürzel – nach demselben Prinzip wie beim
+   ATC-Callsign (siehe oben) lässt sich das nicht einfach herleiten. Ein
+   noch nicht bestätigter Code fällt auf den rohen ICAO-Code zurück.
+   Fehlen dafür Daten (z. B. weil der
    nächste Flug bei einem langen Urlaub außerhalb des 3-Wochen-Fensters
    liegt), bleibt die Zeile ausgeblendet. **Automatischer Wechsel nach der
    Landung:** Landet der letzte

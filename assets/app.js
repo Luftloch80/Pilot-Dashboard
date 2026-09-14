@@ -1423,6 +1423,10 @@ function renderDutyStatus() {
   }
 
   const next = nextDutyFlight();
+  // Header badge shows the *upcoming* duty's airline while on Ortstag/
+  // Urlaub - falls back to the plain dot only if there's no next duty at
+  // all to show one for.
+  renderAirlineBadge(next ? next.flightNumber : null);
   els.dutyStatusCard.hidden = false;
   els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "Ortstag";
 

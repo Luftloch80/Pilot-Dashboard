@@ -340,8 +340,8 @@ body {
 }
 .layover-details[open] summary::after { transform: rotate(90deg); }
 
-.layover-currency { margin-top: 16px; }
 .currency-calc {
+  margin-top: 12px;
   display: flex;
   align-items: center;
   gap: 10px;

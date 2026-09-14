@@ -56,28 +56,46 @@ Vercel als statisches Verzeichnis).
    OpenAirLog liefert (z. B. `LUKK` → „Chișinău“; nicht erschöpfend, deckt
    größere europäische und internationale Flughäfen ab). Ist der Code
    darin nicht bekannt, wird ersatzweise der rohe Code angezeigt; der Code
-   selbst steht sonst nirgends mehr auf der Karte. Zimmernummer und
-   Währungsrechner (siehe unten) liegen hinter einem eingeklappten
-   „Zimmer & Währung“-Aufklapper (natives `<details>`/`<summary>`) und
-   sind standardmäßig zugeklappt – sie werden ja typischerweise erst am
-   Layover-Ort selbst gebraucht, nicht sofort beim Blick aufs Dashboard.
-   Ein Tap auf die Zeile klappt sie auf/zu. Darin: ein Eingabefeld für
-   die eigene Zimmernummer (pro Ort+Hotel
-   lokal gespeichert, übersteht einen Refresh). Ist zusätzlich eine
-   passende Umlaufcrewliste als PDF hochgeladen (gleicher Ankunftsort),
-   wird deren Hotelname ergänzt – die PDF liefert hier nur diese
-   Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein PDF
+   selbst steht sonst nirgends mehr auf der Karte. Direkt sichtbar bleiben
+   nur Ort, Hotelname und Pickup-Hinweis; Umrechner und Zimmernummern
+   liegen dahinter in **zwei getrennten, standardmäßig zugeklappten
+   Aufklappern** (native `<details>`/`<summary>`, ein Tap öffnet/schließt
+   jeweils nur den einen) – auf einem Flugtag stehen so erst Flugdaten,
+   dann die Crew-Karte, dann die Layover-Karte mit den beiden geschlossenen
+   Aufklappern, ohne dass Zimmer/Währung den Blick aufs Wesentliche
+   verstellen; gebraucht werden sie ja ohnehin erst am Layover-Ort selbst.
+   Der erste Aufklapper „Umrechnung (…)“ erscheint nur in Ländern ohne
+   Euro: links ein Eingabefeld für einen Betrag in der Landeswährung,
+   rechts live daneben der entsprechende Euro-Betrag (bei jeder Eingabe
+   direkt neu berechnet, kein Button nötig) – über eine lokale
+   Zuordnungstabelle `CURRENCY_BY_ICAO` in `assets/app.js` vom ICAO-Code
+   zur ISO-Währung (deckt gängige Layover-Ziele außerhalb der Eurozone ab,
+   z. B. `LUKK` → `MDL`); für Eurozone-Ziele oder unbekannte Codes bleibt
+   dieser Aufklapper ganz ausgeblendet. Der Kurs wird bei Bedarf live von
+   `open.er-api.com` (kostenlos, kein API-Key) geladen und für 6 Stunden im
+   Speicher gecacht; ist der Dienst nicht erreichbar, greift eine statische
+   Näherungstabelle (`APPROX_EUR_RATES`) mit sichtbarem Hinweis „Ungefährer
+   Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).“ darunter. Das
+   Eingabefeld wird nur beim Wechsel auf eine andere Landeswährung
+   zurückgesetzt, nicht bei jedem automatischen Neuladen der Daten. Der
+   zweite Aufklapper „Zimmernummern“ ist immer vorhanden und enthält ein
+   Eingabefeld für die eigene Zimmernummer (pro Ort+Hotel lokal
+   gespeichert, übersteht einen Refresh). Ist zusätzlich eine passende
+   Umlaufcrewliste als PDF hochgeladen (gleicher Ankunftsort), wird deren
+   Hotelname oben auf der Layover-Karte ergänzt – die PDF liefert hier nur
+   diese Zusatzinfo, nicht die Layover-Erkennung selbst. Wurde ein PDF
    hochgeladen **und** als Crew-Quelle akzeptiert (s. o., also mit
    Namensüberschneidung zu OpenAirLog), erscheint die daraus erkannte Crew
-   zusätzlich direkt unter der Übernachtung, jeweils mit eigenem
-   Zimmernummer-Feld (ebenfalls lokal gespeichert) – vereinfachend wird
-   angenommen, dass die komplette PDF-Crew im selben Hotel wohnt, da sich
-   eine zuverlässige Pro-Flugabschnitt-Zuordnung aus der PDF nicht
-   extrahieren lässt. Die eigene Person taucht in dieser Crew-Liste nicht
-   auf: In den Settings lässt sich unter „Eigener Name“ der eigene Name
-   (wie er in der Crewliste steht) hinterlegen, der dann herausgefiltert
-   wird – für die eigene Zimmernummer gibt es ja bereits das Feld oben. Ein
-   „Pickup“-Hinweis für den nächsten Tag wird angezeigt, wenn eine
+   zusätzlich in diesem selben Aufklapper unter der eigenen Zimmernummer,
+   jeweils mit eigenem Zimmernummer-Feld (ebenfalls lokal gespeichert) –
+   vereinfachend wird angenommen, dass die komplette PDF-Crew im selben
+   Hotel wohnt, da sich eine zuverlässige Pro-Flugabschnitt-Zuordnung aus
+   der PDF nicht extrahieren lässt. Die eigene Person taucht in dieser
+   Crew-Liste nicht auf: In den Settings lässt sich unter „Eigener Name“
+   der eigene Name (wie er in der Crewliste steht) hinterlegen, der dann
+   herausgefiltert wird – für die eigene Zimmernummer gibt es ja bereits
+   das Feld direkt darüber. Ein „Pickup“-Hinweis für den nächsten Tag wird
+   angezeigt (außerhalb der Aufklapper, direkt unter Ort/Hotel), wenn eine
    PDF-Zeile die Abkürzung „PU 4:20“ (bestätigtes Format aus echten
    Rosters) oder ersatzweise ein Wort wie „Pickup“/„Abholung“ enthält;
    im zweiten Fall ist das genaue Zeit-Format nicht bekannt/bestätigt,
@@ -85,20 +103,6 @@ Vercel als statisches Verzeichnis).
    gefundene Zeile unverändert gezeigt. Über die OpenAirLog-API/den
    Connector ist keine Pickup-Zeit verfügbar (`remarks`/`duty_code` sind
    dort leer) – wie Umlaufnummer und Hotelname bleibt das PDF-only.
-   Liegt der Layover-Ort in einem Land ohne Euro, erscheint zusätzlich ein
-   kleiner **Umrechner**: links ein Eingabefeld für einen Betrag in der
-   Landeswährung, rechts live daneben der entsprechende Euro-Betrag (bei
-   jeder Eingabe direkt neu berechnet, kein Button nötig) – über eine
-   lokale Zuordnungstabelle `CURRENCY_BY_ICAO` in `assets/app.js` vom
-   ICAO-Code zur ISO-Währung (deckt gängige Layover-Ziele außerhalb der
-   Eurozone ab, z. B. `LUKK` → `MDL`); für Eurozone-Ziele oder unbekannte
-   Codes bleibt die Karte ausgeblendet. Der Kurs wird bei Bedarf live von
-   `open.er-api.com` (kostenlos, kein API-Key) geladen und für 6 Stunden im
-   Speicher gecacht; ist der Dienst nicht erreichbar, greift eine statische
-   Näherungstabelle (`APPROX_EUR_RATES`) mit sichtbarem Hinweis „Ungefährer
-   Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).“ darunter. Das
-   Eingabefeld wird nur beim Wechsel auf eine andere Landeswährung
-   zurückgesetzt, nicht bei jedem automatischen Neuladen der Daten.
 
 ## API-Endpunkte
 

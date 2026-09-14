@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=2" />
+<link rel="stylesheet" href="assets/style.css?v=3" />
 </head>
 <body>
 
@@ -128,42 +128,6 @@
     </div>
   </section>
 
-  <!-- Layover: aus OpenAirLog erkannt -->
-  <section id="layoverCard" class="card layover-card" hidden>
-    <h2>Layover</h2>
-    <div class="layover-place" id="layoverPlace">---</div>
-    <div class="layover-hotel" id="layoverHotel" hidden></div>
-    <p id="layoverPickup" class="muted small" hidden></p>
-
-    <details id="layoverDetails" class="layover-details">
-      <summary>Zimmer &amp; Währung</summary>
-
-      <label for="roomNumberInput">Eigene Zimmernummer</label>
-      <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
-
-      <div id="layoverCurrency" class="layover-currency" hidden>
-        <div class="layover-crew-title muted small">Umrechnung (<span id="currencyCode">–</span>)</div>
-        <div class="currency-calc">
-          <div class="currency-calc-field">
-            <input id="currencyLocalInput" type="number" inputmode="decimal" placeholder="0" />
-            <span id="currencyLocalUnit" class="currency-unit">–</span>
-          </div>
-          <span class="currency-calc-eq">=</span>
-          <div class="currency-calc-field currency-calc-output">
-            <span id="currencyEurOutput">0</span>
-            <span class="currency-unit">€</span>
-          </div>
-        </div>
-        <p id="currencyNote" class="muted small" hidden></p>
-      </div>
-    </details>
-
-    <div id="layoverCrew" class="layover-crew" hidden>
-      <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>
-      <ul id="layoverCrewList" class="layover-crew-list"></ul>
-    </div>
-  </section>
-
   <!-- Crew: aus OpenAirLog, wahlweise überschrieben durch eine hochgeladene PDF -->
   <section id="crewCard" class="card crew-card" hidden>
     <div class="crew-card-head">
@@ -173,6 +137,42 @@
     <ul id="crewList" class="crew-list"></ul>
     <p id="crewEmpty" class="muted" hidden></p>
     <button id="crewSourceSwitchBtn" class="btn ghost small" hidden></button>
+  </section>
+
+  <!-- Layover: aus OpenAirLog erkannt -->
+  <section id="layoverCard" class="card layover-card" hidden>
+    <h2>Layover</h2>
+    <div class="layover-place" id="layoverPlace">---</div>
+    <div class="layover-hotel" id="layoverHotel" hidden></div>
+    <p id="layoverPickup" class="muted small" hidden></p>
+
+    <details id="layoverCurrency" class="layover-details" hidden>
+      <summary><span>Umrechnung (<span id="currencyCode">–</span>)</span></summary>
+      <div class="currency-calc">
+        <div class="currency-calc-field">
+          <input id="currencyLocalInput" type="number" inputmode="decimal" placeholder="0" />
+          <span id="currencyLocalUnit" class="currency-unit">–</span>
+        </div>
+        <span class="currency-calc-eq">=</span>
+        <div class="currency-calc-field currency-calc-output">
+          <span id="currencyEurOutput">0</span>
+          <span class="currency-unit">€</span>
+        </div>
+      </div>
+      <p id="currencyNote" class="muted small" hidden></p>
+    </details>
+
+    <details id="roomDetails" class="layover-details">
+      <summary>Zimmernummern</summary>
+
+      <label for="roomNumberInput">Eigene Zimmernummer</label>
+      <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
+
+      <div id="layoverCrew" class="layover-crew" hidden>
+        <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>
+        <ul id="layoverCrewList" class="layover-crew-list"></ul>
+      </div>
+    </details>
   </section>
 
 </main>

@@ -116,7 +116,7 @@ enum DutyStatusService {
         if let depSched = next.depSchedDate {
             let briefingDate = depSched.addingTimeInterval(-Constants.briefingLeadSeconds)
             let briefingDateLabel = dateFormatter.string(from: briefingDate)
-            briefing = "Briefing: \(briefingDateLabel), \(FlightParsing.fmtLocalTime(briefingDate)) LT"
+            briefing = "Briefing: \(briefingDateLabel) - \(FlightParsing.fmtLocalTime(briefingDate)) LT"
         }
 
         let route = upcomingRouteChain(startFlight: next, allFlights: allFlights).map { "Route: \($0)" }

@@ -1421,7 +1421,7 @@ function renderDutyStatus() {
       const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
       const briefingDateLabel = briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
       els.dutyStatusBriefing.hidden = false;
-      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel}, ${fmtLocalTime(briefing)} LT`;
+      els.dutyStatusBriefing.textContent = `Briefing: ${briefingDateLabel} - ${fmtLocalTime(briefing)} LT`;
     } else {
       els.dutyStatusBriefing.hidden = true;
     }

@@ -364,9 +364,9 @@ function showBanner(message, kind) {
 }
 
 // On a multi-leg day, only switch the shown flight to the next one starting
-// 45 minutes before its departure - before that, stay on the most recently
+// 90 minutes before its departure - before that, stay on the most recently
 // completed leg instead of jumping ahead as soon as the previous one ends.
-const NEXT_FLIGHT_LEAD_MS = 45 * 60 * 1000;
+const NEXT_FLIGHT_LEAD_MS = 90 * 60 * 1000;
 
 function pickInitialIndex(flights) {
   const now = new Date();

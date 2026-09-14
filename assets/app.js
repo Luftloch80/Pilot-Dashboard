@@ -47,6 +47,12 @@ const els = {
   airlineBadge: document.getElementById("airlineBadge"),
   airlineBadgeCode: document.getElementById("airlineBadgeCode"),
 
+  dutyStatusCard: document.getElementById("dutyStatusCard"),
+  dutyStatusTitle: document.getElementById("dutyStatusTitle"),
+  dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
+  dutyStatusLayovers: document.getElementById("dutyStatusLayovers"),
+  dutyStatusLayoverList: document.getElementById("dutyStatusLayoverList"),
+
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
   layoverPlace: document.getElementById("layoverPlace"),
@@ -82,7 +88,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -359,9 +365,11 @@ function setSettingsOpen(open) {
     els.flightCard.hidden = true;
     els.layoverCard.hidden = true;
     els.crewCard.hidden = true;
+    els.dutyStatusCard.hidden = true;
   } else {
     renderFlight();
     renderLayover();
+    if (!state.flights.length) renderDutyStatus();
   }
 }
 
@@ -734,8 +742,10 @@ async function loadFlights() {
   // but layover detection needs to look back further - a layover can span
   // several days (e.g. landed 3 days ago, next departure tomorrow) - so the
   // fetch window itself reaches back a week to find the most recent arrival.
+  // Forward it reaches 3 weeks out, so a vacation/Ortstag day can still find
+  // the next real duty and, for Ortstag, the layovers on the trip after it.
   const from = todayISO(-7);
-  const to = todayISO(1);
+  const to = todayISO(21);
   const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
 
   let res;
@@ -777,13 +787,22 @@ async function loadFlights() {
     return;
   }
 
-  // Ignore non-flight entries (duty/ground days etc.) - only real flights.
-  const rawFlights = extractFlightsArray(json).filter(isRealFlightEntry);
+  // Real flights vs. duty-only entries (vacation "U<n>", home day "ORTSTAG",
+  // etc. - flight_number null). Duty entries are kept (not discarded like
+  // before) so a vacation/Ortstag day can be recognized and explained
+  // instead of just showing "nothing planned".
+  const allRaw = extractFlightsArray(json);
+  const rawFlights = allRaw.filter(isRealFlightEntry);
+  const rawDuties = allRaw.filter((r) => !isRealFlightEntry(r) && r.duty_code);
+
   const allFlights = rawFlights.map(normalizeFlight).sort((a, b) => {
     const da = a.depSchedDate || a.depActualDate || new Date(0);
     const db = b.depSchedDate || b.depActualDate || new Date(0);
     return da - db;
   });
+  const allDuties = rawDuties
+    .map((r) => ({ date: String(r.date || ""), dutyCode: String(r.duty_code) }))
+    .filter((d) => d.date);
 
   const todayKey = localDateKey(new Date());
   const flights = allFlights.filter((f) => {
@@ -794,17 +813,21 @@ async function loadFlights() {
   crewCache.clear();
   state.flights = flights;
   state.allFlights = allFlights;
+  state.allDuties = allDuties;
   renderLayover();
 
   if (!flights.length) {
+    renderDutyStatus();
     // A short hint only when the dashboard would otherwise show nothing at
-    // all (no flight today and no layover) - so it's clear the app loaded
-    // fine rather than looking broken/blank.
-    showBanner(els.layoverCard.hidden ? "Heute nichts geplant." : "", "");
+    // all (no flight, no layover, no recognized vacation/Ortstag status) -
+    // so it's clear the app loaded fine rather than looking broken/blank.
+    const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
+    showBanner(nothingToShow ? "Heute nichts geplant." : "", "");
     renderFlight();
     return;
   }
 
+  els.dutyStatusCard.hidden = true;
   state.index = pickInitialIndex(flights);
   showBanner("", "");
   renderFlight();
@@ -1198,6 +1221,113 @@ function setRoomNumber(key, value) {
     all[key] = value;
     localStorage.setItem(ROOM_STORAGE_KEY, JSON.stringify(all));
   } catch { /* private mode etc. */ }
+}
+
+// ---------- duty status: vacation ("U<n>") / home day ("ORTSTAG") ----------
+//
+// OpenAirLog's non-flight duty entries confirmed by the pilot: "U" followed
+// by a number is vacation, "ORTSTAG" is a scheduled day at home base with
+// no duty. Both just mean "nothing to fly today", so on such a day the
+// dashboard shows how many days remain until the next real duty instead of
+// the generic "nothing planned" banner - and for Ortstag specifically,
+// which cities the upcoming trip is expected to overnight in.
+function classifyDutyCode(code) {
+  if (!code) return null;
+  const c = code.trim().toUpperCase();
+  if (/^U\d+$/.test(c)) return "vacation";
+  if (c === "ORTSTAG") return "homeday";
+  return null; // an unrecognized code (e.g. "--") - not handled specially
+}
+
+function todayDutyType() {
+  const todayKey = localDateKey(new Date());
+  for (const d of state.allDuties) {
+    if (d.date !== todayKey) continue;
+    const type = classifyDutyCode(d.dutyCode);
+    if (type) return type;
+  }
+  return null;
+}
+
+// First real flight strictly after today - "next duty" for both vacation
+// and Ortstag alike, since a home day right after a vacation isn't duty
+// either and should just extend the count (any non-flight day in between
+// is simply skipped over by this search, no special-casing needed).
+function nextDutyFlight() {
+  const todayKey = localDateKey(new Date());
+  return state.allFlights.find((f) => {
+    const d = f.depSchedDate || f.depActualDate;
+    return d && localDateKey(d) > todayKey;
+  }) || null;
+}
+
+function daysUntil(dateKey) {
+  const todayKey = localDateKey(new Date());
+  const today = new Date(`${todayKey}T00:00:00`);
+  const target = new Date(`${dateKey}T00:00:00`);
+  return Math.round((target - today) / 86400000);
+}
+
+// Overnight stops on the trip that starts with startFlight: walks the
+// already-fetched upcoming flights and flags an arrival as a layover
+// whenever the next flight doesn't depart the same calendar day from the
+// same airport - stops once back at the trip's origin (home base) or once
+// the fetched window (3 weeks out, see loadFlights()) runs out.
+function upcomingLayovers(startFlight) {
+  const homeBase = startFlight.depCode;
+  const startIdx = state.allFlights.indexOf(startFlight);
+  if (startIdx === -1) return [];
+
+  const layovers = [];
+  for (let i = startIdx; i < state.allFlights.length; i++) {
+    const cur = state.allFlights[i];
+    if (i > startIdx && cur.arrCode === homeBase) break; // back home - trip over
+    const next = state.allFlights[i + 1];
+    if (!next) break; // fetch window ran out - can't tell what follows
+
+    const curArrKey = localDateKey(cur.arrSchedDate || cur.arrActualDate);
+    const nextDepKey = localDateKey(next.depSchedDate || next.depActualDate);
+    if (curArrKey !== nextDepKey || cur.arrCode !== next.depCode) {
+      layovers.push(cur.arrCode);
+    }
+    if (layovers.length >= 8) break; // sanity cap against malformed data
+  }
+  return layovers;
+}
+
+function renderDutyStatus() {
+  const type = todayDutyType();
+  if (!type) {
+    els.dutyStatusCard.hidden = true;
+    return;
+  }
+
+  const next = nextDutyFlight();
+  els.dutyStatusCard.hidden = false;
+  els.dutyStatusTitle.textContent = type === "vacation" ? "Urlaub" : "Zuhause (Ortstag)";
+
+  if (!next) {
+    els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
+  } else {
+    const nextDate = next.depSchedDate || next.depActualDate;
+    const days = daysUntil(localDateKey(nextDate));
+    const dayWord = days === 1 ? "Tag" : "Tage";
+    const dateLabel = nextDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+    els.dutyStatusCountdown.textContent = `Noch ${days} ${dayWord} bis zum nächsten Dienst (${dateLabel}).`;
+  }
+
+  if (type === "homeday" && next) {
+    const cities = upcomingLayovers(next);
+    els.dutyStatusLayovers.hidden = cities.length === 0;
+    els.dutyStatusLayoverList.innerHTML = "";
+    for (const code of cities) {
+      const li = document.createElement("li");
+      li.textContent = cityForIcao(code) || code;
+      els.dutyStatusLayoverList.appendChild(li);
+    }
+  } else {
+    els.dutyStatusLayovers.hidden = true;
+  }
 }
 
 let currentLayoverKey = null; // roomKeyFor(arrCode, hotel) for the own room-number input

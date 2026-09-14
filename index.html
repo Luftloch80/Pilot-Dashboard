@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png" />
 <link rel="icon" href="assets/favicon.png" />
 
-<link rel="stylesheet" href="assets/style.css?v=8" />
+<link rel="stylesheet" href="assets/style.css?v=9" />
 </head>
 <body>
 
@@ -132,6 +132,17 @@
     </div>
   </section>
 
+  <!-- Dienstplan-Status: Urlaub ("U<n>") oder Ortstag, aus OpenAirLog erkannt -->
+  <section id="dutyStatusCard" class="card duty-status-card" hidden>
+    <h2 id="dutyStatusTitle">–</h2>
+    <p id="dutyStatusCountdown" class="muted"></p>
+
+    <div id="dutyStatusLayovers" class="duty-status-layovers" hidden>
+      <div class="layover-crew-title muted small">Erwartete Layover-Orte</div>
+      <ul id="dutyStatusLayoverList" class="duty-status-layover-list"></ul>
+    </div>
+  </section>
+
   <!-- Crew: aus OpenAirLog, wahlweise überschrieben durch eine hochgeladene PDF -->
   <section id="crewCard" class="card crew-card" hidden>
     <div class="crew-card-head">
@@ -185,6 +196,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=10"></script>
+<script src="assets/app.js?v=11"></script>
 </body>
 </html>

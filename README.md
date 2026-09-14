@@ -159,6 +159,29 @@ Vercel als statisches Verzeichnis).
    gefundene Zeile unverändert gezeigt. Über die OpenAirLog-API/den
    Connector ist keine Pickup-Zeit verfügbar (`remarks`/`duty_code` sind
    dort leer) – wie Umlaufnummer und Hotelname bleibt das PDF-only.
+7. **Urlaub/Ortstag:** OpenAirLogs Nicht-Flug-Einträge (die sonst als
+   „Dienste ohne Flug“ komplett herausgefiltert werden, siehe unten) werden
+   für zwei bestätigte `duty_code`-Muster ausgewertet: **`U` gefolgt von
+   einer Zahl** (z. B. `U1`) bedeutet **Urlaub**, **`ORTSTAG`** einen freien
+   Tag zu Hause ohne Dienst – andere/unbekannte Codes (z. B. das
+   beobachtete `--`) werden weiterhin ignoriert. Trifft einer der beiden
+   Codes auf den heutigen Tag zu (und liegt heute kein echter Flug vor),
+   ersetzt eine eigene Karte die sonstige „Heute nichts geplant.“-Meldung:
+   „Urlaub“ bzw. „Zuhause (Ortstag)“ als Überschrift, darunter „Noch N Tage
+   bis zum nächsten Dienst (TT.MM.)“ – der nächste echte Flug wird dafür in
+   `state.allFlights` gesucht (der Fetch reicht deshalb 3 Wochen in die
+   Zukunft, nicht nur 1 Tag wie zuvor), und die Zählung läuft einfach bis
+   zum nächsten echten Flug durch, unabhängig davon, ob dazwischen noch
+   weitere Urlaubs- oder Ortstage liegen (z. B. Ortstage direkt nach dem
+   Urlaub zählen automatisch mit). Bei **Ortstag** zusätzlich eine Liste
+   „Erwartete Layover-Orte“: Die App geht ab dem nächsten Flug die
+   bevorstehende Rotation durch und erkennt jeden Ankunftsort als Layover,
+   an dem der nächste Abflug an einem anderen Kalendertag oder von einem
+   anderen Flughafen erfolgt – die Liste endet, sobald wieder der
+   Heimatbasis-Flughafen der Rotation (der Abflugort des ersten Fluges)
+   erreicht wird. Bei **Urlaub** wird diese Liste bewusst nicht gezeigt, da
+   zu weit in die Zukunft geschaut werden müsste, um sie sinnvoll zu
+   befüllen.
 
 ## API-Endpunkte
 
@@ -202,9 +225,11 @@ u. a.:
 
 Wichtige Konsequenzen im Code (`assets/app.js`):
 
-- **Nur Flüge, keine Dienste:** Einträge ohne `flight_number` (z. B.
-  `duty_code: "ORTSTAG"`) werden vor jeder weiteren Verarbeitung
-  herausgefiltert (`isRealFlightEntry`).
+- **Flüge und Dienste getrennt verarbeitet:** Einträge ohne `flight_number`
+  (`isRealFlightEntry` liefert `false`) fließen nicht in `state.allFlights`
+  ein, werden aber – sofern sie einen `duty_code` haben – separat in
+  `state.allDuties` gesammelt (nur `date` + `duty_code`, minimal normiert)
+  und für die Urlaub/Ortstag-Erkennung ausgewertet (siehe oben).
 - **Zeiten = Datum + separate Uhrzeit:** `scheduled_off_block` &Co. sind
   reine `"HH:MM:SS"`-Strings ohne Datum und werden mit `date` zu einem
   UTC-Zeitstempel kombiniert (`combineDateAndTime`); bei Ankunft nach

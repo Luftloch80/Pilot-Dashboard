@@ -110,7 +110,7 @@ enum DutyStatusService {
         let dayWord = days == 1 ? "Tag" : "Tage"
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "dd.MM."
-        let countdown = "Noch \(days) \(dayWord) bis zum nächsten Dienst (\(dateFormatter.string(from: nextDate)))."
+        let countdown = "Noch \(days) \(dayWord) bis zum nächsten Dienst."
 
         var briefing: String?
         if let depSched = next.depSchedDate {

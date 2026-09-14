@@ -1412,8 +1412,7 @@ function renderDutyStatus() {
     const nextDate = next.depSchedDate || next.depActualDate;
     const days = daysUntil(localDateKey(nextDate));
     const dayWord = days === 1 ? "Tag" : "Tage";
-    const dateLabel = nextDate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
-    els.dutyStatusCountdown.textContent = `Noch ${days} ${dayWord} bis zum nächsten Dienst (${dateLabel}).`;
+    els.dutyStatusCountdown.textContent = `Noch ${days} ${dayWord} bis zum nächsten Dienst.`;
 
     // Briefing = 120 min before the next duty's scheduled departure, shown
     // in local (not Zulu) time since that's what actually determines when

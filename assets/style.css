@@ -72,6 +72,12 @@ body {
   gap: 8px;
   font-weight: 600;
   font-size: 1.05rem;
+  min-width: 0;
+}
+.brand span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-dot {
@@ -86,6 +92,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.data-stamp {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .icon-btn {

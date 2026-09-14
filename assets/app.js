@@ -24,6 +24,8 @@ const els = {
   saveKeyBtn: document.getElementById("saveKeyBtn"),
   setupError: document.getElementById("setupError"),
   settingsBtn: document.getElementById("settingsBtn"),
+  brandName: document.getElementById("brandName"),
+  dataStamp: document.getElementById("dataStamp"),
 
   statusBanner: document.getElementById("statusBanner"),
 
@@ -268,6 +270,11 @@ function normalizeFlight(raw) {
   const crewRaw = pick(raw, ["crew", "crew_members", "crewMembers", "crewlist"]);
   const embeddedCrew = Array.isArray(crewRaw) ? crewRaw.map(normalizeCrewMember) : [];
 
+  // When OpenAirLog last touched this specific record (e.g. a crew swap) -
+  // shown next to the refresh button so it's clear how fresh the currently
+  // displayed data actually is, without having to guess from a manual tap.
+  const updatedAt = toDateOrNull(pick(raw, ["updated_at", "updatedAt"]));
+
   return {
     raw,
     id,
@@ -279,6 +286,7 @@ function normalizeFlight(raw) {
     status: status ? String(status) : "",
     isDeadhead,
     embeddedCrew,
+    updatedAt,
   };
 }
 
@@ -462,10 +470,25 @@ function renderAirlineBadge(flightNumber) {
   els.airlineBadge.style.setProperty("--airline-fg", airline ? airline.fg : "");
 }
 
+// "Stand: HH:MMZ" next to the refresh button - OpenAirLog's own
+// updated_at for the currently shown flight, not when the app last
+// fetched, so it reflects an actual OpenAirLog-side change (e.g. a crew
+// swap) rather than just how recently the refresh button was tapped.
+function renderDataStamp(f) {
+  if (!f || !f.updatedAt) {
+    els.dataStamp.hidden = true;
+    return;
+  }
+  els.dataStamp.hidden = false;
+  els.dataStamp.textContent = `Stand: ${fmtTime(f.updatedAt)}`;
+  els.dataStamp.title = "Letzte Änderung an diesem Flug laut OpenAirLog";
+}
+
 function renderFlight() {
   const f = state.flights[state.index];
   els.flightCard.hidden = !f;
   els.crewCard.hidden = !f;
+  renderDataStamp(f);
   if (!f) return;
 
   els.flightNumber.textContent = f.flightNumber;
@@ -1163,6 +1186,22 @@ function setOwnName(name) {
   try { localStorage.setItem(OWN_NAME_STORAGE_KEY, name); } catch { /* private mode etc. */ }
 }
 
+// The Settings field stores the name the same way OpenAirLog/the PDF write
+// it ("Nachname, Vorname"), but the header reads better the natural way
+// round ("Vorname Nachname"). A name typed without a comma is shown as-is.
+function formatOwnNameForDisplay(name) {
+  const idx = name.indexOf(",");
+  if (idx < 0) return name.trim();
+  const last = name.slice(0, idx).trim();
+  const first = name.slice(idx + 1).trim();
+  return first && last ? `${first} ${last}` : name.trim();
+}
+
+function renderBrandName() {
+  const ownName = getOwnName().trim();
+  els.brandName.textContent = ownName ? formatOwnNameForDisplay(ownName) : "Pilot Dashboard";
+}
+
 // Full-name match first (works when typed exactly as in the PDF), falling
 // back to first name only - the same anonymization-robust comparison used
 // for the OpenAirLog/PDF crew match, since "own name" might be typed to
@@ -1354,6 +1393,7 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
 
 els.ownNameInput.addEventListener("input", () => {
   setOwnName(els.ownNameInput.value);
+  renderBrandName();
   renderLayover();
 });
 
@@ -1371,6 +1411,7 @@ if (window.pdfjsLib) {
 // ---------- init ----------
 
 els.ownNameInput.value = getOwnName();
+renderBrandName();
 loadStoredPdfCrew();
 renderLayover();
 loadFlights();

@@ -21,7 +21,12 @@ Vercel als statisches Verzeichnis).
    P1), während die Seite schon offen ist, zeigt das ↻-Icon das also erst
    nach einem manuellen Tap – der Fetch nutzt zudem `cache: "no-store"`,
    damit dabei garantiert der aktuelle Stand geholt wird und nicht eine vom
-   Browser zwischengespeicherte Antwort.
+   Browser zwischengespeicherte Antwort. Klein neben dem ↻-Icon steht dafür
+   „Stand: HH:MMZ“ – das ist `updated_at` des gerade angezeigten Flugs aus
+   OpenAirLog selbst (wann der Datensatz dort zuletzt geändert wurde, z. B.
+   durch einen Crew-Tausch), nicht wann die App zuletzt geladen hat. So
+   lässt sich auf einen Blick einschätzen, ob es sich lohnt, nochmal auf
+   ↻ zu tippen.
 3. Optional: „Zum Home-Bildschirm“ in Safari, damit die App wie eine
    native App startet (Statusleiste, eigenes Icon).
 4. Angezeigt werden **nur Flüge des heutigen Tages** (lokales Gerätedatum,
@@ -133,9 +138,13 @@ Vercel als statisches Verzeichnis).
    Hotel wohnt, da sich eine zuverlässige Pro-Flugabschnitt-Zuordnung aus
    der PDF nicht extrahieren lässt. Die eigene Person taucht in dieser
    Crew-Liste nicht auf: In den Settings lässt sich unter „Eigener Name“
-   der eigene Name (wie er in der Crewliste steht) hinterlegen, der dann
-   herausgefiltert wird – für die eigene Zimmernummer gibt es ja bereits
-   das Feld direkt darüber. Ein „Pickup“-Hinweis für den nächsten Tag wird
+   der eigene Name (wie er in der Crewliste steht, also „Nachname,
+   Vorname“) hinterlegen, der dann herausgefiltert wird – für die eigene
+   Zimmernummer gibt es ja bereits das Feld direkt darüber. Derselbe Name
+   ersetzt außerdem den Schriftzug „Pilot Dashboard“ oben links, dort aber
+   in natürlicher Reihenfolge als „Vorname Nachname“ (`formatOwnNameForDisplay()`
+   in `assets/app.js`); ist kein Name hinterlegt, bleibt es bei „Pilot
+   Dashboard“. Ein „Pickup“-Hinweis für den nächsten Tag wird
    angezeigt (außerhalb der Aufklapper, direkt unter Ort/Hotel), wenn eine
    PDF-Zeile die Abkürzung „PU 4:20“ (bestätigtes Format aus echten
    Rosters) oder ersatzweise ein Wort wie „Pickup“/„Abholung“ enthält;

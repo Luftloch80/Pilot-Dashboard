@@ -57,17 +57,27 @@ Vercel als statisches Verzeichnis).
 5. Crewliste als PDF liegt in den **Settings** (Zahnrad-Icon oben rechts,
    zusammen mit dem API-Schlüssel – sonst enthalten die Settings nichts
    weiteres) und ist optional. Werden darin Crew-Zeilen erkannt,
-   **überschreibt sie automatisch die Crew-Anzeige** (statt sie nur zu
-   ergänzen) – z. B. wenn die offizielle Umlaufcrewliste aktueller ist als
-   OpenAirLog – **aber nur, wenn mindestens ein Vorname mit der
-   OpenAirLog-Crew übereinstimmt** (Vergleich per Vorname, da OpenAirLog
-   Kolleg:innen teils anonymisiert als „H., Nicolas“ statt vollem Nachnamen
-   liefert). Stimmt kein einziger Name überein, bleibt die OpenAirLog-Crew
-   aktiv (vermutlich falsche/alte PDF) – ein Hinweis erklärt das, manuell
-   lässt sich trotzdem zur PDF-Crew wechseln. Über den Button unter der
-   Crew-Liste lässt sich jederzeit zurück zur OpenAirLog-Crew wechseln (und
-   wieder zurück zur PDF-Crew). Das PDF wird nur lokal im Browser gelesen
-   (per pdf.js), nicht hochgeladen. Werden keine Crew-Zeilen erkannt, wird
+   **wird die Crew-Anzeige automatisch auf die PDF umgestellt** (statt sie
+   nur zu ergänzen) – z. B. weil die PDF Vor- **und** Nachnamen ausschreibt,
+   während OpenAirLog Kolleg:innen teils anonymisiert als „H., Nicolas“
+   liefert – **aber nur, wenn mindestens ein Vorname mit der
+   OpenAirLog-Crew übereinstimmt** (Vergleich per Vorname, sonst bliebe
+   z. B. eine PDF von einem ganz anderen Umlauf unbemerkt aktiv). Stimmt
+   kein einziger Name überein, bleibt die OpenAirLog-Crew aktiv (vermutlich
+   falsche/alte PDF) – ein Hinweis erklärt das, manuell lässt sich trotzdem
+   zur PDF-Crew wechseln. **Die PDF ist dabei kein starres Abbild:** Pro
+   Rolle wird verglichen, ob der Vorname aus OpenAirLog noch zu einem
+   PDF-Eintrag mit derselben Rolle passt – wenn ja, wird der schönere
+   PDF-Name (mit Nachnamen) gezeigt; hat sich die Rolle seit dem
+   PDF-Zeitpunkt auf jemand komplett anderen geändert (z. B. ein kurzfristig
+   getauschter P1), erscheint stattdessen automatisch der aktuelle
+   OpenAirLog-Name für genau diesen einen Eintrag, alle anderen Rollen
+   bleiben mit dem hübscheren PDF-Namen. So ist die PDF-Crew nie "eingefroren"
+   auf einen veralteten Stand, sondern immer live mit OpenAirLog abgeglichen.
+   Über den Button unter der Crew-Liste lässt sich jederzeit zurück zur
+   OpenAirLog-Crew wechseln (und wieder zurück zur PDF-Crew). Das PDF wird
+   nur lokal im Browser gelesen (per pdf.js), nicht hochgeladen. Werden
+   keine Crew-Zeilen erkannt, wird
    nichts überschrieben und stattdessen der extrahierte Rohtext angezeigt.
 6. **Übernachtung/Layover:** Wird **aus OpenAirLog erkannt**, nicht aus der
    PDF: Landet der letzte Flug irgendwann in der Vergangenheit an einem Ort

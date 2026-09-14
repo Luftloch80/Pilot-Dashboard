@@ -501,6 +501,24 @@ function renderCrewMembers(listEl, crew) {
   }
 }
 
+// The PDF crew list is a snapshot from whenever it was uploaded/downloaded
+// and can go stale mid-trip (e.g. a late P1 swap) - OpenAirLog stays the
+// live source of truth. So rather than showing the PDF's list verbatim,
+// take each OpenAirLog crew member and use the PDF's name for them only
+// if the same role's first name still matches (the PDF's "Nachname,
+// Vorname" is nicer than OpenAirLog's partly-anonymized "H., Nicolas");
+// a role whose occupant has since changed falls back to OpenAirLog's own
+// name for that entry instead of showing whoever the PDF still lists.
+function mergeCrewWithPdf(apiCrew, pdfCrew) {
+  return apiCrew.map((member) => {
+    const match = pdfCrew.find(
+      (p) => p.role.toUpperCase() === member.role.toUpperCase() &&
+        firstNameOf(p.name) === firstNameOf(member.name)
+    );
+    return match ? { name: match.name, role: member.role } : member;
+  });
+}
+
 // Crew shown here comes either from OpenAirLog (per-flight, via
 // /flights/{id}/crew) or - if the pilot uploaded a PDF - from that PDF,
 // which then overwrites the OpenAirLog crew until switched back.
@@ -527,7 +545,9 @@ function renderCrew(f) {
   if (useSource === "pdf") {
     const { crew, rotation, fileName } = state.pdfCrew;
     els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
-    renderCrewMembers(els.crewList, crew);
+    // Reconcile with the live OpenAirLog crew when it's available - falls
+    // back to the raw PDF list only while the API crew hasn't loaded yet.
+    renderCrewMembers(els.crewList, apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew);
     return;
   }
 

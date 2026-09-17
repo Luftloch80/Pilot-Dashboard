@@ -690,6 +690,9 @@ function renderCrew(f) {
   const apiCrew = hasEmbedded ? f.embeddedCrew : entry && entry.status === "ok" ? entry.crew : [];
   const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length);
 
+  const detectedOwnName = detectOwnName(f, apiCrew);
+  if (detectedOwnName) applyDetectedOwnName(detectedOwnName);
+
   if (hasPdfCrew) {
     els.crewSourceSwitchBtn.hidden = false;
     els.crewSourceSwitchBtn.textContent =
@@ -1749,6 +1752,46 @@ function getOwnName() {
 }
 function setOwnName(name) {
   try { localStorage.setItem(OWN_NAME_STORAGE_KEY, name); } catch { /* private mode etc. */ }
+}
+
+// Auto-detects the pilot's own name from a flight's crew list, so it
+// doesn't have to be typed in by hand. Two confirmed, real-data-verified
+// signals (not a guess about unpublished airline-internal data - this is
+// how OpenAirLog's own response is actually shaped):
+// 1. The flight itself carries the pilot's own role as crew_position
+//    (e.g. "CP") - the crew entry with that same role is, by definition,
+//    this pilot.
+// 2. OpenAirLog only gives the *authenticated pilot's own* crew entry a
+//    full, un-anonymized name ("Droste, Alexander"); every colleague is
+//    shown reduced to a single initial ("H., Nicolas") - confirmed across
+//    multiple real flights. Kept as a fallback for the (should be rare)
+//    case where crew_position doesn't line up with any crew role.
+function detectOwnName(f, apiCrew) {
+  if (!apiCrew || !apiCrew.length) return null;
+
+  const myRole = f && f.raw && f.raw.crew_position;
+  if (myRole) {
+    const match = apiCrew.find((m) => m.role && m.role.toUpperCase() === String(myRole).toUpperCase());
+    if (match && match.name && match.name.includes(",")) return match.name;
+  }
+
+  const unanonymized = apiCrew.filter((m) => {
+    const comma = m.name.indexOf(",");
+    if (comma === -1) return false;
+    return !/^[A-ZÄÖÜ]\.$/.test(m.name.slice(0, comma).trim());
+  });
+  return unanonymized.length === 1 ? unanonymized[0].name : null;
+}
+
+// Keeps the stored own name in sync with what OpenAirLog's crew data
+// says, so the Settings field fills itself in - still shown/editable
+// there as a fallback for the rare case detection can't run (e.g. no
+// crew data at all yet).
+function applyDetectedOwnName(name) {
+  if (getOwnName() === name) return;
+  setOwnName(name);
+  if (document.activeElement !== els.ownNameInput) els.ownNameInput.value = name;
+  renderBrandName();
 }
 
 // The Settings field stores the name the same way OpenAirLog/the PDF write

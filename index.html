@@ -12,8 +12,8 @@
 <meta name="apple-mobile-web-app-title" content="PilotDashboard" />
 <meta name="theme-color" content="#0b1220" />
 <link rel="manifest" href="manifest.webmanifest" />
-<link rel="apple-touch-icon" href="assets/icon-180.png?v=3" />
-<link rel="icon" href="assets/favicon.png?v=3" />
+<link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
+<link rel="icon" href="assets/favicon.png?v=4" />
 
 <link rel="stylesheet" href="assets/style.css?v=18" />
 </head>
@@ -52,35 +52,6 @@
 
 <main id="app" class="app">
 
-  <!-- Eigener Name (nur in den Settings): blendet die eigene Person aus der Layover-Crewliste aus -->
-  <section id="ownNameCard" class="card setup-card" hidden>
-    <h2>Eigener Name</h2>
-    <p class="muted small">
-      Wird automatisch aus der OpenAirLog-Crewliste erkannt, sobald ein
-      Flug mit Crew geladen ist - manuelle Eingabe nur als Fallback nötig.
-      Damit du dich selbst nicht in der Crewliste im Layover siehst (dort
-      geht es nur um die Zimmernummern der anderen).
-    </p>
-    <label for="ownNameInput">Name, wie er in der Crewliste steht</label>
-    <input id="ownNameInput" type="text" autocomplete="off" placeholder="z. B. Nachname, Vorname" />
-  </section>
-
-  <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
-  <section id="setupCard" class="card setup-card" hidden>
-    <h2>OpenAirLog verbinden</h2>
-    <p class="muted">
-      Dein API-Schlüssel wird ausschließlich lokal auf diesem Gerät gespeichert
-      (Browser-Speicher) und bei jeder Anfrage direkt an
-      <code>openairlog.de</code> gesendet. Er verlässt dieses Gerät sonst nicht.
-    </p>
-    <label for="apiKeyInput">API-Schlüssel</label>
-    <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein OpenAirLog API-Schlüssel" />
-    <button id="saveKeyBtn" class="btn primary">Speichern &amp; verbinden</button>
-    <p id="setupError" class="error-text" hidden></p>
-    <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
-  </section>
-
   <!-- PDF-Crew-Upload (optional, nur in den Settings): überschreibt bei Erfolg die Crew -->
   <section id="crewPdfCard" class="card crew-pdf-card" hidden>
     <div class="crew-pdf-head">
@@ -100,6 +71,22 @@
     <p id="crewPdfStatus" class="muted small" hidden></p>
     <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
     <div id="crewPdfResult" class="pdf-text" hidden></div>
+  </section>
+
+  <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
+  <section id="setupCard" class="card setup-card" hidden>
+    <h2>OpenAirLog verbinden</h2>
+    <p class="muted">
+      Dein API-Schlüssel wird ausschließlich lokal auf diesem Gerät gespeichert
+      (Browser-Speicher) und bei jeder Anfrage direkt an
+      <code>openairlog.de</code> gesendet. Er verlässt dieses Gerät sonst nicht.
+    </p>
+    <label for="apiKeyInput">API-Schlüssel</label>
+    <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein OpenAirLog API-Schlüssel" />
+    <button id="saveKeyBtn" class="btn primary">Speichern &amp; verbinden</button>
+    <p id="setupError" class="error-text" hidden></p>
+    <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
   <!-- Status / Lade / Fehleranzeige -->
@@ -218,6 +205,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=32"></script>
+<script src="assets/app.js?v=33"></script>
 </body>
 </html>

@@ -94,8 +94,6 @@ const els = {
 
   refreshBtn: document.getElementById("refreshBtn"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
-  ownNameCard: document.getElementById("ownNameCard"),
-  ownNameInput: document.getElementById("ownNameInput"),
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
@@ -414,7 +412,6 @@ function loadStoredPdfCrew() {
 // reappear only if there's actually something to show.
 function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
-  els.ownNameCard.hidden = !open;
   els.crewPdfCard.hidden = !open;
   if (open) {
     els.flightNav.hidden = true;
@@ -1783,14 +1780,11 @@ function detectOwnName(f, apiCrew) {
   return unanonymized.length === 1 ? unanonymized[0].name : null;
 }
 
-// Keeps the stored own name in sync with what OpenAirLog's crew data
-// says, so the Settings field fills itself in - still shown/editable
-// there as a fallback for the rare case detection can't run (e.g. no
-// crew data at all yet).
+// Keeps the stored own name in sync with what OpenAirLog's crew data says
+// - fully automatic, no manual entry anywhere in the UI.
 function applyDetectedOwnName(name) {
   if (getOwnName() === name) return;
   setOwnName(name);
-  if (document.activeElement !== els.ownNameInput) els.ownNameInput.value = name;
   renderBrandName();
 }
 
@@ -2001,12 +1995,6 @@ els.crewSourceSwitchBtn.addEventListener("click", () => {
   if (f) renderCrew(f);
 });
 
-els.ownNameInput.addEventListener("input", () => {
-  setOwnName(els.ownNameInput.value);
-  renderBrandName();
-  renderLayover();
-});
-
 els.roomNumberInput.addEventListener("input", () => {
   if (currentLayoverKey) setRoomNumber(currentLayoverKey, els.roomNumberInput.value);
 });
@@ -2020,7 +2008,6 @@ if (window.pdfjsLib) {
 
 // ---------- init ----------
 
-els.ownNameInput.value = getOwnName();
 renderBrandName();
 loadStoredPdfCrew();
 renderLayover();

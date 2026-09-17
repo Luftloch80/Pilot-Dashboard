@@ -941,7 +941,16 @@ async function extractPdfLines(pdf) {
     rows.sort((a, b) => b.y - a.y); // PDF y grows upward -> top of page first
     for (const row of rows) {
       row.items.sort((a, b) => a.x - b.x);
-      const line = row.items.map((i) => i.str).join(" ").replace(/\s+/g, " ").trim();
+      const line = row.items.map((i) => i.str).join(" ")
+        // Some rotation crew lists mark a per-person crew change (joins/
+        // leaves) with an icon-font glyph rather than real text - it has
+        // no printable form, but does occupy a Private Use Area codepoint
+        // that would otherwise land right in the middle of a name and
+        // break the row pattern below. Confirmed on a real Umlaufcrewliste
+        // (U+F100/U+F101, rendered as invisible in the extracted text).
+        .replace(/[-]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
       if (line) lines.push(line);
     }
   }
@@ -956,12 +965,37 @@ async function extractPdfLines(pdf) {
 // systems. The PK-Nummer/staff-ID column (starts with a digit) is used
 // as an anchor so the lazily-matched name doesn't get cut short; a
 // second, looser pattern covers rows with no such trailing column.
-const CREW_ROW_WITH_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*?)\s+(\d\S*)\s*(.*)$/i;
-const CREW_ROW_NO_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+([A-ZÄÖÜß][A-ZÄÖÜß\-]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*)$/i;
+//
+// Surname allows an internal space as well as a hyphen (e.g. "VIDAL
+// BARCELO" - a real compound Spanish surname, confirmed on a real
+// Umlaufcrewliste), and an optional "#" between the role and the name -
+// a second, distinct per-person marker some rotation crew lists print
+// (separate from the icon-font glyphs already stripped in
+// extractPdfLines(); this one's a literal character).
+const CREW_ROW_WITH_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+#?\s*([A-ZÄÖÜß][A-ZÄÖÜß\- ]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*?)\s+(\d\S*)\s*(.*)$/i;
+const CREW_ROW_NO_ID_RE = /^([A-Z][A-Z0-9]{0,2})\s+#?\s*([A-ZÄÖÜß][A-ZÄÖÜß\- ]*,\s*[A-ZÄÖÜß][A-ZÄÖÜß\- ]*)$/i;
+
+// A long/hyphenated surname can wrap the firstname onto its own line in
+// the PDF's table layout (confirmed on a real Umlaufcrewliste: "FB
+// KOBUSINSKI-STERNFELD, 459008B ..." with "RAPHAEL" alone on the next
+// line) - the surname-then-ID line alone doesn't match either pattern
+// above (no firstname before the ID), so it's tried as a last resort and,
+// if the very next line looks like a bare continuation of the name, the
+// two are joined.
+const CREW_ROW_SURNAME_WRAP_RE = /^([A-Z][A-Z0-9]{0,2})\s+#?\s*([A-ZÄÖÜß][A-ZÄÖÜß\- ]*?),\s*(\d\S*)\s*(.*)$/i;
+
+function looksLikeNameContinuation(line) {
+  const t = (line || "").trim();
+  if (!t || t.length > 30) return false;
+  if (/^(Sh\.|Cr\.|F\.|Zeichenerkl|UMLAUFCREWLISTE|OD-Crew|<<<|>>>)/i.test(t)) return false;
+  if (LEG_ROW_RE.test(t) || CREW_ROW_WITH_ID_RE.test(t) || CREW_ROW_NO_ID_RE.test(t)) return false;
+  return /^[A-ZÄÖÜß][A-ZÄÖÜß\- ]*$/i.test(t);
+}
 
 function parseCrewFromLines(lines) {
   const crew = [];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     let m = line.match(CREW_ROW_WITH_ID_RE);
     if (m) {
       const [, role, name, , details] = m;
@@ -972,6 +1006,14 @@ function parseCrewFromLines(lines) {
     if (m) {
       const [, role, name] = m;
       crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: "" });
+      continue;
+    }
+    m = line.match(CREW_ROW_SURNAME_WRAP_RE);
+    if (m && looksLikeNameContinuation(lines[i + 1])) {
+      const [, role, surname, , details] = m;
+      const name = `${surname.trim()}, ${lines[i + 1].trim()}`;
+      crew.push({ role: role.trim(), name: displayName(name.replace(/\s+/g, " ")), details: (details || "").trim() });
+      i++; // consume the continuation line so it isn't tried as its own row
     }
   }
   return crew;

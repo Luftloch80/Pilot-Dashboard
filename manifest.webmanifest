@@ -1,6 +1,6 @@
 {
-  "name": "Pilot Dashboard",
-  "short_name": "Pilot",
+  "name": "PilotDashboard",
+  "short_name": "PilotDashboard",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0b1220",

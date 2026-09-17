@@ -1807,7 +1807,7 @@ function formatOwnNameForDisplay(name) {
 
 function renderBrandName() {
   const ownName = getOwnName().trim();
-  els.brandName.textContent = ownName ? formatOwnNameForDisplay(ownName) : "Pilot Dashboard";
+  els.brandName.textContent = ownName ? formatOwnNameForDisplay(ownName) : "PilotDashboard";
 }
 
 // Full-name match first (works when typed exactly as in the PDF), falling

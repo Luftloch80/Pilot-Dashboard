@@ -1,4 +1,4 @@
-# Pilot Dashboard
+# PilotDashboard
 
 Statische Web-App für iPhone/Safari: zeigt Abflug, Ankunft und Crew des
 aktuellen Flugs, geladen aus der OpenAirLog-REST-API. Kein Server, kein
@@ -147,7 +147,7 @@ Vercel als statisches Verzeichnis).
    der eigene Name (wie er in der Crewliste steht, also „Nachname,
    Vorname“) hinterlegen, der dann herausgefiltert wird – für die eigene
    Zimmernummer gibt es ja bereits das Feld direkt darüber. Derselbe Name
-   ersetzt außerdem den Schriftzug „Pilot Dashboard“ oben links, dort aber
+   ersetzt außerdem den Schriftzug „PilotDashboard“ oben links, dort aber
    in natürlicher Reihenfolge als „Vorname Nachname“ (`formatOwnNameForDisplay()`
    in `assets/app.js`); ist kein Name hinterlegt, bleibt es bei „Pilot
    Dashboard“. Ein „Pickup“-Hinweis für den nächsten Tag wird

@@ -732,7 +732,11 @@ function findLeavingCrew(flight, crew) {
   return leaving;
 }
 
+// Departing from home base means this is the first flight of a new tour -
+// the whole crew is "new" compared to whatever unrelated rotation happened
+// to fly before it, which isn't a meaningful join and would just be noise.
 function findJoiningCrew(flight, crew) {
+  if (flight.depCode === HOME_BASE) return new Set();
   const previous = adjacentFlightCrew(flight, -1);
   if (!previous) return new Set();
   const joining = new Set();

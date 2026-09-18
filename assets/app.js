@@ -839,8 +839,10 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
 // neighboring three makes that day-of-month fall closest to the flight
 // this is shown on - arithmetic on a confirmed digit, not a guess about
 // undocumented syntax.
-function formatPdfFlightRef(raw, contextDateKey) {
-  const m = /^([A-Z]{1,3}\d{2,5})\s+-?\d{1,2}\/(\d{1,2})$/.exec(raw);
+const PDF_REF_RE = /^([A-Z]{1,3}\d{2,5})\s+-?\d{1,2}\/(\d{1,2})$/;
+
+function formatPdfFlightRef(raw, contextDateKey, route) {
+  const m = PDF_REF_RE.exec(raw);
   if (!m || !contextDateKey) return raw;
   const [, flightNumber, dayStr] = m;
   const day = Number(dayStr);
@@ -855,7 +857,40 @@ function formatPdfFlightRef(raw, contextDateKey) {
   }
 
   const dateLabel = best.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
-  return `${flightNumber} am ${dateLabel}`;
+  const routeLabel = route ? ` (${route.depCode}–${route.arrCode})` : "";
+  return `${flightNumber}${routeLabel} am ${dateLabel}`;
+}
+
+// A colleague's Ex/To flight number (e.g. "LH1168") is one the pilot's
+// own currently loaded rotation never mentions, so there's no flight
+// object lying around with its citypair - looked up instead from the
+// pilot's own OpenAirLog logbook history for that same flight number
+// (confirmed on a real example: LH1168 shows EDDF-LPPT across every past
+// occurrence in the logbook, since a flight number almost always flies
+// the same route) rather than guessed at. Fire-and-forget, same pattern
+// as ensureAdjacentFlightCrewLoaded() - re-renders the crew list once the
+// lookup resolves, if still on the same flight by then.
+const flightRouteCache = new Map(); // flightNumber -> { status: "loading"|"ok"|"error", depCode?, arrCode? }
+
+async function ensureFlightRouteLoaded(flightNumber, f) {
+  if (flightRouteCache.has(flightNumber)) return;
+  flightRouteCache.set(flightNumber, { status: "loading" });
+
+  const key = getApiKey();
+  try {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/flights?flight_number=${encodeURIComponent(flightNumber)}&per_page=1`,
+      { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, cache: "no-store" }
+    );
+    const body = res.ok ? await res.json() : null;
+    const match = body && Array.isArray(body.data) ? body.data[0] : null;
+    flightRouteCache.set(flightNumber, match && match.departure && match.arrival
+      ? { status: "ok", depCode: match.departure, arrCode: match.arrival }
+      : { status: "error" });
+  } catch {
+    flightRouteCache.set(flightNumber, { status: "error" });
+  }
+  if (state.flights[state.index] === f) renderCrew(f);
 }
 
 // Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted
@@ -869,9 +904,17 @@ function buildPdfRefMap(f, field) {
   if (!state.pdfCrew) return map;
   const blockField = field === "exRef" ? "blockFirstFlight" : "blockLastFlight";
   for (const m of state.pdfCrew.crew) {
-    if (m[field] && m[blockField] === f.flightNumber) {
-      map.set(crewKey(m.role, m.name), formatPdfFlightRef(m[field], f.raw && f.raw.date));
+    if (!m[field] || m[blockField] !== f.flightNumber) continue;
+
+    const refMatch = PDF_REF_RE.exec(m[field]);
+    const refFlightNumber = refMatch ? refMatch[1] : null;
+    let route = null;
+    if (refFlightNumber) {
+      const cached = flightRouteCache.get(refFlightNumber);
+      if (cached && cached.status === "ok") route = cached;
+      else if (!cached) ensureFlightRouteLoaded(refFlightNumber, f);
     }
+    map.set(crewKey(m.role, m.name), formatPdfFlightRef(m[field], f.raw && f.raw.date, route));
   }
   return map;
 }

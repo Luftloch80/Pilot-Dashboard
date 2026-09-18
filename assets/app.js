@@ -816,17 +816,49 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
   });
 }
 
-// Per-member Ex/To reference (verbatim from the uploaded PDF) that applies
-// to this exact flight - an "exRef" only counts for the block's first
-// flight, a "toRef" only for its last (see parseCrewFromLines()), so a
-// colleague who shows up in more than one PDF block doesn't leak the
-// wrong block's reference onto a flight it doesn't belong to.
+// The PDF's own ref reads like "LH1168 -1/19" - flight number, an offset
+// whose exact meaning isn't documented anywhere, and a bare day-of-month.
+// Confirmed against a real Umlaufcrewliste (and the pilot's own reading of
+// it): "-1/19" for a colleague joining on a flight dated 19SEP is 19.09,
+// the same day - so the day-of-month is reliable and worth turning into a
+// proper weekday/date, but the offset itself is dropped rather than
+// guessed at. The month is picked as whichever of the neighboring three
+// makes that day-of-month fall closest to the flight this is shown on -
+// arithmetic on a confirmed digit, not a guess about undocumented syntax.
+function formatPdfFlightRef(raw, contextDateKey) {
+  const m = /^([A-Z]{1,3}\d{2,5})\s+-?\d{1,2}\/(\d{1,2})$/.exec(raw);
+  if (!m || !contextDateKey) return raw;
+  const [, flightNumber, dayStr] = m;
+  const day = Number(dayStr);
+  const [ctxY, ctxM, ctxD] = contextDateKey.split("-").map(Number);
+  const contextTime = Date.UTC(ctxY, ctxM - 1, ctxD);
+
+  let best = null;
+  for (const monthOffset of [-1, 0, 1]) {
+    const candidate = new Date(Date.UTC(ctxY, ctxM - 1 + monthOffset, day));
+    const diff = Math.abs(candidate.getTime() - contextTime);
+    if (!best || diff < best.diff) best = { candidate, diff };
+  }
+
+  const dateKey = `${best.candidate.getUTCFullYear()}-${String(best.candidate.getUTCMonth() + 1).padStart(2, "0")}-${String(best.candidate.getUTCDate()).padStart(2, "0")}`;
+  const dateLabel = `${weekdayShortForDateKey(dateKey)}, ${best.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" })}`;
+  return `${dateLabel} · ${flightNumber}`;
+}
+
+// Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted
+// via formatPdfFlightRef()) that applies to this exact flight - an
+// "exRef" only counts for the block's first flight, a "toRef" only for
+// its last (see parseCrewFromLines()), so a colleague who shows up in
+// more than one PDF block doesn't leak the wrong block's reference onto a
+// flight it doesn't belong to.
 function buildPdfRefMap(f, field) {
   const map = new Map();
   if (!state.pdfCrew) return map;
   const blockField = field === "exRef" ? "blockFirstFlight" : "blockLastFlight";
   for (const m of state.pdfCrew.crew) {
-    if (m[field] && m[blockField] === f.flightNumber) map.set(crewKey(m.role, m.name), m[field]);
+    if (m[field] && m[blockField] === f.flightNumber) {
+      map.set(crewKey(m.role, m.name), formatPdfFlightRef(m[field], f.raw && f.raw.date));
+    }
   }
   return map;
 }
@@ -1091,10 +1123,8 @@ async function loadFlights() {
 // A crew row's own "Ex"/"To" reference (the flight that person is coming
 // from / continuing to - confirmed on a real Umlaufcrewliste as its own
 // two columns, distinct from anything OpenAirLog knows about a colleague)
-// renders as a single text fragment like "LH1167 -1/19". Shown verbatim
-// rather than reformatted - what exactly "-1/19" encodes isn't documented
-// anywhere, so guessing at it risks showing a pilot confidently wrong
-// information; the raw printed form is always correct.
+// renders as a single text fragment like "LH1167 -1/19" - kept as raw
+// text here (parsed and reformatted later, in formatPdfFlightRef()).
 const PDF_FLIGHT_REF_RE = /^[A-Z]{1,3}\d{2,5}\s+-?\d{1,2}\/\d{1,2}$/;
 
 async function extractPdfLines(pdf) {

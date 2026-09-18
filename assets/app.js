@@ -653,17 +653,21 @@ function crewKey(role, name) {
   return `${role.toUpperCase()}|${firstNameOf(name)}`;
 }
 
-// Weekday, date, flight number and citypair of the flight the join/leave
-// arrow refers to (i.e. the neighboring flight the comparison was made
-// against) - shown next to the arrow so it's clear which flight the split
-// actually happens on, not just that one happens.
+// Flight number, citypair and date of the flight the join/leave arrow
+// refers to (i.e. the neighboring flight the comparison was made against)
+// - shown next to the arrow so it's clear which flight the split actually
+// happens on, not just that one happens. Same "FLIGHTNUMBER (DEP–ARR) am
+// DD.MM." schema as formatPdfFlightRef()'s "kommt mit"/"fliegt weiter
+// mit" labels, so both read consistently regardless of which source the
+// reference came from.
 function flightRefLabel(flight) {
   if (!flight) return null;
   const dateKey = flight.raw && flight.raw.date;
   const dateLabel = dateKey
-    ? `${weekdayShortForDateKey(dateKey)}, ${new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`
+    ? new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
     : null;
-  return [dateLabel, flight.flightNumber, `${flight.depCode}–${flight.arrCode}`].filter(Boolean).join(" · ");
+  const routeLabel = ` (${flight.depCode}–${flight.arrCode})`;
+  return dateLabel ? `${flight.flightNumber}${routeLabel} am ${dateLabel}` : `${flight.flightNumber}${routeLabel}`;
 }
 
 function renderCrewMembers(listEl, crew, opts = {}) {
@@ -709,7 +713,7 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
       if (pdfRef) info.textContent = `← kommt mit ${pdfRef}`;
-      else if (joiningInfo) info.textContent = `← vorheriger Flug: ${joiningInfo}`;
+      else if (joiningInfo) info.textContent = `← vorheriger Flug ${joiningInfo}`;
       if (info.textContent) name.appendChild(info);
     }
     if (isLeaving) {
@@ -717,7 +721,7 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
       if (pdfRef) info.textContent = `→ fliegt weiter mit ${pdfRef}`;
-      else if (leavingInfo) info.textContent = `→ nächster Flug: ${leavingInfo}`;
+      else if (leavingInfo) info.textContent = `→ nächster Flug ${leavingInfo}`;
       if (info.textContent) name.appendChild(info);
     }
     const role = document.createElement("span");
@@ -1630,7 +1634,7 @@ function findApiLayover(allFlights) {
     const dep = f.depActualDate || f.depSchedDate;
     return dep && dep > currentArr && dep <= now;
   });
-  return alreadyDeparted ? null : { arrCode: current.arrCode, arrTime: currentArr };
+  return alreadyDeparted ? null : { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }
 
 // The PDF is only used to enrich this with a hotel name, if a matching leg
@@ -2101,7 +2105,7 @@ function renderLayover() {
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
   renderLayoverCurrency(layover.arrCode);
-  renderLayoverCrew(layover.arrCode, hotel);
+  renderLayoverCrew(layover.arrCode, hotel, layover.flight);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as
@@ -2207,13 +2211,28 @@ function crewListsPlausiblyMatch(pdfCrew) {
 }
 
 // Only shown once a PDF has been uploaded *and* accepted as the active
-// crew source - the PDF crew list is assumed to share this layover (the
-// PDF has no reliable way to tell us which crew member is on which
-// specific leg/hotel).
-function renderLayoverCrew(arrCode, hotel) {
+// crew source. Narrowed to whoever's actually on the flight that landed
+// here (so they're really at this layover, not just listed somewhere else
+// in the PDF) and still on the next flight too (a room number is only
+// useful for coordinating with someone who's still around tomorrow, not
+// a colleague leaving the crew at this stop) - determined from
+// OpenAirLog's own per-flight crew, the same live comparison the join/
+// leave arrows already use, rather than the PDF's flat list.
+function renderLayoverCrew(arrCode, hotel, flight) {
   const allCrew = state.crewSource === "pdf" && state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
   const ownName = getOwnName();
-  const crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
+  let crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
+
+  const hereCrew = flight ? adjacentFlightCrew(flight, 0) : null;
+  const nextCrew = flight ? adjacentFlightCrew(flight, 1) : null;
+  crew = hereCrew && nextCrew
+    ? crew.filter((m) => {
+        const key = crewKey(m.role, m.name);
+        return hereCrew.some((c) => crewKey(c.role, c.name) === key) &&
+          nextCrew.some((c) => crewKey(c.role, c.name) === key);
+      })
+    : [];
+
   els.layoverCrew.hidden = !crew.length;
   els.layoverCrewList.innerHTML = "";
   if (!crew.length) return;

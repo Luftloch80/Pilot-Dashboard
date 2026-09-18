@@ -708,7 +708,7 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       const pdfRef = pdfExRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `← kommt von: ${pdfRef}`;
+      if (pdfRef) info.textContent = `← kommt mit ${pdfRef}`;
       else if (joiningInfo) info.textContent = `← vorheriger Flug: ${joiningInfo}`;
       if (info.textContent) name.appendChild(info);
     }
@@ -716,7 +716,7 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       const pdfRef = pdfToRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `→ fliegt weiter mit: ${pdfRef}`;
+      if (pdfRef) info.textContent = `→ fliegt weiter mit ${pdfRef}`;
       else if (leavingInfo) info.textContent = `→ nächster Flug: ${leavingInfo}`;
       if (info.textContent) name.appendChild(info);
     }
@@ -834,10 +834,11 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
 // Confirmed against a real Umlaufcrewliste (and the pilot's own reading of
 // it): "-1/19" for a colleague joining on a flight dated 19SEP is 19.09,
 // the same day - so the day-of-month is reliable and worth turning into a
-// proper weekday/date, but the offset itself is dropped rather than
-// guessed at. The month is picked as whichever of the neighboring three
-// makes that day-of-month fall closest to the flight this is shown on -
-// arithmetic on a confirmed digit, not a guess about undocumented syntax.
+// proper date ("LH1168 am 19.09."), but the offset itself is dropped
+// rather than guessed at. The month is picked as whichever of the
+// neighboring three makes that day-of-month fall closest to the flight
+// this is shown on - arithmetic on a confirmed digit, not a guess about
+// undocumented syntax.
 function formatPdfFlightRef(raw, contextDateKey) {
   const m = /^([A-Z]{1,3}\d{2,5})\s+-?\d{1,2}\/(\d{1,2})$/.exec(raw);
   if (!m || !contextDateKey) return raw;
@@ -853,9 +854,8 @@ function formatPdfFlightRef(raw, contextDateKey) {
     if (!best || diff < best.diff) best = { candidate, diff };
   }
 
-  const dateKey = `${best.candidate.getUTCFullYear()}-${String(best.candidate.getUTCMonth() + 1).padStart(2, "0")}-${String(best.candidate.getUTCDate()).padStart(2, "0")}`;
-  const dateLabel = `${weekdayShortForDateKey(dateKey)}, ${best.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" })}`;
-  return `${dateLabel} · ${flightNumber}`;
+  const dateLabel = best.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+  return `${flightNumber} am ${dateLabel}`;
 }
 
 // Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted

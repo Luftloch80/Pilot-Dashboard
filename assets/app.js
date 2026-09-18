@@ -653,7 +653,20 @@ function crewKey(role, name) {
   return `${role.toUpperCase()}|${firstNameOf(name)}`;
 }
 
-function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set()) {
+// Weekday, date, flight number and citypair of the flight the join/leave
+// arrow refers to (i.e. the neighboring flight the comparison was made
+// against) - shown next to the arrow so it's clear which flight the split
+// actually happens on, not just that one happens.
+function flightRefLabel(flight) {
+  if (!flight) return null;
+  const dateKey = flight.raw && flight.raw.date;
+  const dateLabel = dateKey
+    ? `${weekdayShortForDateKey(dateKey)}, ${new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`
+    : null;
+  return [dateLabel, flight.flightNumber, `${flight.depCode}–${flight.arrCode}`].filter(Boolean).join(" · ");
+}
+
+function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(), leavingInfo = null, joiningInfo = null) {
   listEl.innerHTML = "";
   for (const member of crew) {
     const key = crewKey(member.role, member.name);
@@ -666,6 +679,12 @@ function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(
       arrow.textContent = " ←";
       arrow.title = "Neu in der Crew ab diesem Flug";
       name.appendChild(arrow);
+      if (joiningInfo) {
+        const info = document.createElement("span");
+        info.className = "crew-arrow-info";
+        info.textContent = ` (vorheriger Flug: ${joiningInfo})`;
+        name.appendChild(info);
+      }
     }
     if (leaving.has(key)) {
       const arrow = document.createElement("span");
@@ -673,6 +692,12 @@ function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(
       arrow.textContent = " →";
       arrow.title = "Verlässt die Crew nach diesem Flug";
       name.appendChild(arrow);
+      if (leavingInfo) {
+        const info = document.createElement("span");
+        info.className = "crew-arrow-info";
+        info.textContent = ` (nächster Flug: ${leavingInfo})`;
+        name.appendChild(info);
+      }
     }
     const role = document.createElement("span");
     role.className = "crew-role";
@@ -701,13 +726,18 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
   });
 }
 
-// Live OpenAirLog crew for the flight one slot away from the given one in
-// the loaded rotation (offset -1 = previous, +1 = next) - embedded if
-// present, otherwise whatever's already in crewCache, or null if that's
-// genuinely not known yet.
-function adjacentFlightCrew(flight, offset) {
+// The flight one slot away from the given one in the loaded rotation
+// (offset -1 = previous, +1 = next), or undefined at either end.
+function adjacentFlight(flight, offset) {
   const idx = state.allFlights.indexOf(flight);
-  const adjacent = idx >= 0 ? state.allFlights[idx + offset] : undefined;
+  return idx >= 0 ? state.allFlights[idx + offset] : undefined;
+}
+
+// Live OpenAirLog crew for that adjacent flight - embedded if present,
+// otherwise whatever's already in crewCache, or null if that's genuinely
+// not known yet.
+function adjacentFlightCrew(flight, offset) {
+  const adjacent = adjacentFlight(flight, offset);
   if (!adjacent) return null;
   if (adjacent.embeddedCrew.length) return adjacent.embeddedCrew;
   const cached = adjacent.id != null ? crewCache.get(adjacent.id) : undefined;
@@ -801,7 +831,10 @@ function renderCrew(f) {
     // Reconcile with the live OpenAirLog crew when it's available - falls
     // back to the raw PDF list only while the API crew hasn't loaded yet.
     const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
-    renderCrewMembers(els.crewList, merged, findLeavingCrew(f, merged), findJoiningCrew(f, merged));
+    renderCrewMembers(
+      els.crewList, merged, findLeavingCrew(f, merged), findJoiningCrew(f, merged),
+      flightRefLabel(adjacentFlight(f, 1)), flightRefLabel(adjacentFlight(f, -1))
+    );
     return;
   }
 
@@ -828,7 +861,10 @@ function renderCrew(f) {
     return;
   }
 
-  renderCrewMembers(els.crewList, apiCrew, findLeavingCrew(f, apiCrew), findJoiningCrew(f, apiCrew));
+  renderCrewMembers(
+    els.crewList, apiCrew, findLeavingCrew(f, apiCrew), findJoiningCrew(f, apiCrew),
+    flightRefLabel(adjacentFlight(f, 1)), flightRefLabel(adjacentFlight(f, -1))
+  );
 }
 
 async function ensureCrewLoaded(f) {

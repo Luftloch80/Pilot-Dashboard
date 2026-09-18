@@ -678,33 +678,46 @@ function renderCrewMembers(listEl, crew, opts = {}) {
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.textContent = member.name;
-    if (joining.has(key)) {
+    const isJoining = joining.has(key);
+    const isLeaving = leaving.has(key);
+
+    // Both arrows sit right next to the name first, with their
+    // explanations stacked below (each still starting with its own arrow
+    // symbol, since they're no longer directly next to it) - rather than
+    // interleaving arrow/explanation/arrow/explanation, which pushed the
+    // second arrow onto its own line once the first explanation's block
+    // display forced a break.
+    if (isJoining) {
       const arrow = document.createElement("span");
       arrow.className = "crew-joining";
       arrow.textContent = " ←";
       arrow.title = "Neu in der Crew ab diesem Flug";
       name.appendChild(arrow);
+    }
+    if (isLeaving) {
+      const arrow = document.createElement("span");
+      arrow.className = "crew-leaving";
+      arrow.textContent = " →";
+      arrow.title = "Verlässt die Crew nach diesem Flug";
+      name.appendChild(arrow);
+    }
+    if (isJoining) {
       // Prefer the PDF's own "Ex" column when available - it's about this
       // specific colleague's own routing, not just our own neighboring
       // flight, which is all the OpenAirLog-only fallback can offer.
       const pdfRef = pdfExRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = ` (kommt von: ${pdfRef})`;
-      else if (joiningInfo) info.textContent = ` (vorheriger Flug: ${joiningInfo})`;
+      if (pdfRef) info.textContent = `← kommt von: ${pdfRef}`;
+      else if (joiningInfo) info.textContent = `← vorheriger Flug: ${joiningInfo}`;
       if (info.textContent) name.appendChild(info);
     }
-    if (leaving.has(key)) {
-      const arrow = document.createElement("span");
-      arrow.className = "crew-leaving";
-      arrow.textContent = " →";
-      arrow.title = "Verlässt die Crew nach diesem Flug";
-      name.appendChild(arrow);
+    if (isLeaving) {
       const pdfRef = pdfToRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = ` (fliegt weiter mit: ${pdfRef})`;
-      else if (leavingInfo) info.textContent = ` (nächster Flug: ${leavingInfo})`;
+      if (pdfRef) info.textContent = `→ fliegt weiter mit: ${pdfRef}`;
+      else if (leavingInfo) info.textContent = `→ nächster Flug: ${leavingInfo}`;
       if (info.textContent) name.appendChild(info);
     }
     const role = document.createElement("span");

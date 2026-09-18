@@ -666,7 +666,12 @@ function flightRefLabel(flight) {
   return [dateLabel, flight.flightNumber, `${flight.depCode}–${flight.arrCode}`].filter(Boolean).join(" · ");
 }
 
-function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(), leavingInfo = null, joiningInfo = null) {
+function renderCrewMembers(listEl, crew, opts = {}) {
+  const {
+    leaving = new Set(), joining = new Set(),
+    leavingInfo = null, joiningInfo = null,
+    pdfExRefs = new Map(), pdfToRefs = new Map(),
+  } = opts;
   listEl.innerHTML = "";
   for (const member of crew) {
     const key = crewKey(member.role, member.name);
@@ -679,12 +684,15 @@ function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(
       arrow.textContent = " ←";
       arrow.title = "Neu in der Crew ab diesem Flug";
       name.appendChild(arrow);
-      if (joiningInfo) {
-        const info = document.createElement("span");
-        info.className = "crew-arrow-info";
-        info.textContent = ` (vorheriger Flug: ${joiningInfo})`;
-        name.appendChild(info);
-      }
+      // Prefer the PDF's own "Ex" column when available - it's about this
+      // specific colleague's own routing, not just our own neighboring
+      // flight, which is all the OpenAirLog-only fallback can offer.
+      const pdfRef = pdfExRefs.get(key);
+      const info = document.createElement("span");
+      info.className = "crew-arrow-info";
+      if (pdfRef) info.textContent = ` (kommt von: ${pdfRef})`;
+      else if (joiningInfo) info.textContent = ` (vorheriger Flug: ${joiningInfo})`;
+      if (info.textContent) name.appendChild(info);
     }
     if (leaving.has(key)) {
       const arrow = document.createElement("span");
@@ -692,12 +700,12 @@ function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(
       arrow.textContent = " →";
       arrow.title = "Verlässt die Crew nach diesem Flug";
       name.appendChild(arrow);
-      if (leavingInfo) {
-        const info = document.createElement("span");
-        info.className = "crew-arrow-info";
-        info.textContent = ` (nächster Flug: ${leavingInfo})`;
-        name.appendChild(info);
-      }
+      const pdfRef = pdfToRefs.get(key);
+      const info = document.createElement("span");
+      info.className = "crew-arrow-info";
+      if (pdfRef) info.textContent = ` (fliegt weiter mit: ${pdfRef})`;
+      else if (leavingInfo) info.textContent = ` (nächster Flug: ${leavingInfo})`;
+      if (info.textContent) name.appendChild(info);
     }
     const role = document.createElement("span");
     role.className = "crew-role";
@@ -706,24 +714,6 @@ function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set(
     li.appendChild(role);
     listEl.appendChild(li);
   }
-}
-
-// The PDF crew list is a snapshot from whenever it was uploaded/downloaded
-// and can go stale mid-trip (e.g. a late P1 swap) - OpenAirLog stays the
-// live source of truth. So rather than showing the PDF's list verbatim,
-// take each OpenAirLog crew member and use the PDF's name for them only
-// if the same role's first name still matches (the PDF's "Nachname,
-// Vorname" is nicer than OpenAirLog's partly-anonymized "H., Nicolas");
-// a role whose occupant has since changed falls back to OpenAirLog's own
-// name for that entry instead of showing whoever the PDF still lists.
-function mergeCrewWithPdf(apiCrew, pdfCrew) {
-  return apiCrew.map((member) => {
-    const match = pdfCrew.find(
-      (p) => p.role.toUpperCase() === member.role.toUpperCase() &&
-        firstNameOf(p.name) === firstNameOf(member.name)
-    );
-    return match ? { name: match.name, role: member.role } : member;
-  });
 }
 
 // The flight one slot away from the given one in the loaded rotation
@@ -766,11 +756,24 @@ function findLeavingCrew(flight, crew) {
   return leaving;
 }
 
-// Departing from home base means this is the first flight of a new tour -
-// the whole crew is "new" compared to whatever unrelated rotation happened
-// to fly before it, which isn't a meaningful join and would just be noise.
+// A flight starts a new tour - rather than just continuing on from the
+// previous leg - when there's no previous flight loaded, or that previous
+// flight landed somewhere other than where this one departs from. Landing
+// at home base mid-rotation and departing again the same day (a quick
+// turn, common on short-haul) is NOT a new tour and must not be treated
+// as one - confirmed against a real rotation where exactly this
+// (EDDF->EKBI right after LPPT->EDDF) wrongly suppressed a real join
+// before this was narrowed from a blanket "departs home base" check.
+function startsNewTour(flight) {
+  const previous = adjacentFlight(flight, -1);
+  return !previous || previous.arrCode !== flight.depCode;
+}
+
+// Whoever's crew a flight starts a new tour from is unrelated to this one
+// - the whole crew being "new" there is expected, not a meaningful join,
+// and would just be noise.
 function findJoiningCrew(flight, crew) {
-  if (flight.depCode === HOME_BASE) return new Set();
+  if (startsNewTour(flight)) return new Set();
   const previous = adjacentFlightCrew(flight, -1);
   if (!previous) return new Set();
   const joining = new Set();
@@ -793,6 +796,39 @@ async function ensureAdjacentFlightCrewLoaded(flight, offset) {
 
   await ensureCrewLoaded(adjacent);
   if (state.flights[state.index] === flight) renderCrew(flight);
+}
+
+// The PDF crew list is a snapshot from whenever it was uploaded/downloaded
+// and can go stale mid-trip (e.g. a late P1 swap) - OpenAirLog stays the
+// live source of truth. So rather than showing the PDF's list verbatim,
+// take each OpenAirLog crew member and use the PDF's name for them only
+// if the same role's first name still matches (the PDF's "Nachname,
+// Vorname" is nicer than OpenAirLog's partly-anonymized "H., Nicolas");
+// a role whose occupant has since changed falls back to OpenAirLog's own
+// name for that entry instead of showing whoever the PDF still lists.
+function mergeCrewWithPdf(apiCrew, pdfCrew) {
+  return apiCrew.map((member) => {
+    const match = pdfCrew.find(
+      (p) => p.role.toUpperCase() === member.role.toUpperCase() &&
+        firstNameOf(p.name) === firstNameOf(member.name)
+    );
+    return match ? { name: match.name, role: member.role } : member;
+  });
+}
+
+// Per-member Ex/To reference (verbatim from the uploaded PDF) that applies
+// to this exact flight - an "exRef" only counts for the block's first
+// flight, a "toRef" only for its last (see parseCrewFromLines()), so a
+// colleague who shows up in more than one PDF block doesn't leak the
+// wrong block's reference onto a flight it doesn't belong to.
+function buildPdfRefMap(f, field) {
+  const map = new Map();
+  if (!state.pdfCrew) return map;
+  const blockField = field === "exRef" ? "blockFirstFlight" : "blockLastFlight";
+  for (const m of state.pdfCrew.crew) {
+    if (m[field] && m[blockField] === f.flightNumber) map.set(crewKey(m.role, m.name), m[field]);
+  }
+  return map;
 }
 
 // Crew shown here comes either from OpenAirLog (per-flight, via
@@ -831,10 +867,11 @@ function renderCrew(f) {
     // Reconcile with the live OpenAirLog crew when it's available - falls
     // back to the raw PDF list only while the API crew hasn't loaded yet.
     const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
-    renderCrewMembers(
-      els.crewList, merged, findLeavingCrew(f, merged), findJoiningCrew(f, merged),
-      flightRefLabel(adjacentFlight(f, 1)), flightRefLabel(adjacentFlight(f, -1))
-    );
+    renderCrewMembers(els.crewList, merged, {
+      leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
+      leavingInfo: flightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+      pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
+    });
     return;
   }
 
@@ -861,10 +898,11 @@ function renderCrew(f) {
     return;
   }
 
-  renderCrewMembers(
-    els.crewList, apiCrew, findLeavingCrew(f, apiCrew), findJoiningCrew(f, apiCrew),
-    flightRefLabel(adjacentFlight(f, 1)), flightRefLabel(adjacentFlight(f, -1))
-  );
+  renderCrewMembers(els.crewList, apiCrew, {
+    leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
+    leavingInfo: flightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+    pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
+  });
 }
 
 async function ensureCrewLoaded(f) {
@@ -1050,8 +1088,18 @@ async function loadFlights() {
 // enough to parse. Verified against a real "Umlaufcrewliste" (Lufthansa-
 // style rotation crew list) PDF.
 
+// A crew row's own "Ex"/"To" reference (the flight that person is coming
+// from / continuing to - confirmed on a real Umlaufcrewliste as its own
+// two columns, distinct from anything OpenAirLog knows about a colleague)
+// renders as a single text fragment like "LH1167 -1/19". Shown verbatim
+// rather than reformatted - what exactly "-1/19" encodes isn't documented
+// anywhere, so guessing at it risks showing a pilot confidently wrong
+// information; the raw printed form is always correct.
+const PDF_FLIGHT_REF_RE = /^[A-Z]{1,3}\d{2,5}\s+-?\d{1,2}\/\d{1,2}$/;
+
 async function extractPdfLines(pdf) {
   const lines = [];
+  const refs = []; // refs[i] = { exRef, toRef } | null, aligned with lines[i]
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
@@ -1067,8 +1115,35 @@ async function extractPdfLines(pdf) {
       row.items.push(it);
     }
     rows.sort((a, b) => b.y - a.y); // PDF y grows upward -> top of page first
+
+    // The "Ex"/"To" column header x-positions, tracked as the page is
+    // walked top-to-bottom and refreshed at each crew-table header - every
+    // flight-leg block gets its own repeated header, and column x can
+    // shift slightly between blocks.
+    let exX = null;
+    let toX = null;
+
     for (const row of rows) {
       row.items.sort((a, b) => a.x - b.x);
+
+      const exItem = row.items.find((i) => i.str.trim() === "Ex");
+      const toItem = row.items.find((i) => i.str.trim() === "To");
+      if (exItem && toItem) { exX = exItem.x; toX = toItem.x; }
+
+      // Classified by whichever column's x it starts closest to - verified
+      // against a real Umlaufcrewliste: a joins-only row's ref always
+      // lands in "Ex", a leaves-only row's always in "To".
+      let rowRef = null;
+      if (exX != null && toX != null) {
+        const refItem = row.items.find((i) => PDF_FLIGHT_REF_RE.test(i.str.trim()));
+        if (refItem) {
+          const value = refItem.str.trim();
+          rowRef = Math.abs(refItem.x - exX) <= Math.abs(refItem.x - toX)
+            ? { exRef: value, toRef: null }
+            : { exRef: null, toRef: value };
+        }
+      }
+
       const line = row.items.map((i) => i.str).join(" ")
         // Some rotation crew lists mark a per-person crew change (joins/
         // leaves) with an icon-font glyph rather than real text - it has
@@ -1079,10 +1154,10 @@ async function extractPdfLines(pdf) {
         .replace(/[-]/g, "")
         .replace(/\s+/g, " ")
         .trim();
-      if (line) lines.push(line);
+      if (line) { lines.push(line); refs.push(rowRef); }
     }
   }
-  return lines;
+  return { lines, refs };
 }
 
 // Matches crew-table rows: a short role code (CP, FO, P1, FB, PU, ...)
@@ -1120,27 +1195,62 @@ function looksLikeNameContinuation(line) {
   return /^[A-ZÄÖÜß][A-ZÄÖÜß\- ]*$/i.test(t);
 }
 
-function parseCrewFromLines(lines) {
+// Marks the crew table for the flight-leg block whose LEG_ROW_RE rows
+// appeared since the previous such header - repeats before every block,
+// possibly after several leg rows and even several "Sh. Fl." sub-headers
+// (a block can span multiple flights sharing one crew, confirmed on a
+// real Umlaufcrewliste: three legs, one crew table).
+const CREW_TABLE_HEADER_RE = /^Cr\.\s+Name,\s*Vorname/i;
+
+// Per the PDF's own legend ("<<< - die Person erweitert die Crew zum
+// ersten Flug des angeführten Blocks", ">>> - ... zum letzten Flug"), a
+// join applies at the block's first flight and a leave at its last -
+// tracked here (blockFirstFlight/blockLastFlight) so a crew member's Ex/To
+// reference can later be matched to the exact OpenAirLog flight it's
+// relevant for, not just attached to every flight they're ever on.
+function parseCrewFromLines(lines, refs = []) {
   const crew = [];
+  let pendingLegFlights = [];
+  let blockFirstFlight = null;
+  let blockLastFlight = null;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    const legMatch = line.match(LEG_ROW_RE);
+    if (legMatch) {
+      pendingLegFlights.push(legMatch[3]);
+      continue;
+    }
+    if (CREW_TABLE_HEADER_RE.test(line)) {
+      if (pendingLegFlights.length) {
+        blockFirstFlight = pendingLegFlights[0];
+        blockLastFlight = pendingLegFlights[pendingLegFlights.length - 1];
+        pendingLegFlights = [];
+      }
+      continue;
+    }
+
+    const ref = refs[i] || null;
+    const refFields = { exRef: ref && ref.exRef, toRef: ref && ref.toRef, blockFirstFlight, blockLastFlight };
+
     let m = line.match(CREW_ROW_WITH_ID_RE);
     if (m) {
       const [, role, name, , details] = m;
-      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: (details || "").trim() });
+      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: (details || "").trim(), ...refFields });
       continue;
     }
     m = line.match(CREW_ROW_NO_ID_RE);
     if (m) {
       const [, role, name] = m;
-      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: "" });
+      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: "", ...refFields });
       continue;
     }
     m = line.match(CREW_ROW_SURNAME_WRAP_RE);
     if (m && looksLikeNameContinuation(lines[i + 1])) {
       const [, role, surname, , details] = m;
       const name = `${surname.trim()}, ${lines[i + 1].trim()}`;
-      crew.push({ role: role.trim(), name: displayName(name.replace(/\s+/g, " ")), details: (details || "").trim() });
+      crew.push({ role: role.trim(), name: displayName(name.replace(/\s+/g, " ")), details: (details || "").trim(), ...refFields });
       i++; // consume the continuation line so it isn't tried as its own row
     }
   }
@@ -2056,10 +2166,10 @@ async function handleCrewPdf(file) {
   try {
     const buf = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    const lines = await extractPdfLines(pdf);
+    const { lines, refs } = await extractPdfLines(pdf);
     const rawText = lines.join("\n");
     const rotation = parseRotationHeader(lines);
-    const crew = parseCrewFromLines(lines);
+    const crew = parseCrewFromLines(lines, refs);
     const legs = parseFlightLegs(lines);
 
     state.pdfLegs = legs;

@@ -604,6 +604,10 @@ body {
   color: var(--text-muted);
   letter-spacing: 0.03em;
 }
+.crew-leaving {
+  color: var(--danger);
+  font-weight: 700;
+}
 
 .crew-pdf-head {
   display: flex;

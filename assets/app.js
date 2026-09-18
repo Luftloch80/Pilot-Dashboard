@@ -645,12 +645,23 @@ function renderFlight() {
   renderFlightNav();
 }
 
-function renderCrewMembers(listEl, crew) {
+function crewKey(role, name) {
+  return `${role.toUpperCase()}|${firstNameOf(name)}`;
+}
+
+function renderCrewMembers(listEl, crew, leaving = new Set()) {
   listEl.innerHTML = "";
   for (const member of crew) {
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.textContent = member.name;
+    if (leaving.has(crewKey(member.role, member.name))) {
+      const arrow = document.createElement("span");
+      arrow.className = "crew-leaving";
+      arrow.textContent = " →";
+      arrow.title = "Verlässt die Crew nach diesem Flug";
+      name.appendChild(arrow);
+    }
     const role = document.createElement("span");
     role.className = "crew-role";
     role.textContent = member.role;
@@ -678,6 +689,54 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
   });
 }
 
+// Live OpenAirLog crew for the flight right after the given one in the
+// loaded rotation (embedded if present, otherwise whatever's already in
+// crewCache) - or null if that's genuinely not known yet.
+function nextFlightCrew(flight) {
+  const idx = state.allFlights.indexOf(flight);
+  const next = idx >= 0 ? state.allFlights[idx + 1] : undefined;
+  if (!next) return null;
+  if (next.embeddedCrew.length) return next.embeddedCrew;
+  const cached = next.id != null ? crewCache.get(next.id) : undefined;
+  return cached && cached.status === "ok" ? cached.crew : null;
+}
+
+// Whichever crew member on the currently viewed flight doesn't also show
+// up (same role, same first name) on the next flight is - as far as
+// live OpenAirLog data can tell - not continuing with the crew after this
+// one. Compared by first name rather than the full name so this still
+// works against OpenAirLog's partly-anonymized names ("H., Nicolas") and
+// isn't thrown off by the PDF-merged display name. No next flight loaded,
+// or its crew not fetched yet, means nothing can be said either way - see
+// ensureNextFlightCrewLoaded() below, which fills that in and triggers a
+// re-render once it's available, rather than this guessing in the
+// meantime.
+function findLeavingCrew(flight, crew) {
+  const next = nextFlightCrew(flight);
+  if (!next) return new Set();
+  const leaving = new Set();
+  for (const member of crew) {
+    const staysOn = next.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
+    if (!staysOn) leaving.add(crewKey(member.role, member.name));
+  }
+  return leaving;
+}
+
+// Fire-and-forget: the next flight's crew is needed only to compute the
+// "leaving after this flight" indicator, not to show that flight itself,
+// so this doesn't block rendering the current one - it just re-renders
+// once the fetch resolves, if the pilot is still looking at the same
+// flight by then.
+async function ensureNextFlightCrewLoaded(flight) {
+  const idx = state.allFlights.indexOf(flight);
+  const next = idx >= 0 ? state.allFlights[idx + 1] : undefined;
+  if (!next || next.embeddedCrew.length) return;
+  if (next.id != null && crewCache.has(next.id)) return; // already loading/loaded/forbidden/error
+
+  await ensureCrewLoaded(next);
+  if (state.flights[state.index] === flight) renderCrew(flight);
+}
+
 // Crew shown here comes either from OpenAirLog (per-flight, via
 // /flights/{id}/crew) or - if the pilot uploaded a PDF - from that PDF,
 // which then overwrites the OpenAirLog crew until switched back.
@@ -689,6 +748,8 @@ function renderCrew(f) {
 
   const detectedOwnName = detectOwnName(f, apiCrew);
   if (detectedOwnName) applyDetectedOwnName(detectedOwnName);
+
+  ensureNextFlightCrewLoaded(f); // fills in the "leaving" indicator once loaded, re-renders itself
 
   if (hasPdfCrew) {
     els.crewSourceSwitchBtn.hidden = false;
@@ -709,7 +770,8 @@ function renderCrew(f) {
     els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
     // Reconcile with the live OpenAirLog crew when it's available - falls
     // back to the raw PDF list only while the API crew hasn't loaded yet.
-    renderCrewMembers(els.crewList, apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew);
+    const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
+    renderCrewMembers(els.crewList, merged, findLeavingCrew(f, merged));
     return;
   }
 
@@ -736,7 +798,7 @@ function renderCrew(f) {
     return;
   }
 
-  renderCrewMembers(els.crewList, apiCrew);
+  renderCrewMembers(els.crewList, apiCrew, findLeavingCrew(f, apiCrew));
 }
 
 async function ensureCrewLoaded(f) {

@@ -883,7 +883,11 @@ async function ensureFlightRouteLoaded(flightNumber, f) {
       { headers: { Authorization: `Bearer ${key}`, Accept: "application/json" }, cache: "no-store" }
     );
     const body = res.ok ? await res.json() : null;
-    const match = body && Array.isArray(body.data) ? body.data[0] : null;
+    const entries = body && Array.isArray(body.data) ? body.data : [];
+    // Double-checked rather than trusting data[0] blindly - if the API
+    // doesn't actually support filtering by flight_number, it would
+    // otherwise silently attach some other flight's route here.
+    const match = entries.find((e) => String(e.flight_number) === flightNumber);
     flightRouteCache.set(flightNumber, match && match.departure && match.arrival
       ? { status: "ok", depCode: match.departure, arrCode: match.arrival }
       : { status: "error" });

@@ -608,6 +608,10 @@ body {
   color: var(--danger);
   font-weight: 700;
 }
+.crew-joining {
+  color: var(--ok);
+  font-weight: 700;
+}
 
 .crew-pdf-head {
   display: flex;

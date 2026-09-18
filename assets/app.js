@@ -649,13 +649,21 @@ function crewKey(role, name) {
   return `${role.toUpperCase()}|${firstNameOf(name)}`;
 }
 
-function renderCrewMembers(listEl, crew, leaving = new Set()) {
+function renderCrewMembers(listEl, crew, leaving = new Set(), joining = new Set()) {
   listEl.innerHTML = "";
   for (const member of crew) {
+    const key = crewKey(member.role, member.name);
     const li = document.createElement("li");
     const name = document.createElement("span");
     name.textContent = member.name;
-    if (leaving.has(crewKey(member.role, member.name))) {
+    if (joining.has(key)) {
+      const arrow = document.createElement("span");
+      arrow.className = "crew-joining";
+      arrow.textContent = " ←";
+      arrow.title = "Neu in der Crew ab diesem Flug";
+      name.appendChild(arrow);
+    }
+    if (leaving.has(key)) {
       const arrow = document.createElement("span");
       arrow.className = "crew-leaving";
       arrow.textContent = " →";
@@ -689,30 +697,32 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
   });
 }
 
-// Live OpenAirLog crew for the flight right after the given one in the
-// loaded rotation (embedded if present, otherwise whatever's already in
-// crewCache) - or null if that's genuinely not known yet.
-function nextFlightCrew(flight) {
+// Live OpenAirLog crew for the flight one slot away from the given one in
+// the loaded rotation (offset -1 = previous, +1 = next) - embedded if
+// present, otherwise whatever's already in crewCache, or null if that's
+// genuinely not known yet.
+function adjacentFlightCrew(flight, offset) {
   const idx = state.allFlights.indexOf(flight);
-  const next = idx >= 0 ? state.allFlights[idx + 1] : undefined;
-  if (!next) return null;
-  if (next.embeddedCrew.length) return next.embeddedCrew;
-  const cached = next.id != null ? crewCache.get(next.id) : undefined;
+  const adjacent = idx >= 0 ? state.allFlights[idx + offset] : undefined;
+  if (!adjacent) return null;
+  if (adjacent.embeddedCrew.length) return adjacent.embeddedCrew;
+  const cached = adjacent.id != null ? crewCache.get(adjacent.id) : undefined;
   return cached && cached.status === "ok" ? cached.crew : null;
 }
 
 // Whichever crew member on the currently viewed flight doesn't also show
-// up (same role, same first name) on the next flight is - as far as
-// live OpenAirLog data can tell - not continuing with the crew after this
-// one. Compared by first name rather than the full name so this still
-// works against OpenAirLog's partly-anonymized names ("H., Nicolas") and
-// isn't thrown off by the PDF-merged display name. No next flight loaded,
-// or its crew not fetched yet, means nothing can be said either way - see
-// ensureNextFlightCrewLoaded() below, which fills that in and triggers a
-// re-render once it's available, rather than this guessing in the
-// meantime.
+// up (same role, same first name) on the next flight is - as far as live
+// OpenAirLog data can tell - not continuing with the crew after this one;
+// the mirror image (findJoiningCrew) checks the previous flight instead,
+// for whoever's new as of this one. Compared by first name rather than
+// the full name so this still works against OpenAirLog's partly-
+// anonymized names ("H., Nicolas") and isn't thrown off by the PDF-merged
+// display name. No adjacent flight loaded, or its crew not fetched yet,
+// means nothing can be said either way - see ensureAdjacentFlightCrewLoaded()
+// below, which fills that in and triggers a re-render once it's
+// available, rather than this guessing in the meantime.
 function findLeavingCrew(flight, crew) {
-  const next = nextFlightCrew(flight);
+  const next = adjacentFlightCrew(flight, 1);
   if (!next) return new Set();
   const leaving = new Set();
   for (const member of crew) {
@@ -722,18 +732,28 @@ function findLeavingCrew(flight, crew) {
   return leaving;
 }
 
-// Fire-and-forget: the next flight's crew is needed only to compute the
-// "leaving after this flight" indicator, not to show that flight itself,
-// so this doesn't block rendering the current one - it just re-renders
-// once the fetch resolves, if the pilot is still looking at the same
-// flight by then.
-async function ensureNextFlightCrewLoaded(flight) {
-  const idx = state.allFlights.indexOf(flight);
-  const next = idx >= 0 ? state.allFlights[idx + 1] : undefined;
-  if (!next || next.embeddedCrew.length) return;
-  if (next.id != null && crewCache.has(next.id)) return; // already loading/loaded/forbidden/error
+function findJoiningCrew(flight, crew) {
+  const previous = adjacentFlightCrew(flight, -1);
+  if (!previous) return new Set();
+  const joining = new Set();
+  for (const member of crew) {
+    const wasThereBefore = previous.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
+    if (!wasThereBefore) joining.add(crewKey(member.role, member.name));
+  }
+  return joining;
+}
 
-  await ensureCrewLoaded(next);
+// Fire-and-forget: the adjacent flight's crew is needed only to compute
+// the leaving/joining indicators, not to show that flight itself, so this
+// doesn't block rendering the current one - it just re-renders once the
+// fetch resolves, if the pilot is still looking at the same flight by then.
+async function ensureAdjacentFlightCrewLoaded(flight, offset) {
+  const idx = state.allFlights.indexOf(flight);
+  const adjacent = idx >= 0 ? state.allFlights[idx + offset] : undefined;
+  if (!adjacent || adjacent.embeddedCrew.length) return;
+  if (adjacent.id != null && crewCache.has(adjacent.id)) return; // already loading/loaded/forbidden/error
+
+  await ensureCrewLoaded(adjacent);
   if (state.flights[state.index] === flight) renderCrew(flight);
 }
 
@@ -749,7 +769,9 @@ function renderCrew(f) {
   const detectedOwnName = detectOwnName(f, apiCrew);
   if (detectedOwnName) applyDetectedOwnName(detectedOwnName);
 
-  ensureNextFlightCrewLoaded(f); // fills in the "leaving" indicator once loaded, re-renders itself
+  // Fill in the leaving/joining indicators once loaded, each re-renders itself
+  ensureAdjacentFlightCrewLoaded(f, 1);
+  ensureAdjacentFlightCrewLoaded(f, -1);
 
   if (hasPdfCrew) {
     els.crewSourceSwitchBtn.hidden = false;
@@ -771,7 +793,7 @@ function renderCrew(f) {
     // Reconcile with the live OpenAirLog crew when it's available - falls
     // back to the raw PDF list only while the API crew hasn't loaded yet.
     const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
-    renderCrewMembers(els.crewList, merged, findLeavingCrew(f, merged));
+    renderCrewMembers(els.crewList, merged, findLeavingCrew(f, merged), findJoiningCrew(f, merged));
     return;
   }
 
@@ -798,7 +820,7 @@ function renderCrew(f) {
     return;
   }
 
-  renderCrewMembers(els.crewList, apiCrew, findLeavingCrew(f, apiCrew));
+  renderCrewMembers(els.crewList, apiCrew, findLeavingCrew(f, apiCrew), findJoiningCrew(f, apiCrew));
 }
 
 async function ensureCrewLoaded(f) {

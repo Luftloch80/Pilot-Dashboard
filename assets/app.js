@@ -465,6 +465,10 @@ function pickInitialIndex(flights) {
 function renderFlightNav() {
   const n = state.flights.length;
   els.flightNav.hidden = n === 0;
+  // Nothing to scroll through with just one flight, so the arrows would
+  // only ever show up disabled - hide them entirely instead.
+  els.prevFlightBtn.hidden = n <= 1;
+  els.nextFlightBtn.hidden = n <= 1;
   els.prevFlightBtn.disabled = state.index <= 0;
   els.nextFlightBtn.disabled = state.index >= n - 1;
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";

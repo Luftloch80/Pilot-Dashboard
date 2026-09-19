@@ -75,8 +75,6 @@ const els = {
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
   transitInfo: document.getElementById("transitInfo"),
-  airlineBadge: document.getElementById("airlineBadge"),
-  airlineBadgeCode: document.getElementById("airlineBadgeCode"),
 
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
@@ -583,15 +581,13 @@ const AIRLINE_BY_PREFIX = {
   "4Y": { name: "Eurowings Discover", bg: "#f5a623", fg: "#1c1c1c" },
 };
 
-// Updates both the flight-card badge and the small header badge (which
-// falls back to a plain dot - see .brand-airline-badge) - always the same
-// airline, so the two never disagree. Pass null when there's no current
-// flight to show an airline for (e.g. Ortstag/Urlaub).
+// Updates the small header badge (which falls back to a plain dot - see
+// .brand-airline-badge). Pass null when there's no current flight to show
+// an airline for (e.g. Ortstag/Urlaub).
 function renderAirlineBadge(flightNumber) {
   const prefix = (flightNumber || "").slice(0, 2).toUpperCase();
 
   if (!prefix) {
-    els.airlineBadge.hidden = true;
     els.brandAirlineBadge.classList.remove("has-airline");
     els.brandAirlineBadge.title = "";
     return;
@@ -601,12 +597,6 @@ function renderAirlineBadge(flightNumber) {
   const bg = airline ? airline.bg : "";
   const fg = airline ? airline.fg : "";
   const title = airline ? airline.name : prefix;
-
-  els.airlineBadge.hidden = false;
-  els.airlineBadgeCode.textContent = prefix;
-  els.airlineBadge.title = title;
-  els.airlineBadge.style.setProperty("--airline-bg", bg);
-  els.airlineBadge.style.setProperty("--airline-fg", fg);
 
   els.brandAirlineBadge.classList.add("has-airline");
   els.brandAirlineBadgeCode.textContent = prefix;

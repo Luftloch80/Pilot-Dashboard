@@ -68,6 +68,7 @@ const els = {
   layoverTitle: document.getElementById("layoverTitle"),
   layoverPlace: document.getElementById("layoverPlace"),
   layoverHotel: document.getElementById("layoverHotel"),
+  roomDetails: document.getElementById("roomDetails"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
   layoverCurrency: document.getElementById("layoverCurrency"),
@@ -2105,7 +2106,16 @@ function renderLayover() {
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
   renderLayoverCurrency(layover.arrCode);
-  renderLayoverCrew(layover.arrCode, hotel, layover.flight);
+
+  // A same-day connection (the next flight departs later the same
+  // calendar day this one landed) isn't a real overnight stay yet - room
+  // numbers would be premature, since the pilot is still flying on to
+  // wherever the actual layover turns out to be once that flight lands.
+  const nextFlight = layover.flight ? adjacentFlight(layover.flight, 1) : null;
+  const sameDayConnection = !!(nextFlight && nextFlight.raw && layover.flight.raw &&
+    nextFlight.raw.date === layover.flight.raw.date);
+  els.roomDetails.hidden = sameDayConnection;
+  if (!sameDayConnection) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as

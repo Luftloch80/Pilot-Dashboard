@@ -2917,7 +2917,11 @@ async function ensureRosterLoaded(force) {
   if (!url) return;
   if (!force && rosterEventsCache.url === url && rosterEventsCache.events) return;
   try {
-    const res = await fetchWithTimeout(url, {});
+    // no-store: this URL never changes, so without it the browser's own
+    // HTTP cache can silently keep answering from an old snapshot - a
+    // real "refresh did nothing" bug this app has no way to detect,
+    // since force just skips OUR cache, not the browser's underneath it.
+    const res = await fetchWithTimeout(url, { cache: "no-store" });
     if (!res.ok) return;
     const text = await res.text();
     const events = parseIcsEvents(text);

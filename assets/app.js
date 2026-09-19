@@ -2590,9 +2590,16 @@ function dedupeAircraftLegs(raw) {
 function normalizeAircraftLeg(leg) {
   const dep = leg.departure || {};
   const arr = leg.arrival || {};
-  const depDate = parseAeroDataBoxUtc((dep.revisedTime && dep.revisedTime.utc) || (dep.scheduledTime && dep.scheduledTime.utc));
+  // runwayTime is only populated once the aircraft has actually left/
+  // reached the blocks - preferred over revisedTime/predictedTime (still
+  // just estimates) whenever it's there, so the deviation display below
+  // the departure/arrival time reflects the real off-block/on-block
+  // moment rather than the last estimate before it happened.
+  const depDate = parseAeroDataBoxUtc(
+    (dep.runwayTime && dep.runwayTime.utc) || (dep.revisedTime && dep.revisedTime.utc) || (dep.scheduledTime && dep.scheduledTime.utc)
+  );
   const arrDate = parseAeroDataBoxUtc(
-    (arr.revisedTime && arr.revisedTime.utc) || (arr.predictedTime && arr.predictedTime.utc) || (arr.scheduledTime && arr.scheduledTime.utc)
+    (arr.runwayTime && arr.runwayTime.utc) || (arr.revisedTime && arr.revisedTime.utc) || (arr.predictedTime && arr.predictedTime.utc) || (arr.scheduledTime && arr.scheduledTime.utc)
   );
   return {
     depCode: (dep.airport && dep.airport.icao) || "---",

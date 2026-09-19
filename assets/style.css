@@ -405,6 +405,7 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+.transit-note { text-align: center; margin-top: 4px; }
 .registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
 
 /* Duty status (Urlaub / Ortstag) */
@@ -489,6 +490,7 @@ body {
 }
 .layover-header h2 { margin: 0; }
 .layover-pickup { white-space: nowrap; }
+.layover-pickup-note { text-align: right; margin-top: -4px; margin-bottom: 8px; }
 
 .layover-place {
   font-size: 1.6rem;
@@ -679,6 +681,13 @@ body {
   font-weight: 700;
 }
 .crew-arrow-info {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  margin-top: 2px;
+}
+.crew-fdp-info {
   display: block;
   color: var(--text-muted);
   font-size: 0.72rem;

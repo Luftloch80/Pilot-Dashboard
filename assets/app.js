@@ -83,6 +83,7 @@ const els = {
   roomDetails: document.getElementById("roomDetails"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
+  layoverPickupNote: document.getElementById("layoverPickupNote"),
   layoverCurrency: document.getElementById("layoverCurrency"),
   currencyCode: document.getElementById("currencyCode"),
   currencyLocalInput: document.getElementById("currencyLocalInput"),
@@ -759,6 +760,7 @@ function getCardEls(node) {
     aircraft: node.querySelector(".aircraft"),
     registration: node.querySelector(".registration"),
     transitInfo: node.querySelector(".transit-info"),
+    transitNote: node.querySelector(".transit-note"),
   };
 }
 
@@ -822,6 +824,11 @@ function computeBackupPickup(flight) {
   return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
 }
 
+// Shown under the pickup time whenever it's computeBackupPickup()'s
+// estimate rather than a confirmed MyTime roster event - so it doesn't
+// silently look as authoritative as a real roster entry.
+const BACKUP_PICKUP_NOTE = "Geschätzt (Standardfahrzeit) – nicht aus dem MyTime-Roster bestätigt";
+
 // Transit to the next own flight and, on a Flugzeugwechsel (its
 // registration differs from this one's), which aircraft that is - plus,
 // when an AeroDataBox key is configured, when that aircraft is scheduled
@@ -845,10 +852,13 @@ function renderFlightCardTransit(i, isActive, cardEls) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
       cardEls.transitInfo.textContent = "";
+      cardEls.transitNote.hidden = true;
+      cardEls.transitNote.textContent = "";
       return;
     }
     const city = cityForIcao(f.arrCode) || f.arrCode;
     let text = `Layover ${city}`;
+    let usedBackup = false;
     const pickup = findRosterPickupForFlight(f);
     if (pickup) {
       const arr = f.arrActualDate || f.arrSchedDate;
@@ -860,10 +870,13 @@ function renderFlightCardTransit(i, isActive, cardEls) {
       if (backup) {
         if (backup.restLabel) text += ` · Ruhezeit ${backup.restLabel}`;
         text += ` · Pickup ${fmtTime(backup.pickupUtc)}`;
+        usedBackup = true;
       }
     }
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = text;
+    cardEls.transitNote.hidden = !usedBackup;
+    cardEls.transitNote.textContent = usedBackup ? BACKUP_PICKUP_NOTE : "";
     return;
   }
 
@@ -904,6 +917,8 @@ function renderFlightCardTransit(i, isActive, cardEls) {
   }
   cardEls.transitInfo.hidden = !transitText;
   cardEls.transitInfo.textContent = transitText;
+  cardEls.transitNote.hidden = true;
+  cardEls.transitNote.textContent = "";
 }
 
 // Fills one card's content. Only the active (currently scrolled-to) card
@@ -1006,6 +1021,97 @@ function crewKey(role, name) {
   return `${role.toUpperCase()}|${firstNameOf(name)}`;
 }
 
+// ---------- EASA max Flight Duty Period (ORO.FTL.205, Table 2) ----------
+//
+// Maximum daily FDP for an acclimatised crew member, by local start-of-FDP
+// time band and number of sectors (columns: 1-2, 3, 4, 5, 6, 7, 8, 9, 10+),
+// in minutes. Bands cover the full 24h with no gaps; 0000-0459 and
+// 1700-2359 share the same (last) row since the regulation itself treats
+// 1700-0459 as one continuous band.
+const EASA_FDP_BANDS = [
+  { start: 0, end: 299, max: [660, 630, 600, 570, 540, 540, 540, 540, 540] }, // 0000-0459 (=1700-0459)
+  { start: 300, end: 314, max: [720, 690, 660, 630, 600, 570, 540, 540, 540] }, // 0500-0514
+  { start: 315, end: 329, max: [735, 705, 675, 645, 615, 585, 555, 540, 540] }, // 0515-0529
+  { start: 330, end: 344, max: [750, 720, 690, 660, 630, 600, 570, 540, 540] }, // 0530-0544
+  { start: 345, end: 359, max: [765, 735, 705, 675, 645, 615, 585, 555, 540] }, // 0545-0559
+  { start: 360, end: 809, max: [780, 750, 720, 690, 660, 630, 600, 570, 540] }, // 0600-1329
+  { start: 810, end: 839, max: [765, 735, 705, 675, 645, 615, 585, 555, 540] }, // 1330-1359
+  { start: 840, end: 869, max: [750, 720, 690, 660, 630, 600, 570, 540, 540] }, // 1400-1429
+  { start: 870, end: 899, max: [735, 705, 675, 645, 615, 585, 555, 540, 540] }, // 1430-1459
+  { start: 900, end: 929, max: [720, 690, 660, 630, 600, 570, 540, 540, 540] }, // 1500-1529
+  { start: 930, end: 959, max: [705, 675, 645, 615, 585, 555, 540, 540, 540] }, // 1530-1559
+  { start: 960, end: 989, max: [690, 660, 630, 600, 570, 540, 540, 540, 540] }, // 1600-1629
+  { start: 990, end: 1019, max: [675, 645, 615, 585, 555, 540, 540, 540, 540] }, // 1630-1659
+  { start: 1020, end: 1439, max: [660, 630, 600, 570, 540, 540, 540, 540, 540] }, // 1700-2359
+];
+
+// The pilot's home base is Germany, so "acclimatised local time" is taken
+// as Europe/Berlin (same assumption fmtLocalTime() already makes) - this
+// doesn't implement the full EASA acclimatisation tables (elapsed time
+// since departing a reference time zone, time zones crossed on previous
+// duties), which this app has no duty history to evaluate anyway. Good
+// enough for the common case (rotation starts and ends at EDDF); not a
+// substitute for the airline's own FTL system on anything unusual
+// (long-haul, multi-day time zone hopping, reduced rest, split duty).
+function localMinuteOfDayBerlin(date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(date);
+  let hh = Number(parts.find((p) => p.type === "hour").value);
+  const mm = Number(parts.find((p) => p.type === "minute").value);
+  if (hh === 24) hh = 0; // some engines print midnight as "24:00"
+  return hh * 60 + mm;
+}
+
+// Maximum FDP in minutes for a report time (local minute-of-day) and
+// sector count, per EASA_FDP_BANDS - sectors 1-2 share column 0, 10+
+// shares the last column.
+function easaMaxFdpMinutes(reportLocalMin, sectorCount) {
+  const band = EASA_FDP_BANDS.find((b) => reportLocalMin >= b.start && reportLocalMin <= b.end);
+  if (!band) return null;
+  const colIdx = sectorCount <= 2 ? 0 : Math.min(sectorCount - 2, band.max.length - 1);
+  return band.max[colIdx];
+}
+
+// Standard report time before the first sector's scheduled departure -
+// OpenAirLog has no explicit report-time field, so this assumes the
+// pilot's own narrowbody (A320-family) standard briefing time; wrong for
+// a different aircraft type or a rotation with a non-standard report time.
+const STANDARD_REPORT_BEFORE_DEP_MIN = 45;
+
+// All of a flight's own duty-day sectors - grouped by OpenAirLog's own
+// "date" field (the report/duty day it assigns each leg to), not a
+// recomputed local calendar date, and searched across the whole loaded
+// rotation (state.allFlights) rather than just today's (already-pruned)
+// card list, so a flight retired from the swipe view (see
+// FLIGHT_RETIRE_AFTER_ARRIVAL_MS) still counts as an earlier sector.
+function sectorsForDutyDay(flight) {
+  const dateKey = flight.raw && flight.raw.date;
+  if (!dateKey) return [flight];
+  return state.allFlights
+    .filter((f) => f.raw && f.raw.date === dateKey)
+    .sort((a, b) => (a.depSchedDate || 0) - (b.depSchedDate || 0));
+}
+
+// Latest legal on-block time for the LAST sector of this flight's duty
+// day, under EASA's Table 2 (see easaMaxFdpMinutes()): report time (see
+// STANDARD_REPORT_BEFORE_DEP_MIN) + the max FDP for that report time and
+// the day's total sector count. A simplified estimate (see
+// localMinuteOfDayBerlin()'s comment) - not a substitute for the
+// airline's own FTL system, and shown for information only.
+function computeMaxLegalOnBlock(flight) {
+  const dutyDay = sectorsForDutyDay(flight);
+  const first = dutyDay[0];
+  if (!first || !first.depSchedDate) return null;
+  const reportUtc = new Date(first.depSchedDate.getTime() - STANDARD_REPORT_BEFORE_DEP_MIN * 60000);
+  const maxFdpMin = easaMaxFdpMinutes(localMinuteOfDayBerlin(reportUtc), dutyDay.length);
+  if (maxFdpMin == null) return null;
+  return {
+    latestOnBlockUtc: new Date(reportUtc.getTime() + maxFdpMin * 60000),
+    sectorCount: dutyDay.length,
+  };
+}
+
 // Flight number, citypair and date of the flight the join/leave arrow
 // refers to (i.e. the neighboring flight the comparison was made against)
 // - shown next to the arrow so it's clear which flight the split actually
@@ -1037,6 +1143,7 @@ function renderCrewMembers(listEl, crew, opts = {}) {
     leaving = new Set(), joining = new Set(),
     leavingInfo = null, joiningInfo = null,
     pdfExRefs = new Map(), pdfToRefs = new Map(),
+    ownName = "", legalOnBlockLabel = null,
   } = opts;
   listEl.innerHTML = "";
   for (const member of crew) {
@@ -1089,6 +1196,14 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       if (pdfRef) info.textContent = `→ outbound ${pdfRef}`;
       else if (leavingInfo) info.textContent = `→ outbound ${leavingInfo}`;
       if (info.textContent) name.appendChild(info);
+    }
+    // Only ever appended to the pilot's own entry, never a colleague's -
+    // see computeMaxLegalOnBlock().
+    if (legalOnBlockLabel && isOwnName(member.name, ownName)) {
+      const info = document.createElement("span");
+      info.className = "crew-fdp-info";
+      info.textContent = legalOnBlockLabel;
+      name.appendChild(info);
     }
     const role = document.createElement("span");
     role.className = "crew-role";
@@ -1383,6 +1498,12 @@ function renderCrew(f) {
   els.crewList.innerHTML = "";
   els.crewEmpty.hidden = true;
 
+  const ownName = getOwnName();
+  const maxDuty = computeMaxLegalOnBlock(f);
+  const legalOnBlockLabel = maxDuty
+    ? `Späteste legale Onblock: ${fmtTime(maxDuty.latestOnBlockUtc)} (EASA, ${maxDuty.sectorCount} Sekt.)`
+    : null;
+
   if (useSource === "pdf") {
     const { crew, rotation, fileName } = state.pdfCrew;
     els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
@@ -1397,6 +1518,7 @@ function renderCrew(f) {
     renderCrewMembers(els.crewList, merged, {
       leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
       pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
+      ownName, legalOnBlockLabel,
     });
     return;
   }
@@ -1428,6 +1550,7 @@ function renderCrew(f) {
     leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
     leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
     pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
+    ownName, legalOnBlockLabel,
   });
 }
 
@@ -3099,10 +3222,14 @@ function renderLayover() {
   if (rosterPickup) {
     els.layoverPickup.hidden = false;
     els.layoverPickup.textContent = `Pickup: ${rosterPickup.time} LT`;
+    els.layoverPickupNote.hidden = true;
+    els.layoverPickupNote.textContent = "";
   } else {
     const backup = layover.flight ? computeBackupPickup(layover.flight) : null;
     els.layoverPickup.hidden = !backup;
     els.layoverPickup.textContent = backup ? `Pickup: ${fmtTime(backup.pickupUtc)}` : "";
+    els.layoverPickupNote.hidden = !backup;
+    els.layoverPickupNote.textContent = backup ? BACKUP_PICKUP_NOTE : "";
   }
 
   const city = cityForIcao(layover.arrCode);

@@ -1118,9 +1118,13 @@ function renderCrew(f) {
     // Reconcile with the live OpenAirLog crew when it's available - falls
     // back to the raw PDF list only while the API crew hasn't loaded yet.
     const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
+    // No leavingInfo/joiningInfo fallback here: with a PDF loaded, its own
+    // Ex/To columns are the authoritative source for a colleague's actual
+    // connection - if a joining/leaving person has no PDF ref, that's the
+    // PDF telling us there isn't one (e.g. going off duty), not a gap to
+    // guess-fill with the pilot's own unrelated next/previous flight.
     renderCrewMembers(els.crewList, merged, {
       leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
-      leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
       pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
     });
     return;

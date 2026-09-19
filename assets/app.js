@@ -743,14 +743,14 @@ function renderFlight() {
 
   let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
   if (aircraftChange) {
-    transitText += ` · Flugzeugwechsel auf ${nextFlight.registration}`;
+    transitText += ` · next A/C ${nextFlight.registration}`;
     if (getAeroDataBoxKey()) {
       const cached = aircraftScheduleCache.get(nextFlight.registration);
       if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
         ensureAircraftScheduleLoaded(nextFlight.registration);
       } else {
         const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
-        if (priorLeg && priorLeg.arrDate) transitText += ` (Ankunft ${fmtTime(priorLeg.arrDate)})`;
+        if (priorLeg && priorLeg.arrDate) transitText += ` ${priorLeg.flightNumber} ${fmtTime(priorLeg.arrDate)}`;
       }
     }
   }

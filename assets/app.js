@@ -786,6 +786,22 @@ function scrollTrackToIndex(index) {
   track.scrollTo({ left: index * track.clientWidth, behavior: "auto" });
 }
 
+// Computed fallback pickup for a layover: rest starts 30 min after
+// scheduled arrival (post-flight duties), pickup is 60 min before the
+// next flight's own departure - checked across the whole loaded
+// rotation (adjacentFlight()), not just today, since the next flight is
+// often tomorrow's. Used wherever a layover is shown - the last flight's
+// own transit line, and the separate Layover card once that takes over -
+// whenever there's no MyTime roster pickup to show instead.
+function computeLayoverPickup(flight) {
+  const onward = adjacentFlight(flight, 1);
+  const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
+  if (!onwardDep || !flight.arrSchedDate) return null;
+  const restStart = new Date(flight.arrSchedDate.getTime() + 30 * 60000);
+  const pickupUtc = new Date(onwardDep.getTime() - 60 * 60000);
+  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
+}
+
 // Transit to the next own flight and, on a Flugzeugwechsel (its
 // registration differs from this one's), which aircraft that is - plus,
 // when an AeroDataBox key is configured, when that aircraft is scheduled
@@ -811,21 +827,17 @@ function renderFlightCardTransit(i, isActive, cardEls, ownLeg) {
       cardEls.transitInfo.textContent = "";
       return;
     }
-    const onward = adjacentFlight(f, 1);
-    const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
-    if (!onwardDep) {
+    const fallback = computeLayoverPickup(f);
+    if (!fallback) {
       cardEls.transitInfo.hidden = true;
       cardEls.transitInfo.textContent = "";
       return;
     }
-    const restStart = new Date(f.arrSchedDate.getTime() + 30 * 60000);
-    const pickupUtc = new Date(onwardDep.getTime() - 60 * 60000);
-    const restLabel = fmtDurationHM(pickupUtc - restStart);
     const city = cityForIcao(f.arrCode) || f.arrCode;
-    const pickupLabel = fmtTimeAtOffset(pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(pickupUtc);
+    const pickupLabel = fmtTimeAtOffset(fallback.pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(fallback.pickupUtc);
 
     let text = `Layover ${city}`;
-    if (restLabel) text += ` · Ruhezeit ${restLabel}`;
+    if (fallback.restLabel) text += ` · Ruhezeit ${fallback.restLabel}`;
     text += ` · Pickup ${pickupLabel}`;
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = text;
@@ -3027,15 +3039,30 @@ function renderLayover() {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
+  let rosterPickup = null;
   if (getRosterUrl()) {
     ensureRosterLoaded();
-    const pickup = rosterEventsCache.events
+    rosterPickup = rosterEventsCache.events
       ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
       : null;
-    els.layoverPickup.hidden = !pickup;
-    els.layoverPickup.textContent = pickup ? `Pickup: ${pickup.time} LT` : "";
+  }
+  if (rosterPickup) {
+    els.layoverPickup.hidden = false;
+    els.layoverPickup.textContent = `Pickup: ${rosterPickup.time} LT`;
   } else {
-    els.layoverPickup.hidden = true;
+    // No roster configured, or none of its events matched this leg -
+    // same computed fallback as the last flight's own transit line
+    // (see computeLayoverPickup()), so a pickup time still shows here
+    // rather than nothing at all.
+    const fallback = layover.flight ? computeLayoverPickup(layover.flight) : null;
+    if (fallback) {
+      const ownLeg = getOwnFlightAeroDataBoxLeg(layover.flight, { peekOnly: false });
+      const pickupLabel = fmtTimeAtOffset(fallback.pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(fallback.pickupUtc);
+      els.layoverPickup.hidden = false;
+      els.layoverPickup.textContent = `Pickup: ${pickupLabel}`;
+    } else {
+      els.layoverPickup.hidden = true;
+    }
   }
 
   const city = cityForIcao(layover.arrCode);

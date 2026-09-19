@@ -988,7 +988,7 @@ function formatPdfFlightRef(raw, contextDateKey, route) {
 // the same route) rather than guessed at. Fire-and-forget, same pattern
 // as ensureAdjacentFlightCrewLoaded() - re-renders the crew list once the
 // lookup resolves, if still on the same flight by then.
-const flightRouteCache = new Map(); // flightNumber -> { status: "loading"|"ok"|"error", depCode?, arrCode? }
+const flightRouteCache = new Map(); // flightNumber -> { status: "loading"|"ok"|"error", depCode?, arrCode?, arrDate? }
 
 async function ensureFlightRouteLoaded(flightNumber, f) {
   if (flightRouteCache.has(flightNumber)) return;
@@ -1006,21 +1006,35 @@ async function ensureFlightRouteLoaded(flightNumber, f) {
     // doesn't actually support filtering by flight_number, it would
     // otherwise silently attach some other flight's route here.
     const match = entries.find((e) => String(e.flight_number) === flightNumber);
-    flightRouteCache.set(flightNumber, match && match.departure && match.arrival
-      ? { status: "ok", depCode: match.departure, arrCode: match.arrival }
-      : { status: "error" });
+    if (match && match.departure && match.arrival) {
+      const depDate = combineDateAndTime(match.date, match.scheduled_off_block, null);
+      const arrDate = combineDateAndTime(match.date, match.scheduled_on_block, depDate);
+      flightRouteCache.set(flightNumber, { status: "ok", depCode: match.departure, arrCode: match.arrival, arrDate });
+    } else {
+      flightRouteCache.set(flightNumber, { status: "error" });
+    }
   } catch {
     flightRouteCache.set(flightNumber, { status: "error" });
   }
   if (state.flights[state.index] === f) renderCrew(f);
 }
 
+// "kommt mit LH1168" only needs the flight number the colleague is
+// arriving on plus when it lands (i.e. when they actually become
+// available to join) - not the citypair/date formatPdfFlightRef() adds
+// for "fliegt weiter mit", which is about a still-future connection.
+function formatExRefLabel(refFlightNumber, route) {
+  if (!refFlightNumber) return null;
+  if (route && route.arrDate) return `${refFlightNumber} ${fmtTime(route.arrDate)}`;
+  return refFlightNumber;
+}
+
 // Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted
-// via formatPdfFlightRef()) that applies to this exact flight - an
-// "exRef" only counts for the block's first flight, a "toRef" only for
-// its last (see parseCrewFromLines()), so a colleague who shows up in
-// more than one PDF block doesn't leak the wrong block's reference onto a
-// flight it doesn't belong to.
+// via formatPdfFlightRef()/formatExRefLabel()) that applies to this exact
+// flight - an "exRef" only counts for the block's first flight, a
+// "toRef" only for its last (see parseCrewFromLines()), so a colleague
+// who shows up in more than one PDF block doesn't leak the wrong block's
+// reference onto a flight it doesn't belong to.
 function buildPdfRefMap(f, field) {
   const map = new Map();
   if (!state.pdfCrew) return map;
@@ -1036,7 +1050,10 @@ function buildPdfRefMap(f, field) {
       if (cached && cached.status === "ok") route = cached;
       else if (!cached) ensureFlightRouteLoaded(refFlightNumber, f);
     }
-    map.set(crewKey(m.role, m.name), formatPdfFlightRef(m[field], f.raw && f.raw.date, route));
+    const label = field === "exRef"
+      ? (formatExRefLabel(refFlightNumber, route) || m[field])
+      : formatPdfFlightRef(m[field], f.raw && f.raw.date, route);
+    map.set(crewKey(m.role, m.name), label);
   }
   return map;
 }

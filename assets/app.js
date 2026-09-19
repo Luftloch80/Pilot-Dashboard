@@ -127,6 +127,8 @@ const els = {
   aeroDataBoxKeyInput: document.getElementById("aeroDataBoxKeyInput"),
   saveAeroDataBoxBtn: document.getElementById("saveAeroDataBoxBtn"),
   aeroDataBoxStatus: document.getElementById("aeroDataBoxStatus"),
+  testAeroDataBoxBtn: document.getElementById("testAeroDataBoxBtn"),
+  aeroDataBoxTestResult: document.getElementById("aeroDataBoxTestResult"),
   resetAeroDataBoxBtn: document.getElementById("resetAeroDataBoxBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
@@ -442,7 +444,54 @@ function renderAeroDataBoxStatus() {
   const key = getAeroDataBoxKey();
   els.aeroDataBoxStatus.hidden = !key;
   els.aeroDataBoxStatus.textContent = key ? "API-Schlüssel hinterlegt." : "";
+  els.testAeroDataBoxBtn.hidden = !key;
+  els.aeroDataBoxTestResult.hidden = true;
   els.resetAeroDataBoxBtn.hidden = !key;
+}
+
+// A direct, in-app way to tell "no data ever shows up" apart from "the
+// key/request itself doesn't work" - without needing to dig into the
+// browser's own developer console (not always within easy reach, e.g. on
+// an iPhone without a Mac to plug it into for Web Inspector). Tests
+// against whichever real flight is already loaded, so a failure here
+// means the exact same request the crew-list/off-block features make
+// would also fail for real flight data, not just this one probe.
+async function testAeroDataBoxConnection() {
+  const key = getAeroDataBoxKey();
+  if (!key) return;
+  const testFlight = state.flights[state.index] || state.allFlights[0];
+  if (!testFlight || !testFlight.flightNumber || !(testFlight.raw && testFlight.raw.date)) {
+    els.aeroDataBoxTestResult.hidden = false;
+    els.aeroDataBoxTestResult.textContent = "Kein Testflug verfügbar - erst Flugdaten laden.";
+    return;
+  }
+
+  els.testAeroDataBoxBtn.disabled = true;
+  els.aeroDataBoxTestResult.hidden = false;
+  els.aeroDataBoxTestResult.textContent = `Teste mit ${testFlight.flightNumber} …`;
+
+  const url = `${AERODATABOX_BASE}/flights/Number/${encodeURIComponent(testFlight.flightNumber)}/${encodeURIComponent(testFlight.raw.date)}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
+    if (!res.ok) {
+      els.aeroDataBoxTestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von api.market. Key/Tarif prüfen.`;
+    } else {
+      const json = await res.json();
+      els.aeroDataBoxTestResult.textContent = (json && !Array.isArray(json))
+        ? `Erfolgreich - ${testFlight.flightNumber} gefunden.`
+        : "Antwort kam an, aber in unerwartetem Format - siehe Konsole.";
+      if (json && Array.isArray(json)) console.warn("[AeroDataBox] test: unexpected response shape", json);
+    }
+  } catch (err) {
+    // The one failure mode a status code can't capture: the browser
+    // blocked the response entirely (CORS) or there's no route to the
+    // host at all - both look identical to page code, just "the fetch
+    // rejected" with no further detail.
+    els.aeroDataBoxTestResult.textContent =
+      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch). Details siehe Konsole.";
+    console.warn("[AeroDataBox] connection test failed", err, url);
+  }
+  els.testAeroDataBoxBtn.disabled = false;
 }
 
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
@@ -2520,14 +2569,25 @@ async function fetchAircraftSchedule(registration) {
   const url = `${AERODATABOX_BASE}/flights/Reg/${encodeURIComponent(registration)}?withAircraftImage=false&withLocation=false`;
   try {
     const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn("[AeroDataBox] flights/Reg failed", res.status, url);
+      return null;
+    }
     const json = await res.json();
-    if (!Array.isArray(json)) return null;
+    if (!Array.isArray(json)) {
+      console.warn("[AeroDataBox] flights/Reg: unexpected response shape", json);
+      return null;
+    }
     return dedupeAircraftLegs(json)
       .map(normalizeAircraftLeg)
       .filter((leg) => leg.depDate)
       .sort((a, b) => a.depDate - b.depDate);
-  } catch {
+  } catch (err) {
+    // A CORS rejection surfaces here as a plain "Failed to fetch"
+    // TypeError - the browser gives no more detail than that, but at
+    // least this makes the failure visible instead of just "no data ever
+    // appears" with nothing in the console to explain why.
+    console.warn("[AeroDataBox] flights/Reg request failed (network/CORS?)", err, url);
     return null;
   }
 }
@@ -2546,11 +2606,18 @@ async function fetchFlightByNumber(flightNumber, dateKey) {
   const url = `${AERODATABOX_BASE}/flights/Number/${encodeURIComponent(flightNumber)}/${encodeURIComponent(dateKey)}`;
   try {
     const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn("[AeroDataBox] flights/Number failed", res.status, url);
+      return null;
+    }
     const json = await res.json();
-    if (!json || Array.isArray(json)) return null;
+    if (!json || Array.isArray(json)) {
+      console.warn("[AeroDataBox] flights/Number: unexpected response shape", json);
+      return null;
+    }
     return normalizeAircraftLeg(json);
-  } catch {
+  } catch (err) {
+    console.warn("[AeroDataBox] flights/Number request failed (network/CORS?)", err, url);
     return null;
   }
 }
@@ -3092,6 +3159,8 @@ els.resetAeroDataBoxBtn.addEventListener("click", () => {
   renderAeroDataBoxStatus();
   renderFlight();
 });
+
+els.testAeroDataBoxBtn.addEventListener("click", testAeroDataBoxConnection);
 
 els.refreshBtn.addEventListener("click", loadFlights);
 

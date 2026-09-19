@@ -161,6 +161,33 @@ function fmtDurationHM(ms) {
   return `${h}:${String(m).padStart(2, "0")} Std`;
 }
 
+// Where the current aircraft is coming from: OpenAirLog has no
+// rotation/pairing field linking flights of the same tail (checked every
+// field on a real flight object), so this is inferred purely from
+// matching aircraft_registration across the wider loaded window (not
+// just today) - the most recent other flight with the same registration
+// that landed before this one's scheduled departure. Best-effort: if
+// that flight was flown by another crew before this pilot's own duty
+// today even started, this is the only way to know where the aircraft
+// itself has been.
+function findIncomingLeg(allFlights, current) {
+  if (!current || !current.registration || current.registration === "–" || !current.depSchedDate) return null;
+  let best = null;
+  let bestArr = null;
+  for (const g of allFlights) {
+    if (g === current || g.registration !== current.registration) continue;
+    // Must land exactly where this flight departs from - otherwise there
+    // could be an unlogged leg (e.g. flown by another crew) in between,
+    // and the "previous flight" found here wouldn't actually be this
+    // aircraft's true immediate predecessor.
+    if (g.arrCode !== current.depCode) continue;
+    const arr = g.arrActualDate || g.arrSchedDate;
+    if (!arr || arr >= current.depSchedDate) continue;
+    if (!best || arr > bestArr) { best = g; bestArr = arr; }
+  }
+  return best;
+}
+
 // Local (device) time, deliberately not UTC like fmtTime() - used only for
 // the briefing-time hint, where what matters is the wall-clock time to be
 // at the airport by, in the pilot's own timezone (home base and device are
@@ -699,25 +726,27 @@ function renderFlight() {
   els.registration.textContent = f.registration;
   renderAirlineBadge(f.flightNumber);
 
-  // Transit = time between this flight's scheduled landing and the next
-  // flight's scheduled departure - only meaningful when another flight
-  // follows today, so it's left off after the day's last flight. On a
-  // Flugzeugwechsel (the next flight's registration differs from this
-  // one's - identified via the next flight's own flight number, already
-  // in state.flights), also show that flight's scheduled landing and its
-  // registration, so the new aircraft is visible without paging forward.
+  // One line summarizing this aircraft's day around the current flight:
+  // where it came from (previous flight, possibly flown by another crew -
+  // see findIncomingLeg()), then the transit to the next own flight and,
+  // on a Flugzeugwechsel, that next flight's landing and registration.
+  const incoming = findIncomingLeg(state.allFlights, f);
   const nextFlight = state.flights[state.index + 1];
   const transitLabel = nextFlight
     ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
     : null;
-  els.transitInfo.hidden = !transitLabel;
-  let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
   const aircraftChange = transitLabel && nextFlight.registration && f.registration &&
     nextFlight.registration !== "–" && nextFlight.registration !== f.registration;
-  if (aircraftChange) {
-    transitText += ` · Landung ${fmtTime(nextFlight.arrSchedDate)} · ${nextFlight.registration}`;
+
+  const sentenceParts = [];
+  if (incoming) sentenceParts.push(`Kommt von ${incoming.depCode} (${incoming.flightNumber})`);
+  if (transitLabel) {
+    let t = `Transit: ${transitLabel}`;
+    if (aircraftChange) t += ` · Landung ${fmtTime(nextFlight.arrSchedDate)} · ${nextFlight.registration}`;
+    sentenceParts.push(t);
   }
-  els.transitInfo.textContent = transitText;
+  els.transitInfo.hidden = !sentenceParts.length;
+  els.transitInfo.textContent = sentenceParts.join(" · ");
 
   renderCrew(f);
   ensureCrewLoaded(f);

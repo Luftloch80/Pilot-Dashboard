@@ -359,6 +359,17 @@ body {
   letter-spacing: 0.01em;
   margin-top: 3px;
 }
+
+.transit-info {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 #registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
 
 /* Duty status (Urlaub / Ortstag) */

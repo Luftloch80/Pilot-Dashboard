@@ -73,6 +73,8 @@ const els = {
   arrCode: document.getElementById("arrCode"),
   depTime: document.getElementById("depTime"),
   arrTime: document.getElementById("arrTime"),
+  depActualTime: document.getElementById("depActualTime"),
+  arrActualTime: document.getElementById("arrActualTime"),
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
   transitInfo: document.getElementById("transitInfo"),
@@ -629,8 +631,8 @@ function renderFlightNav() {
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";
 }
 
-// Shared by the timer pill (off-block delay) and the flight number's
-// callsign suffix - both want the same AeroDataBox lookup for this
+// Shared by the flight number's callsign suffix and the depTime/arrTime
+// deviation labels - all three want the same AeroDataBox lookup for this
 // pilot's own current flight (its own flight number + date), so this is
 // the one place that checks the cache and triggers a fetch if it's
 // stale, rather than each caller doing that separately.
@@ -645,13 +647,31 @@ function getOwnFlightAeroDataBoxLeg(f) {
   return cached ? cached.leg : null;
 }
 
+// Shows the AeroDataBox-reported current time under the scheduled one
+// when they meaningfully differ - green if it's now expected more than 3
+// minutes early, red if more than 3 minutes late. Within that 3-minute
+// span the schedule is treated as still accurate enough, so nothing is
+// shown at all (not even in a neutral color) rather than noise for every
+// small/normal fluctuation.
+function renderTimeDeviation(el, scheduledDate, currentDate) {
+  el.hidden = true;
+  el.textContent = "";
+  el.className = "route-actual-time";
+  if (!scheduledDate || !currentDate) return;
+  const diffMin = Math.round((currentDate.getTime() - scheduledDate.getTime()) / 60000);
+  if (diffMin <= -3) {
+    el.hidden = false;
+    el.textContent = fmtTime(currentDate);
+    el.classList.add("early");
+  } else if (diffMin >= 3) {
+    el.hidden = false;
+    el.textContent = fmtTime(currentDate);
+    el.classList.add("late");
+  }
+}
+
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
-// Once AeroDataBox confirms this exact flight has actually gone off-block
-// (a real runway time, not just an estimate - see depRunwayDate on
-// normalizeAircraftLeg()), that replaces the countdown with the actual
-// delay against schedule instead - a fixed number now, not a moving
-// target, and the thing that actually matters once wheels-up is real.
 function renderTimerPill(f) {
   if (f.isDeadhead) {
     els.flightStatus.textContent = "DH";
@@ -663,15 +683,6 @@ function renderTimerPill(f) {
     els.flightStatus.className = "status-pill";
     return;
   }
-
-  const leg = getOwnFlightAeroDataBoxLeg(f);
-  if (leg && leg.depRunwayDate) {
-    const offBlockDiffMin = Math.round((leg.depRunwayDate.getTime() - f.depSchedDate.getTime()) / 60000);
-    els.flightStatus.textContent = offBlockDiffMin > 0 ? `Off Block +${offBlockDiffMin} min` : `Off Block ${offBlockDiffMin} min`;
-    els.flightStatus.className = offBlockDiffMin > 0 ? "status-pill timer-after" : "status-pill timer-before";
-    return;
-  }
-
   const diffMin = Math.round((f.depSchedDate.getTime() - Date.now()) / 60000);
   if (diffMin > 0) {
     els.flightStatus.textContent = `-${diffMin} min`;
@@ -822,6 +833,8 @@ function renderFlight() {
   els.arrCode.textContent = f.arrCode;
   els.depTime.textContent = fmtTime(f.depSchedDate);
   els.arrTime.textContent = fmtTime(f.arrSchedDate);
+  renderTimeDeviation(els.depActualTime, f.depSchedDate, ownLeg && ownLeg.depDate);
+  renderTimeDeviation(els.arrActualTime, f.arrSchedDate, ownLeg && ownLeg.arrDate);
 
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;
@@ -2574,13 +2587,6 @@ function normalizeAircraftLeg(leg) {
     // live/updated time, e.g. the "outbound" label's departure.
     depSchedDate: parseAeroDataBoxUtc(dep.scheduledTime && dep.scheduledTime.utc),
     arrSchedDate: parseAeroDataBoxUtc(arr.scheduledTime && arr.scheduledTime.utc),
-    // Only present once the flight has actually left - confirmed on real
-    // responses: absent while a flight is still "Expected", populated
-    // once it has genuinely departed. The one reliable "did this really
-    // happen yet" signal AeroDataBox gives us, as opposed to
-    // scheduledTime/revisedTime, which exist (as an estimate) even before
-    // departure.
-    depRunwayDate: parseAeroDataBoxUtc(dep.runwayTime && dep.runwayTime.utc),
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,

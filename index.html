@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=31" />
+<link rel="stylesheet" href="assets/style.css?v=32" />
 </head>
 <body>
 
@@ -161,6 +161,7 @@
         <div class="route-code" id="depCode">---</div>
         <div class="route-label">Abflug</div>
         <div class="route-time" id="depTime">–</div>
+        <div id="depActualTime" class="route-actual-time" hidden></div>
       </div>
       <div class="route-line" aria-hidden="true">
         <span class="plane">✈</span>
@@ -169,6 +170,7 @@
         <div class="route-code" id="arrCode">---</div>
         <div class="route-label">Ankunft</div>
         <div class="route-time" id="arrTime">–</div>
+        <div id="arrActualTime" class="route-actual-time" hidden></div>
       </div>
     </div>
 
@@ -254,6 +256,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=78"></script>
+<script src="assets/app.js?v=79"></script>
 </body>
 </html>

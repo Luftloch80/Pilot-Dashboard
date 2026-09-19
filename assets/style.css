@@ -333,6 +333,14 @@ body {
   font-variant-numeric: tabular-nums;
   margin-top: 6px;
 }
+.route-actual-time {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.route-actual-time.early { color: var(--ok); }
+.route-actual-time.late { color: var(--danger); }
 .route-line {
   flex: 1.4;
   height: 1px;

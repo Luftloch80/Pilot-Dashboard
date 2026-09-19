@@ -551,10 +551,11 @@ function pickInitialIndex(flights) {
 function renderFlightNav() {
   const n = state.flights.length;
   els.flightNav.hidden = n === 0;
-  // Nothing to scroll through with just one flight, so the arrows would
-  // only ever show up disabled - hide them entirely instead.
-  els.prevFlightBtn.hidden = n <= 1;
-  els.nextFlightBtn.hidden = n <= 1;
+  // Nothing to scroll to in that direction - hide the arrow entirely
+  // instead of just disabling it (covers both the single-flight day and
+  // the first/last flight of a day with several).
+  els.prevFlightBtn.hidden = state.index <= 0;
+  els.nextFlightBtn.hidden = state.index >= n - 1;
   els.prevFlightBtn.disabled = state.index <= 0;
   els.nextFlightBtn.disabled = state.index >= n - 1;
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";
@@ -1250,6 +1251,13 @@ async function loadFlights() {
   state.allFlights = allFlights;
   state.allDuties = allDuties;
   HOME_BASE = detectHomeBase(allFlights) || HOME_BASE;
+  // Freshly loaded OpenAirLog data has its own new updated_at values, so
+  // re-check against whatever roster data is already cached - a flight
+  // that used to lose the freshness comparison might win it now, or the
+  // other way round.
+  if (rosterEventsCache.events) {
+    applyRosterMasterOverrides(allFlights, parseRosterFlightLegs(rosterEventsCache.events), rosterEventsCache.dtstamp);
+  }
   // Whatever just loaded is the new baseline - mark it fresh again until
   // the next background check finds something newer on the server.
   state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);
@@ -2122,19 +2130,23 @@ function parseIcsEvents(text) {
     if (key === "SUMMARY") current.summary = value;
     else if (key === "LOCATION") current.location = value;
     else if (key === "DTSTART") current.dtstart = icsDateToDate(value);
+    else if (key === "DTEND") current.dtend = icsDateToDate(value);
+    else if (key === "DTSTAMP") current.dtstamp = icsDateToDate(value);
   }
   return events;
 }
 
 function icsDateToDate(value) {
-  // "20260919T135500Z" (timed, UTC) or "20260803" (all-day date only).
-  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(value || "");
+  // "20260919T135500Z" (timed) or "20260803" (all-day date only). Every
+  // confirmed real timed value is UTC - DTSTART/DTEND always carry the
+  // "Z" suffix, and DTSTAMP is UTC by the iCalendar spec even in this
+  // feed's export, which omits the "Z" on it - so timed values are
+  // always read as UTC regardless of that suffix.
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})Z?)?$/.exec(value || "");
   if (!m) return null;
-  const [, y, mo, d, h, mi, s, z] = m;
+  const [, y, mo, d, h, mi, s] = m;
   if (h === undefined) return new Date(Date.UTC(+y, +mo - 1, +d));
-  return z
-    ? new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s))
-    : new Date(+y, +mo - 1, +d, +h, +mi, +s);
+  return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
 }
 
 const PICKUP_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Pickup\s+(\S+)/i;
@@ -2157,8 +2169,70 @@ function findRosterPickup(events, stationIcao, afterDate) {
   return best;
 }
 
-const rosterEventsCache = { events: null, fetchedAt: 0, url: null };
-const ROSTER_CACHE_MS = 15 * 60 * 1000;
+// Flight-leg SUMMARY, e.g. "LH 1172: FRA-LIS" or a deadhead's
+// "DH LH 895: VNO-FRA" - used to compare the roster's own scheduled
+// times against OpenAirLog's, see applyRosterMasterOverrides().
+const ROSTER_FLIGHT_SUMMARY_RE = /^(?:DH\s+)?([A-Z0-9]{2})\s*(\d{2,5}):\s*([A-Z]{3})-([A-Z]{3})$/i;
+
+function parseRosterFlightLegs(events) {
+  const legs = [];
+  for (const ev of events) {
+    if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
+    const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
+    if (!m) continue;
+    legs.push({
+      flightNumber: `${m[1].toUpperCase()}${m[2]}`,
+      depIata: m[3].toUpperCase(),
+      arrIata: m[4].toUpperCase(),
+      depDate: ev.dtstart,
+      arrDate: ev.dtend,
+    });
+  }
+  return legs;
+}
+
+// OpenAirLog has no field telling us which of two disagreeing sources is
+// current, so freshness is compared directly: the roster feed's own
+// DTSTAMP (when Lufthansa generated this export) against the matching
+// OpenAirLog flight's own updated_at. Whichever is newer for that one
+// flight wins - this can go either way per flight, not a global choice.
+const ROSTER_MATCH_TOLERANCE_MS = 24 * 60 * 60 * 1000;
+
+function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
+  if (!rosterDtstamp || !legs.length) return false;
+  let changed = false;
+  for (const leg of legs) {
+    let match = null;
+    let bestDiff = Infinity;
+    for (const f of allFlights) {
+      if (f.flightNumber !== leg.flightNumber || !f.depSchedDate) continue;
+      const diff = Math.abs(f.depSchedDate.getTime() - leg.depDate.getTime());
+      if (diff < bestDiff && diff <= ROSTER_MATCH_TOLERANCE_MS) { match = f; bestDiff = diff; }
+    }
+    if (!match || !match.updatedAt || rosterDtstamp <= match.updatedAt) continue;
+
+    // Same safety spirit as ensureFlightRouteLoaded()'s check on a
+    // flight-number search result - only trust the match once the route
+    // itself actually agrees, not just a coincidentally close time.
+    if (threeLetterCode(match.depCode) !== leg.depIata || threeLetterCode(match.arrCode) !== leg.arrIata) continue;
+
+    if (Math.abs(match.depSchedDate.getTime() - leg.depDate.getTime()) >= 60000) {
+      match.depSchedDate = leg.depDate;
+      changed = true;
+    }
+    if (leg.arrDate && (!match.arrSchedDate || Math.abs(match.arrSchedDate.getTime() - leg.arrDate.getTime()) >= 60000)) {
+      match.arrSchedDate = leg.arrDate;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null };
+// Fetched on the same cadence as OpenAirLog's own background freshness
+// check (see UPDATE_CHECK_INTERVAL_MS) - both checkForUpdate() and this
+// are called from the same interval/visibilitychange hooks.
+const ROSTER_CACHE_MS = UPDATE_CHECK_INTERVAL_MS;
 
 function rosterCacheIsStale() {
   const url = getRosterUrl();
@@ -2169,7 +2243,9 @@ function rosterCacheIsStale() {
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
 // once, caches (success only - a failed fetch is retried on the next
-// render instead of being remembered as "no pickup"), then re-renders.
+// call instead of being remembered as "no pickup"), applies whichever of
+// the two sources' flight times is fresher (see applyRosterMasterOverrides()),
+// then re-renders.
 async function ensureRosterLoaded() {
   const url = getRosterUrl();
   if (!url || !rosterCacheIsStale()) return;
@@ -2177,12 +2253,18 @@ async function ensureRosterLoaded() {
     const res = await fetchWithTimeout(url, {});
     if (!res.ok) return;
     const text = await res.text();
-    rosterEventsCache.events = parseIcsEvents(text);
+    const events = parseIcsEvents(text);
+    rosterEventsCache.events = events;
+    rosterEventsCache.dtstamp = events.find((ev) => ev.dtstamp)?.dtstamp || null;
     rosterEventsCache.fetchedAt = Date.now();
     rosterEventsCache.url = url;
+
+    const legs = parseRosterFlightLegs(events);
+    const changed = applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
+    if (changed) renderFlight();
     renderLayover();
   } catch {
-    /* stays stale, retried on next render */
+    /* stays stale, retried on next call */
   }
 }
 
@@ -2706,6 +2788,7 @@ renderBrandName();
 loadStoredPdfCrew();
 renderLayover();
 loadFlights();
+ensureRosterLoaded();
 
 // Keep the T-minus/T-plus countdown and the layover state current without
 // a full data refresh.
@@ -2718,8 +2801,15 @@ setInterval(() => {
 
 // Passive background check only - never auto-applies new data, just flips
 // the "Stand" stamp red when OpenAirLog has something newer than what's
-// shown (see checkForUpdate() above for why).
-setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+// shown (see checkForUpdate() above for why). The MyTime roster is
+// fetched on the very same cadence (ROSTER_CACHE_MS === UPDATE_CHECK_INTERVAL_MS)
+// regardless of whether a layover is currently shown, so both sources
+// are compared for freshness (see applyRosterMasterOverrides()) just as
+// often as OpenAirLog itself is checked.
+setInterval(() => {
+  checkForUpdate();
+  ensureRosterLoaded();
+}, UPDATE_CHECK_INTERVAL_MS);
 
 // iOS Safari throttles/suspends setInterval timers while the tab is
 // backgrounded or the screen is locked - the 5-minute check above simply
@@ -2728,5 +2818,8 @@ setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
 // the pilot actually looks at the screen again, instead of waiting for
 // whatever's left of a timer that may not have ticked in hours.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") checkForUpdate();
+  if (document.visibilityState === "visible") {
+    checkForUpdate();
+    ensureRosterLoaded();
+  }
 });

@@ -3170,6 +3170,18 @@ function renderLayoverCrew(arrCode, hotel, flight) {
       })
     : [];
 
+  // The PDF crew list has one row per block a person appears in (see
+  // parseCrewFromLines()) - the same person can show up more than once
+  // there across several blocks, which would otherwise list them twice
+  // here for the same layover.
+  const seen = new Set();
+  crew = crew.filter((m) => {
+    const key = crewKey(m.role, m.name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
   els.layoverCrew.hidden = !crew.length;
   els.layoverCrewList.innerHTML = "";
   if (!crew.length) return;

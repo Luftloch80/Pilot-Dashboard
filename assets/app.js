@@ -640,13 +640,8 @@ function renderFlight() {
   const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). And while
-  // still genuinely in a layover (more than 2h before the next departure -
-  // see findApiLayover()/LAYOVER_END_LEAD_MS), the layover card is the
-  // whole story; showing today's flight card hours in advance would just
-  // be premature "Fluginfo" on top of it.
-  const inLayover = !!(effectiveDutyType() ? null : findApiLayover(state.allFlights));
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !inLayover;
+  // completed flight card - see shouldShowPostLandingHomeView().
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView();
 
   els.flightCard.hidden = !showFlightCard;
   els.crewCard.hidden = !showFlightCard;
@@ -2141,18 +2136,18 @@ function renderLayover() {
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
-  // Just the place, not a separate "Layover" label above it - and no
-  // pickup line: only place, hotel, room numbers and (for a non-euro
-  // country) the currency converter belong on this card.
-  els.layoverTitle.hidden = true;
+  els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
-  els.layoverPickup.hidden = true;
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
   els.roomNumberInput.value = getRoomNumber(currentLayoverKey);
+
+  const pickup = findPickupLocal(state.pdfLines);
+  els.layoverPickup.hidden = !pickup;
+  els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
   renderLayoverCurrency(layover.arrCode);
 

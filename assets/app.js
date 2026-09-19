@@ -1682,11 +1682,16 @@ function findApiLayover(allFlights) {
 }
 
 // The PDF is only used to enrich this with a hotel name, if a matching leg
-// (same arrival airport) happens to have one - not to decide whether
-// there's a layover in the first place.
-function findPdfHotelFor(arrCode, legs) {
+// happens to have one - not to decide whether there's a layover in the
+// first place. Matched by flight number rather than arrival airport: the
+// PDF's own routing table prints 3-letter IATA-style codes ("LIS"), while
+// OpenAirLog uses 4-letter ICAO ("LPPT") for the exact same airport -
+// confirmed on a real Umlaufcrewliste - so airport codes from the two
+// sources are never comparable directly, but a flight number is written
+// the same way in both.
+function findPdfHotelFor(flightNumber, legs) {
   for (const leg of legs) {
-    if (leg.hotel && leg.arrCode === arrCode) return leg.hotel;
+    if (leg.hotel && leg.flightNumber === flightNumber) return leg.hotel;
   }
   return null;
 }
@@ -2128,7 +2133,7 @@ function renderLayover() {
   currentLayoverKey = null;
   if (!layover) return;
 
-  const hotel = findPdfHotelFor(layover.arrCode, state.pdfLegs);
+  const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
   // On a flight day the flight card already anchors the location; the
@@ -2148,7 +2153,11 @@ function renderLayover() {
   els.layoverPickup.hidden = !pickup;
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
-  renderLayoverCurrency(layover.arrCode);
+  // renderLayoverCurrency() resolves the currency section's own hidden
+  // state asynchronously (a live rate fetch) - re-check afterwards too, or
+  // an empty card could get hidden here just before currency info shows
+  // up, or stay shown as an empty shell if it doesn't.
+  renderLayoverCurrency(layover.arrCode).then(updateLayoverCardVisibility);
 
   // Same reasoning as the heading/city above: on a flight day the flight
   // card is already the focus, so room numbers (for last night's hotel)
@@ -2158,6 +2167,18 @@ function renderLayover() {
   // same-day-connection check needed here anymore.
   els.roomDetails.hidden = isFlightDay;
   if (!isFlightDay) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
+
+  updateLayoverCardVisibility();
+}
+
+// On a flight day, everything inside the layover card (heading/city, room
+// numbers) can end up hidden at once, along with an empty hotel/pickup/
+// currency - leaving just an empty card shell with nothing in it but its
+// own box-shadow. Hides the whole card in that case instead.
+function updateLayoverCardVisibility() {
+  els.layoverCard.hidden = els.layoverTitle.hidden && els.layoverPlace.hidden &&
+    els.layoverHotel.hidden && els.layoverPickup.hidden &&
+    els.layoverCurrency.hidden && els.roomDetails.hidden;
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as

@@ -895,10 +895,7 @@ function renderFlight() {
         ensureAircraftScheduleLoaded(nextRegistration);
       } else {
         const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
-        if (priorLeg && priorLeg.arrDate) {
-          const priorNumberLabel = priorLeg.callSign ? `${priorLeg.flightNumber} (${priorLeg.callSign})` : priorLeg.flightNumber;
-          transitText += ` ${priorNumberLabel} ${fmtTime(priorLeg.arrDate)}`;
-        }
+        if (priorLeg && priorLeg.arrDate) transitText += ` ${priorLeg.flightNumber} ${fmtTime(priorLeg.arrDate)}`;
       }
     }
   }
@@ -1207,15 +1204,13 @@ function formatExRefLabel(refFlightNumber, route) {
 // a live delay that may still change before they even get there.
 function formatExRefLabelLive(flightNumber, leg) {
   if (!flightNumber) return null;
-  const numberLabel = leg && leg.callSign ? `${flightNumber} (${leg.callSign})` : flightNumber;
-  if (leg && leg.arrDate) return `${numberLabel} ${fmtTime(leg.arrDate)}`;
-  return numberLabel;
+  if (leg && leg.arrDate) return `${flightNumber} ${fmtTime(leg.arrDate)}`;
+  return flightNumber;
 }
 function formatToRefLabelLive(flightNumber, leg) {
   if (!flightNumber) return null;
-  const numberLabel = leg && leg.callSign ? `${flightNumber} (${leg.callSign})` : flightNumber;
-  if (leg && leg.depSchedDate) return `${numberLabel} ${fmtTime(leg.depSchedDate)}`;
-  return numberLabel;
+  if (leg && leg.depSchedDate) return `${flightNumber} ${fmtTime(leg.depSchedDate)}`;
+  return flightNumber;
 }
 
 // Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted

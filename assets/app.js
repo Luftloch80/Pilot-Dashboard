@@ -2121,8 +2121,12 @@ function renderLayover() {
   const nextFlight = layover.flight ? adjacentFlight(layover.flight, 1) : null;
   const sameDayConnection = !!(nextFlight && nextFlight.raw && layover.flight.raw &&
     nextFlight.raw.date === layover.flight.raw.date);
-  els.roomDetails.hidden = sameDayConnection;
-  if (!sameDayConnection) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
+  // Same reasoning as the heading/city above: on a flight day the flight
+  // card is already the focus, so room numbers (for last night's hotel)
+  // stay hidden entirely there too - only shown on a pure rest day.
+  const hideRoomDetails = sameDayConnection || isFlightDay;
+  els.roomDetails.hidden = hideRoomDetails;
+  if (!hideRoomDetails) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as

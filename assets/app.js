@@ -129,6 +129,7 @@ const els = {
   aeroDataBoxStatus: document.getElementById("aeroDataBoxStatus"),
   testAeroDataBoxBtn: document.getElementById("testAeroDataBoxBtn"),
   aeroDataBoxTestResult: document.getElementById("aeroDataBoxTestResult"),
+  aeroDataBoxTestRaw: document.getElementById("aeroDataBoxTestRaw"),
   resetAeroDataBoxBtn: document.getElementById("resetAeroDataBoxBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
@@ -446,6 +447,7 @@ function renderAeroDataBoxStatus() {
   els.aeroDataBoxStatus.textContent = key ? "API-Schlüssel hinterlegt." : "";
   els.testAeroDataBoxBtn.hidden = !key;
   els.aeroDataBoxTestResult.hidden = true;
+  els.aeroDataBoxTestRaw.hidden = true;
   els.resetAeroDataBoxBtn.hidden = !key;
 }
 
@@ -469,18 +471,31 @@ async function testAeroDataBoxConnection() {
   els.testAeroDataBoxBtn.disabled = true;
   els.aeroDataBoxTestResult.hidden = false;
   els.aeroDataBoxTestResult.textContent = `Teste mit ${testFlight.flightNumber} …`;
+  els.aeroDataBoxTestRaw.hidden = true;
+  els.aeroDataBoxTestRaw.textContent = "";
+
+  // Shows the raw response right on the page - no separate console/Web
+  // Inspector access needed to see exactly what came back.
+  function showRaw(value) {
+    els.aeroDataBoxTestRaw.hidden = false;
+    els.aeroDataBoxTestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
 
   const url = `${AERODATABOX_BASE}/flights/Number/${encodeURIComponent(testFlight.flightNumber)}/${encodeURIComponent(testFlight.raw.date)}`;
   try {
     const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
+    const text = await res.text();
     if (!res.ok) {
       els.aeroDataBoxTestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von api.market. Key/Tarif prüfen.`;
+      showRaw(text);
     } else {
-      const json = await res.json();
-      els.aeroDataBoxTestResult.textContent = (json && !Array.isArray(json))
-        ? `Erfolgreich - ${testFlight.flightNumber} gefunden.`
-        : "Antwort kam an, aber in unerwartetem Format - siehe Konsole.";
-      if (json && Array.isArray(json)) console.warn("[AeroDataBox] test: unexpected response shape", json);
+      let json;
+      try { json = JSON.parse(text); } catch { json = null; }
+      const entries = Array.isArray(json) ? json : json ? [json] : [];
+      els.aeroDataBoxTestResult.textContent = entries.length
+        ? `Erfolgreich - ${entries.length} Eintrag/Einträge für ${testFlight.flightNumber} gefunden.`
+        : "Antwort kam an, aber leer oder kein gültiges JSON.";
+      showRaw(json !== null ? json : text);
     }
   } catch (err) {
     // The one failure mode a status code can't capture: the browser
@@ -488,8 +503,8 @@ async function testAeroDataBoxConnection() {
     // host at all - both look identical to page code, just "the fetch
     // rejected" with no further detail.
     els.aeroDataBoxTestResult.textContent =
-      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch). Details siehe Konsole.";
-    console.warn("[AeroDataBox] connection test failed", err, url);
+      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
+    showRaw(String(err));
   }
   els.testAeroDataBoxBtn.disabled = false;
 }
@@ -2611,11 +2626,18 @@ async function fetchFlightByNumber(flightNumber, dateKey) {
       return null;
     }
     const json = await res.json();
-    if (!json || Array.isArray(json)) {
-      console.warn("[AeroDataBox] flights/Number: unexpected response shape", json);
+    // Confirmed via the in-app connection test: this endpoint doesn't
+    // always return a single object the way our first real sample did -
+    // for some flight number/date combinations it comes back as an array
+    // (e.g. more than one codeshare/leg match), same as /flights/Reg/{reg}
+    // already has to handle via dedupeAircraftLegs().
+    const entries = Array.isArray(json) ? json : json ? [json] : [];
+    if (!entries.length) {
+      console.warn("[AeroDataBox] flights/Number: empty response", json);
       return null;
     }
-    return normalizeAircraftLeg(json);
+    const best = entries.find((e) => e.codeshareStatus === "IsOperator") || entries[0];
+    return normalizeAircraftLeg(best);
   } catch (err) {
     console.warn("[AeroDataBox] flights/Number request failed (network/CORS?)", err, url);
     return null;

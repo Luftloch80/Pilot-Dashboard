@@ -65,7 +65,6 @@ const els = {
   prevFlightBtn: document.getElementById("prevFlightBtn"),
   nextFlightBtn: document.getElementById("nextFlightBtn"),
   flightNavTitle: document.getElementById("flightNavTitle"),
-  flightNavSub: document.getElementById("flightNavSub"),
 
   flightCard: document.getElementById("flightCard"),
   flightNumber: document.getElementById("flightNumber"),
@@ -561,8 +560,6 @@ function renderFlightNav() {
   els.prevFlightBtn.disabled = state.index <= 0;
   els.nextFlightBtn.disabled = state.index >= n - 1;
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";
-  const f = state.flights[state.index];
-  els.flightNavSub.textContent = f ? `${f.depCode} → ${f.arrCode}` : "–";
 }
 
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"

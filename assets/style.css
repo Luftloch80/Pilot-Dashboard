@@ -283,7 +283,6 @@ body {
 }
 .flight-nav-label { text-align: center; flex: 1; }
 .flight-nav-title { font-weight: 600; }
-.flight-nav-sub { font-size: 0.8rem; }
 
 /* Flight card */
 .flight-header {

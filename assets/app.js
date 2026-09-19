@@ -567,6 +567,11 @@ function renderFlightNav() {
 
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
+// Once AeroDataBox confirms this exact flight has actually gone off-block
+// (a real runway time, not just an estimate - see depRunwayDate on
+// normalizeAircraftLeg()), that replaces the countdown with the actual
+// delay against schedule instead - a fixed number now, not a moving
+// target, and the thing that actually matters once wheels-up is real.
 function renderTimerPill(f) {
   if (f.isDeadhead) {
     els.flightStatus.textContent = "DH";
@@ -578,6 +583,23 @@ function renderTimerPill(f) {
     els.flightStatus.className = "status-pill";
     return;
   }
+
+  const dateKey = f.raw && f.raw.date;
+  if (getAeroDataBoxKey() && f.flightNumber && dateKey) {
+    const cacheKey = `${f.flightNumber}|${dateKey}`;
+    const cached = flightByNumberCache.get(cacheKey);
+    if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+      ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+    }
+    const leg = cached && cached.leg;
+    if (leg && leg.depRunwayDate) {
+      const offBlockDiffMin = Math.round((leg.depRunwayDate.getTime() - f.depSchedDate.getTime()) / 60000);
+      els.flightStatus.textContent = offBlockDiffMin > 0 ? `Off Block +${offBlockDiffMin} min` : `Off Block ${offBlockDiffMin} min`;
+      els.flightStatus.className = offBlockDiffMin > 0 ? "status-pill timer-after" : "status-pill timer-before";
+      return;
+    }
+  }
+
   const diffMin = Math.round((f.depSchedDate.getTime() - Date.now()) / 60000);
   if (diffMin > 0) {
     els.flightStatus.textContent = `-${diffMin} min`;
@@ -789,9 +811,9 @@ function crewKey(role, name) {
 // refers to (i.e. the neighboring flight the comparison was made against)
 // - shown next to the arrow so it's clear which flight the split actually
 // happens on, not just that one happens. Same "FLIGHTNUMBER (DEP–ARR) am
-// DD.MM." schema as formatPdfFlightRef()'s "kommt mit"/"fliegt weiter
-// mit" labels, so both read consistently regardless of which source the
-// reference came from.
+// DD.MM." schema as formatPdfFlightRef()'s "inbound"/"outbound" labels,
+// so both read consistently regardless of which source the reference
+// came from.
 function flightRefLabel(flight) {
   if (!flight) return null;
   const dateKey = flight.raw && flight.raw.date;
@@ -802,10 +824,10 @@ function flightRefLabel(flight) {
   return dateLabel ? `${flight.flightNumber}${routeLabel} am ${dateLabel}` : `${flight.flightNumber}${routeLabel}`;
 }
 
-// "nächster Flug" only needs the flight number and its departure time -
-// already known locally (this is our own adjacent flight from
-// OpenAirLog, not a lookup), unlike flightRefLabel()'s citypair/date
-// schema still used for "vorheriger Flug".
+// "outbound" (leaving, OpenAirLog-fallback case) only needs the flight
+// number and its departure time - already known locally (this is our own
+// adjacent flight from OpenAirLog, not a lookup), unlike flightRefLabel()'s
+// citypair/date schema still used for the "inbound" fallback.
 function nextFlightRefLabel(flight) {
   if (!flight) return null;
   return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
@@ -853,16 +875,16 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       const pdfRef = pdfExRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `← kommt mit ${pdfRef}`;
-      else if (joiningInfo) info.textContent = `← vorheriger Flug ${joiningInfo}`;
+      if (pdfRef) info.textContent = `← inbound ${pdfRef}`;
+      else if (joiningInfo) info.textContent = `← inbound ${joiningInfo}`;
       if (info.textContent) name.appendChild(info);
     }
     if (isLeaving) {
       const pdfRef = pdfToRefs.get(key);
       const info = document.createElement("span");
       info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `→ fliegt weiter mit ${pdfRef}`;
-      else if (leavingInfo) info.textContent = `→ nächster Flug ${leavingInfo}`;
+      if (pdfRef) info.textContent = `→ outbound ${pdfRef}`;
+      else if (leavingInfo) info.textContent = `→ outbound ${leavingInfo}`;
       if (info.textContent) name.appendChild(info);
     }
     const role = document.createElement("span");
@@ -2473,9 +2495,16 @@ function normalizeAircraftLeg(leg) {
     depDate, arrDate,
     // Scheduled-only (never revised) - kept separate from depDate/arrDate
     // above for callers that specifically want the plan rather than the
-    // live/updated time, e.g. "fliegt weiter mit"'s departure.
+    // live/updated time, e.g. the "outbound" label's departure.
     depSchedDate: parseAeroDataBoxUtc(dep.scheduledTime && dep.scheduledTime.utc),
     arrSchedDate: parseAeroDataBoxUtc(arr.scheduledTime && arr.scheduledTime.utc),
+    // Only present once the flight has actually left - confirmed on real
+    // responses: absent while a flight is still "Expected", populated
+    // once it has genuinely departed. The one reliable "did this really
+    // happen yet" signal AeroDataBox gives us, as opposed to
+    // scheduledTime/revisedTime, which exist (as an estimate) even before
+    // departure.
+    depRunwayDate: parseAeroDataBoxUtc(dep.runwayTime && dep.runwayTime.utc),
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,

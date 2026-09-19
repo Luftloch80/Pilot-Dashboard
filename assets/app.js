@@ -121,6 +121,7 @@ const els = {
   resetAeroDataBoxBtn: document.getElementById("resetAeroDataBoxBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
+  dataStamp: document.getElementById("dataStamp"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
 };
 
@@ -787,12 +788,45 @@ function scrollTrackToIndex(index) {
 // its own transit line (about its own next flight), but only the active
 // one is allowed to trigger AeroDataBox lookups - scrolling past several
 // cards shouldn't fire off a lookup for each.
-function renderFlightCardTransit(i, isActive, cardEls) {
+function renderFlightCardTransit(i, isActive, cardEls, ownLeg) {
   const f = state.flights[i];
   const nextFlight = state.flights[i + 1];
-  const transitLabel = nextFlight
-    ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
-    : null;
+
+  // Last flight of the day: no more flights today to transit into, but if
+  // this landing isn't back at home base, it's a layover - show its
+  // rest window instead of leaving the line blank. Rest starts 30 min
+  // after scheduled arrival (post-flight duties) and ends at pickup, 60
+  // min before the next flight's scheduled departure (checked across the
+  // whole loaded rotation, not just today - the next flight is often
+  // tomorrow's).
+  if (!nextFlight) {
+    if (f.arrCode === HOME_BASE) {
+      cardEls.transitInfo.hidden = true;
+      cardEls.transitInfo.textContent = "";
+      return;
+    }
+    const onward = adjacentFlight(f, 1);
+    const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
+    if (!onwardDep) {
+      cardEls.transitInfo.hidden = true;
+      cardEls.transitInfo.textContent = "";
+      return;
+    }
+    const restStart = new Date(f.arrSchedDate.getTime() + 30 * 60000);
+    const pickupUtc = new Date(onwardDep.getTime() - 60 * 60000);
+    const restLabel = fmtDurationHM(pickupUtc - restStart);
+    const city = cityForIcao(f.arrCode) || f.arrCode;
+    const pickupLabel = fmtTimeAtOffset(pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(pickupUtc);
+
+    let text = `Layover ${city}`;
+    if (restLabel) text += ` · Ruhezeit ${restLabel}`;
+    text += ` · Pickup ${pickupLabel}`;
+    cardEls.transitInfo.hidden = false;
+    cardEls.transitInfo.textContent = text;
+    return;
+  }
+
+  const transitLabel = fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate);
 
   // OpenAirLog's registration is missing on some future-dated entries -
   // when that happens for the next flight, fall back to looking it up by
@@ -857,7 +891,7 @@ function renderFlightCardContent(i, isActive) {
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;
 
-  renderFlightCardTransit(i, isActive, cardEls);
+  renderFlightCardTransit(i, isActive, cardEls, ownLeg);
 }
 
 // Identifies today's flight list by flight number + date only (not
@@ -1420,6 +1454,34 @@ function loadFlightsCache() {
   }
 }
 
+// Once a flight has been on the ground for a while, it's no longer worth
+// keeping in the swipeable card list - decluttering it down to just
+// what's still relevant. The current/last flight of the day is exempt:
+// it stays until the real layover view takes over (findApiLayover(),
+// 30 min after arrival - see POST_LANDING_SWITCH_MS), so there's no gap
+// where neither the flight card nor the layover card has anything to show.
+const FLIGHT_RETIRE_AFTER_ARRIVAL_MS = 20 * 60 * 1000;
+
+// Today's flights (state.flights) - filtered from the full loaded window
+// (state.allFlights, which stays untouched so crew/layover lookups that
+// need to reach across days, e.g. adjacentFlight(), still work) down to
+// today's date, then further down to what's still worth showing as a
+// card. Re-run on every 30s tick as well as on load, since "20 minutes
+// past arrival" becomes true while the app just sits there.
+function computeTodayFlights(allFlights) {
+  const todayKey = localDateKey(new Date());
+  const today = allFlights.filter((f) => {
+    const d = f.depSchedDate || f.depActualDate;
+    return d && localDateKey(d) === todayKey;
+  });
+  const now = Date.now();
+  return today.filter((f, idx) => {
+    if (idx === today.length - 1) return true;
+    const arr = f.arrActualDate || f.arrSchedDate;
+    return !arr || now - arr.getTime() < FLIGHT_RETIRE_AFTER_ARRIVAL_MS;
+  });
+}
+
 // Turns a raw /flights response array into rendered state - shared by the
 // live load below and the offline fallback, so a cached window is applied
 // exactly the same way a fresh one would be.
@@ -1440,11 +1502,7 @@ function applyLoadedFlights(allRaw) {
     .map((r) => ({ date: String(r.date || ""), dutyCode: String(r.duty_code) }))
     .filter((d) => d.date);
 
-  const todayKey = localDateKey(new Date());
-  const flights = allFlights.filter((f) => {
-    const d = f.depSchedDate || f.depActualDate;
-    return d && localDateKey(d) === todayKey;
-  });
+  const flights = computeTodayFlights(allFlights);
 
   crewCache.clear();
   state.flights = flights;
@@ -1470,13 +1528,34 @@ function applyLoadedFlights(allRaw) {
   renderFlight();
 }
 
+// Small status text next to ↻, replacing the old separate "Offline -
+// zeige letzten Stand..." banner line: either when this device last
+// pulled a fresh copy (device-local time, like fmtLocalTime()'s other
+// use), or "Offline" while showing a cached window instead.
+let lastUpdateAt = null;
+let isOffline = false;
+
+function renderDataStamp() {
+  els.dataStamp.hidden = false;
+  els.dataStamp.classList.toggle("offline", isOffline);
+  if (isOffline) {
+    els.dataStamp.textContent = "Offline";
+  } else if (lastUpdateAt) {
+    els.dataStamp.textContent = `Aktualisiert ${fmtLocalTime(lastUpdateAt)}`;
+  } else {
+    els.dataStamp.hidden = true;
+  }
+}
+
 // No connection at all (offline, or a genuine network failure) - falls
 // back to whatever window was cached from the last successful load rather
 // than just an error, so the dashboard stays usable, e.g. mid-flight in
-// airplane mode. Never silently passed off as live: the banner stays
-// visible (not cleared to "" like the online path does) so it's always
-// clear this isn't current data.
+// airplane mode. Never silently passed off as live: the ↻ status stays on
+// "Offline" (see renderDataStamp()) so it's always clear this isn't
+// current data.
 function useOfflineFallback() {
+  isOffline = true;
+  renderDataStamp();
   const cached = loadFlightsCache();
   if (!cached) {
     showBanner(
@@ -1487,11 +1566,8 @@ function useOfflineFallback() {
     );
     return;
   }
+  showBanner("", "");
   applyLoadedFlights(cached.allRaw);
-  const stamp = new Date(cached.fetchedAt).toLocaleString("de-DE", {
-    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
-  });
-  showBanner(`Offline – zeige letzten Stand vom ${stamp} Uhr.`, "warn");
 }
 
 async function loadFlights() {
@@ -1564,6 +1640,10 @@ async function loadFlights() {
   const allRaw = extractFlightsArray(json);
   saveFlightsCache(allRaw);
   applyLoadedFlights(allRaw);
+
+  isOffline = false;
+  lastUpdateAt = new Date();
+  renderDataStamp();
 
   if (els.flightCardTrack.hidden) {
     // A short hint only when the dashboard would otherwise show nothing at
@@ -2571,6 +2651,27 @@ function parseAeroDataBoxUtc(s) {
   return m ? new Date(`${m[1]}T${m[2]}:00Z`) : null;
 }
 
+// AeroDataBox's "local" time fields (e.g. "2026-09-19 15:30+01:00") carry
+// the airport's actual UTC offset for that date - a more reliable source
+// for "what's the wall-clock time at this station" than a static
+// ICAO/timezone table would be (no DST bookkeeping needed on our side).
+function parseAeroDataBoxOffsetMinutes(s) {
+  const m = /([+-])(\d{2}):(\d{2})$/.exec(s || "");
+  if (!m) return null;
+  const sign = m[1] === "-" ? -1 : 1;
+  return sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10));
+}
+
+// Renders a UTC instant as the wall-clock time at a station offsetMinutes
+// away from UTC - "LT" (local time) rather than fmtTime()'s "Z"/UTC.
+function fmtTimeAtOffset(utcDate, offsetMinutes) {
+  if (!utcDate || offsetMinutes == null) return null;
+  const shifted = new Date(utcDate.getTime() + offsetMinutes * 60000);
+  const hh = String(shifted.getUTCHours()).padStart(2, "0");
+  const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
+  return `${hh}:${mm} LT`;
+}
+
 function dedupeAircraftLegs(raw) {
   const byKey = new Map();
   for (const leg of raw) {
@@ -2615,6 +2716,10 @@ function normalizeAircraftLeg(leg) {
     // live/updated time, e.g. the "outbound" label's departure.
     depSchedDate: parseAeroDataBoxUtc(dep.scheduledTime && dep.scheduledTime.utc),
     arrSchedDate: parseAeroDataBoxUtc(arr.scheduledTime && arr.scheduledTime.utc),
+    // Arrival station's UTC offset (see parseAeroDataBoxOffsetMinutes()) -
+    // used to show the layover pickup time in local time on the last
+    // flight of the day's transit line.
+    arrUtcOffsetMin: parseAeroDataBoxOffsetMinutes(arr.scheduledTime && arr.scheduledTime.local),
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
@@ -3315,6 +3420,20 @@ ensureRosterLoaded();
 // Keep the T-minus/T-plus countdown and the layover state current without
 // a full data refresh.
 setInterval(() => {
+  // Re-applies the 20-minutes-past-arrival retirement (see
+  // computeTodayFlights()) - purely time-based, so a flight can cross
+  // that mark while the app just sits open, not only right after a load.
+  // renderFlight()'s own signature check rebuilds the cards only if the
+  // set actually changed, so this is a no-op most ticks.
+  if (state.allFlights.length) {
+    const refreshed = computeTodayFlights(state.allFlights);
+    if (refreshed.length !== state.flights.length || refreshed.some((f, i) => f !== state.flights[i])) {
+      state.flights = refreshed;
+      state.index = refreshed.length ? Math.min(pickInitialIndex(refreshed), refreshed.length - 1) : 0;
+      renderFlight();
+    }
+  }
+
   // Ticks every card's countdown pill (cheap, pure date math) - only the
   // active card's own AeroDataBox lookup is allowed to actually fire.
   state.flights.forEach((f, i) => {

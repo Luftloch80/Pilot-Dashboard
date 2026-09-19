@@ -119,6 +119,11 @@ body {
   flex-shrink: 0;
 }
 
+.data-stamp {
+  white-space: nowrap;
+}
+.data-stamp.offline { color: var(--danger); }
+
 .icon-btn {
   background: var(--bg-elev);
   border: 1px solid var(--border);

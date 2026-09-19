@@ -1259,74 +1259,33 @@ async function ensureCrewLoaded(f) {
 
 // ---------- data loading ----------
 
-async function loadFlights() {
-  const key = getApiKey();
-  if (!key) {
-    setSettingsOpen(true);
-    els.refreshBtn.hidden = true;
-    els.resetKeyBtn.hidden = true;
-    return;
-  }
+// Last successfully loaded raw flight window, kept in localStorage so a
+// genuinely offline load (no internet, e.g. airplane mode) can still show
+// something instead of just an error - see loadFlights()'s catch branch.
+const FLIGHTS_CACHE_KEY = "oal_flights_cache";
 
-  setSettingsOpen(false);
-  els.refreshBtn.hidden = false;
-  els.resetKeyBtn.hidden = false;
-  showBanner("Lade Flugdaten …", "");
-
-  // Only *today's* flights are ever shown as "the" flight (filtered below),
-  // but layover detection needs to look back further - a layover can span
-  // several days (e.g. landed 3 days ago, next departure tomorrow) - so the
-  // fetch window itself reaches back a week to find the most recent arrival.
-  // Forward it reaches 3 weeks out, so a vacation/Ortstag day can still find
-  // the next real duty and, for Ortstag, the layovers on the trip after it.
-  const from = todayISO(-7);
-  const to = todayISO(21);
-  const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
-
-  let res;
+function saveFlightsCache(allRaw) {
   try {
-    res = await fetchWithTimeout(url, {
-      headers: {
-        Authorization: `Bearer ${key}`,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
-  } catch (err) {
-    showBanner(
-      err && err.name === "AbortError"
-        ? "Zeitüberschreitung bei der Verbindung zu OpenAirLog. Bitte auf „Aktualisieren“ tippen."
-        : "Verbindung zu OpenAirLog fehlgeschlagen. Das kann an fehlendem Internet liegen " +
-          "oder daran, dass die API keine Anfragen direkt aus dem Browser erlaubt (CORS). " +
-          "Falls das dauerhaft passiert, muss OpenAirLog diese Web-App-Adresse freigeben.",
-      "error"
-    );
-    return;
-  }
-
-  if (res.status === 401 || res.status === 403) {
-    showBanner("API-Schlüssel ungültig oder abgelaufen. Bitte neu eingeben.", "error");
-    setSettingsOpen(true);
-    return;
-  }
-  if (!res.ok) {
-    showBanner(`OpenAirLog antwortete mit Fehler ${res.status}.`, "error");
-    return;
-  }
-
-  let json;
+    localStorage.setItem(FLIGHTS_CACHE_KEY, JSON.stringify({ allRaw, fetchedAt: Date.now() }));
+  } catch { /* private mode / quota */ }
+}
+function loadFlightsCache() {
   try {
-    json = await res.json();
+    const parsed = JSON.parse(localStorage.getItem(FLIGHTS_CACHE_KEY) || "null");
+    return parsed && Array.isArray(parsed.allRaw) ? parsed : null;
   } catch {
-    showBanner("Antwort von OpenAirLog konnte nicht gelesen werden (kein gültiges JSON).", "error");
-    return;
+    return null;
   }
+}
 
+// Turns a raw /flights response array into rendered state - shared by the
+// live load below and the offline fallback, so a cached window is applied
+// exactly the same way a fresh one would be.
+function applyLoadedFlights(allRaw) {
   // Real flights vs. duty-only entries (vacation "U<n>", home day "ORTSTAG",
   // etc. - flight_number null). Duty entries are kept (not discarded like
   // before) so a vacation/Ortstag day can be recognized and explained
   // instead of just showing "nothing planned".
-  const allRaw = extractFlightsArray(json);
   const rawFlights = allRaw.filter(isRealFlightEntry);
   const rawDuties = allRaw.filter((r) => !isRealFlightEntry(r) && r.duty_code);
 
@@ -1357,11 +1316,6 @@ async function loadFlights() {
   if (rosterEventsCache.events) {
     applyRosterMasterOverrides(allFlights, parseRosterFlightLegs(rosterEventsCache.events), rosterEventsCache.dtstamp);
   }
-  // Whatever just loaded is the new baseline - mark it fresh again until
-  // the next background check finds something newer on the server.
-  state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);
-  dataStampFresh = true;
-  renderDataStamp();
   // Set before renderLayover(): it (indirectly, via effectiveDutyType())
   // reads state.index to check whether the post-landing switch applies,
   // which needs it to already reflect today's freshly loaded flights.
@@ -1372,6 +1326,108 @@ async function loadFlights() {
   // including the post-landing switch to "Ortstag" mode once today's last
   // flight landed at home base 30+ minutes ago (shouldShowPostLandingHomeView()).
   renderFlight();
+}
+
+// No connection at all (offline, or a genuine network failure) - falls
+// back to whatever window was cached from the last successful load rather
+// than just an error, so the dashboard stays usable, e.g. mid-flight in
+// airplane mode. Never silently passed off as live: the banner stays
+// visible (not cleared to "" like the online path does) so it's always
+// clear this isn't current data.
+function useOfflineFallback() {
+  const cached = loadFlightsCache();
+  if (!cached) {
+    showBanner(
+      "Verbindung zu OpenAirLog fehlgeschlagen. Das kann an fehlendem Internet liegen " +
+        "oder daran, dass die API keine Anfragen direkt aus dem Browser erlaubt (CORS). " +
+        "Falls das dauerhaft passiert, muss OpenAirLog diese Web-App-Adresse freigeben.",
+      "error"
+    );
+    return;
+  }
+  applyLoadedFlights(cached.allRaw);
+  const stamp = new Date(cached.fetchedAt).toLocaleString("de-DE", {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+  });
+  showBanner(`Offline – zeige letzten Stand vom ${stamp} Uhr.`, "warn");
+}
+
+async function loadFlights() {
+  const key = getApiKey();
+  if (!key) {
+    setSettingsOpen(true);
+    els.refreshBtn.hidden = true;
+    els.resetKeyBtn.hidden = true;
+    return;
+  }
+
+  setSettingsOpen(false);
+  els.refreshBtn.hidden = false;
+  els.resetKeyBtn.hidden = false;
+  showBanner("Lade Flugdaten …", "");
+
+  // No point even trying the request (and waiting out its timeout) when
+  // the device itself reports no connection at all - straight to the
+  // cached window instead.
+  if (!navigator.onLine) {
+    useOfflineFallback();
+    return;
+  }
+
+  // Only *today's* flights are ever shown as "the" flight (filtered below),
+  // but layover detection needs to look back further - a layover can span
+  // several days (e.g. landed 3 days ago, next departure tomorrow) - so the
+  // fetch window itself reaches back a week to find the most recent arrival.
+  // Forward it reaches 3 weeks out, so a vacation/Ortstag day can still find
+  // the next real duty and, for Ortstag, the layovers on the trip after it.
+  const from = todayISO(-7);
+  const to = todayISO(21);
+  const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
+
+  let res;
+  try {
+    res = await fetchWithTimeout(url, {
+      headers: {
+        Authorization: `Bearer ${key}`,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+  } catch {
+    // Covers both a genuine timeout (AbortError) and a plain network
+    // failure - either way there's no live data, so the same offline
+    // fallback applies rather than branching the message on which one.
+    useOfflineFallback();
+    return;
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    showBanner("API-Schlüssel ungültig oder abgelaufen. Bitte neu eingeben.", "error");
+    setSettingsOpen(true);
+    return;
+  }
+  if (!res.ok) {
+    showBanner(`OpenAirLog antwortete mit Fehler ${res.status}.`, "error");
+    return;
+  }
+
+  let json;
+  try {
+    json = await res.json();
+  } catch {
+    showBanner("Antwort von OpenAirLog konnte nicht gelesen werden (kein gültiges JSON).", "error");
+    return;
+  }
+
+  const allRaw = extractFlightsArray(json);
+  saveFlightsCache(allRaw);
+  applyLoadedFlights(allRaw);
+
+  // Whatever just loaded is the new baseline - mark it fresh again until
+  // the next background check finds something newer on the server.
+  state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);
+  dataStampFresh = true;
+  renderDataStamp();
 
   if (els.flightCard.hidden) {
     // A short hint only when the dashboard would otherwise show nothing at
@@ -3048,6 +3104,15 @@ if (window.pdfjsLib) {
 }
 
 // ---------- init ----------
+
+// Lets the app shell itself load offline (see sw.js) - separate from the
+// data-level offline fallback above (FLIGHTS_CACHE_KEY), which covers the
+// flight/crew data once the shell is already running.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => { /* offline support just won't be available */ });
+  });
+}
 
 renderBrandName();
 loadStoredPdfCrew();

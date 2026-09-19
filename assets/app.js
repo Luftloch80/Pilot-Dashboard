@@ -693,6 +693,22 @@ function renderTimerPill(f) {
   }
 }
 
+// The countdown-to-scheduled pill is only a stand-in for not yet knowing
+// the real time - once AeroDataBox has actually resolved a current
+// departure time (whether or not it's off enough from schedule to show
+// as a deviation next to depTime/arrTime), it's redundant and goes away
+// rather than sitting there next to more current information. Called
+// both from renderFlight() and the 30s ticker below, so the pill doesn't
+// reappear on the next tick after being hidden here.
+function updateFlightTimerDisplay(f, ownLeg) {
+  if (!f.isDeadhead && ownLeg && ownLeg.depDate) {
+    els.flightStatus.hidden = true;
+    return;
+  }
+  els.flightStatus.hidden = false;
+  renderTimerPill(f);
+}
+
 // IATA airline designator (the leading 2 chars of the flight number, which
 // can include a digit, e.g. "4Y") -> a styled badge instead of an actual
 // logo image (avoids bundling trademarked logo assets into the repo).
@@ -827,7 +843,7 @@ function renderFlight() {
   // the transit line, which are about other flights, not this one.
   const ownLeg = getOwnFlightAeroDataBoxLeg(f);
   els.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
-  renderTimerPill(f);
+  updateFlightTimerDisplay(f, ownLeg);
 
   els.depCode.textContent = f.depCode;
   els.arrCode.textContent = f.arrCode;
@@ -3263,7 +3279,7 @@ ensureRosterLoaded();
 // a full data refresh.
 setInterval(() => {
   const f = state.flights[state.index];
-  if (f) renderTimerPill(f);
+  if (f) updateFlightTimerDisplay(f, getOwnFlightAeroDataBoxLeg(f));
   renderLayover();
   tickPostLandingSwitch();
 }, 30000);

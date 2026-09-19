@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=21" />
+<link rel="stylesheet" href="assets/style.css?v=22" />
 </head>
 <body>
 
@@ -186,8 +186,8 @@
       <p id="currencyNote" class="muted small" hidden></p>
     </details>
 
-    <details id="roomDetails" class="layover-details">
-      <summary>Zimmernummern</summary>
+    <div id="roomDetails" class="layover-details">
+      <div class="layover-section-heading">Zimmernummern</div>
 
       <label for="roomNumberInput">Eigene Zimmernummer</label>
       <input id="roomNumberInput" type="text" inputmode="text" autocomplete="off" placeholder="z. B. 412" />
@@ -196,7 +196,7 @@
         <div class="layover-crew-title muted small">Crew im selben Hotel (aus PDF)</div>
         <ul id="layoverCrewList" class="layover-crew-list"></ul>
       </div>
-    </details>
+    </div>
   </section>
 
 </main>

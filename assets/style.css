@@ -176,7 +176,8 @@ body {
 .small { font-size: 0.82rem; }
 
 /* Setup */
-.setup-card label {
+.setup-card label,
+#rosterCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -184,7 +185,9 @@ body {
 }
 
 .setup-card input[type="password"],
-.setup-card input[type="text"] {
+.setup-card input[type="text"],
+#rosterCard input[type="password"],
+#rosterCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -239,6 +242,13 @@ body {
 }
 
 .setup-card #resetKeyBtn {
+  margin-top: 16px;
+}
+
+#rosterCard #saveRosterBtn {
+  margin-top: 14px;
+}
+#rosterCard #resetRosterBtn {
   margin-top: 16px;
 }
 

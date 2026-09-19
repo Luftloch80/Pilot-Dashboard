@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=28" />
+<link rel="stylesheet" href="assets/style.css?v=29" />
 </head>
 <body>
 
@@ -95,6 +95,28 @@
     <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
   </section>
 
+  <!-- AeroDataBox (optional, nur in den Settings): Tagesplan der aktuellen
+       Maschine, über api.market abgefragt. -->
+  <section id="aeroDataBoxCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>AeroDataBox</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Zeigt beim aktuellen Flug den Tagesplan der Maschine (alle Flüge
+      dieses Kennzeichens). Der Schlüssel wird nur lokal auf diesem Gerät
+      gespeichert und bei jeder Anfrage direkt an
+      <code>prod.api.market</code> gesendet. Er verlässt dieses Gerät
+      sonst nicht.
+    </p>
+    <label for="aeroDataBoxKeyInput">API-Schlüssel (api.market)</label>
+    <input id="aeroDataBoxKeyInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein AeroDataBox API-Schlüssel" />
+    <button id="saveAeroDataBoxBtn" class="btn secondary">Speichern</button>
+    <p id="aeroDataBoxStatus" class="muted small" hidden></p>
+    <button id="resetAeroDataBoxBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
+  </section>
+
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
   <section id="setupCard" class="card setup-card" hidden>
     <h2>OpenAirLog verbinden</h2>
@@ -155,10 +177,12 @@
       <div class="meta-item">
         <div class="meta-key">Kennzeichen</div>
         <div class="meta-val" id="registration">–</div>
+        <button id="aircraftScheduleBtn" type="button" class="route-toggle muted small" hidden aria-expanded="false"></button>
       </div>
     </div>
 
     <div id="transitInfo" class="transit-info muted small" hidden>–</div>
+    <div id="aircraftScheduleList" class="route-weather" hidden></div>
   </section>
 
   <!-- Dienstplan-Status: Urlaub ("U<n>") oder Ortstag, aus OpenAirLog erkannt -->
@@ -229,6 +253,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=63"></script>
+<script src="assets/app.js?v=64"></script>
 </body>
 </html>

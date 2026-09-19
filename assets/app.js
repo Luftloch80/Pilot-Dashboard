@@ -4,6 +4,8 @@ const API_BASE = "https://openairlog.de/api/v1";
 const STORAGE_KEY = "oal_api_key";
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
+const AERODATABOX_KEY_STORAGE_KEY = "oal_aerodatabox_key";
+const AERODATABOX_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -75,6 +77,8 @@ const els = {
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
   transitInfo: document.getElementById("transitInfo"),
+  aircraftScheduleBtn: document.getElementById("aircraftScheduleBtn"),
+  aircraftScheduleList: document.getElementById("aircraftScheduleList"),
 
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
@@ -121,6 +125,12 @@ const els = {
   saveRosterBtn: document.getElementById("saveRosterBtn"),
   rosterStatus: document.getElementById("rosterStatus"),
   resetRosterBtn: document.getElementById("resetRosterBtn"),
+
+  aeroDataBoxCard: document.getElementById("aeroDataBoxCard"),
+  aeroDataBoxKeyInput: document.getElementById("aeroDataBoxKeyInput"),
+  saveAeroDataBoxBtn: document.getElementById("saveAeroDataBoxBtn"),
+  aeroDataBoxStatus: document.getElementById("aeroDataBoxStatus"),
+  resetAeroDataBoxBtn: document.getElementById("resetAeroDataBoxBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
@@ -419,6 +429,25 @@ function renderRosterStatus() {
   els.resetRosterBtn.hidden = !url;
 }
 
+// ---------- AeroDataBox API key storage ----------
+
+function getAeroDataBoxKey() {
+  try { return localStorage.getItem(AERODATABOX_KEY_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setAeroDataBoxKey(key) {
+  try { localStorage.setItem(AERODATABOX_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
+}
+function clearAeroDataBoxKey() {
+  try { localStorage.removeItem(AERODATABOX_KEY_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function renderAeroDataBoxStatus() {
+  const key = getAeroDataBoxKey();
+  els.aeroDataBoxStatus.hidden = !key;
+  els.aeroDataBoxStatus.textContent = key ? "API-Schlüssel hinterlegt." : "";
+  els.resetAeroDataBoxBtn.hidden = !key;
+}
+
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
 // not the PDF file itself - so it survives a page refresh instead of
@@ -471,8 +500,10 @@ function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
   els.crewPdfCard.hidden = !open;
   els.rosterCard.hidden = !open;
+  els.aeroDataBoxCard.hidden = !open;
   if (open) {
     renderRosterStatus();
+    renderAeroDataBoxStatus();
     els.flightNav.hidden = true;
     els.flightCard.hidden = true;
     els.layoverCard.hidden = true;
@@ -699,6 +730,17 @@ function renderFlight() {
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;
   renderAirlineBadge(f.flightNumber);
+
+  // Only offered once an AeroDataBox key is configured (optional, see
+  // Settings) - collapses back and drops any panel content from the
+  // previously shown flight's aircraft on every render, since it would
+  // otherwise be showing a stale, unrelated registration's schedule.
+  const hasRegistration = f.registration && f.registration !== "–";
+  els.aircraftScheduleBtn.hidden = !getAeroDataBoxKey() || !hasRegistration;
+  els.aircraftScheduleBtn.textContent = hasRegistration ? `Tagesplan ${f.registration}` : "";
+  els.aircraftScheduleBtn.setAttribute("aria-expanded", "false");
+  els.aircraftScheduleList.hidden = true;
+  els.aircraftScheduleList.innerHTML = "";
 
   // Transit to the next own flight and, on a Flugzeugwechsel (its
   // registration differs from this one's), which aircraft that is.
@@ -2233,6 +2275,142 @@ async function ensureRosterLoaded() {
   }
 }
 
+// ---------- AeroDataBox - aircraft's full day schedule ----------
+//
+// Confirmed real response shape from a live api.market call to
+// GET {AERODATABOX_BASE}/flights/Reg/{reg}?withAircraftImage=false&withLocation=false
+// (header "x-api-market-key"): an array of flight objects, each with
+// departure.airport.{icao,iata}, departure.scheduledTime.utc
+// ("2026-09-19 06:25Z"), departure.revisedTime.utc (same shape, updated/
+// actual), arrival (same shape, plus sometimes predictedTime instead of
+// revisedTime for a still-scheduled flight), number ("LH 1173"), status,
+// codeshareStatus ("IsOperator" | "IsCodeshared"), aircraft.reg. The SAME
+// physical flight appears once per marketing carrier - a real LIS-FRA leg
+// came back as six different flight numbers (LH, AC, OS, TG, TP, UA) all
+// sharing the same departure/arrival airports and scheduled time - so
+// this is deduplicated down to one entry per physical leg, preferring
+// whichever duplicate is the "IsOperator" (operating carrier) record.
+
+function parseAeroDataBoxUtc(s) {
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})Z$/.exec(s || "");
+  return m ? new Date(`${m[1]}T${m[2]}:00Z`) : null;
+}
+
+function dedupeAircraftLegs(raw) {
+  const byKey = new Map();
+  for (const leg of raw) {
+    const depIcao = leg.departure && leg.departure.airport && leg.departure.airport.icao;
+    const arrIcao = leg.arrival && leg.arrival.airport && leg.arrival.airport.icao;
+    const depUtc = leg.departure && leg.departure.scheduledTime && leg.departure.scheduledTime.utc;
+    if (!depIcao || !arrIcao || !depUtc) continue;
+    const key = `${depIcao}-${arrIcao}-${depUtc}`;
+    const existing = byKey.get(key);
+    if (!existing || (leg.codeshareStatus === "IsOperator" && existing.codeshareStatus !== "IsOperator")) {
+      byKey.set(key, leg);
+    }
+  }
+  return [...byKey.values()];
+}
+
+function normalizeAircraftLeg(leg) {
+  const dep = leg.departure || {};
+  const arr = leg.arrival || {};
+  const depDate = parseAeroDataBoxUtc((dep.revisedTime && dep.revisedTime.utc) || (dep.scheduledTime && dep.scheduledTime.utc));
+  const arrDate = parseAeroDataBoxUtc(
+    (arr.revisedTime && arr.revisedTime.utc) || (arr.predictedTime && arr.predictedTime.utc) || (arr.scheduledTime && arr.scheduledTime.utc)
+  );
+  return {
+    depCode: (dep.airport && dep.airport.icao) || "---",
+    arrCode: (arr.airport && arr.airport.icao) || "---",
+    depDate, arrDate,
+    flightNumber: String(leg.number || "").replace(/\s+/g, ""),
+    status: leg.status || "",
+  };
+}
+
+const aircraftScheduleCache = new Map(); // registration -> { legs, fetchedAt }
+const AIRCRAFT_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
+
+async function fetchAircraftSchedule(registration) {
+  const key = getAeroDataBoxKey();
+  if (!key || !registration || registration === "–") return null;
+  const url = `${AERODATABOX_BASE}/flights/Reg/${encodeURIComponent(registration)}?withAircraftImage=false&withLocation=false`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!Array.isArray(json)) return null;
+    return dedupeAircraftLegs(json)
+      .map(normalizeAircraftLeg)
+      .filter((leg) => leg.depDate)
+      .sort((a, b) => a.depDate - b.depDate);
+  } catch {
+    return null;
+  }
+}
+
+function renderAircraftScheduleList(legs, currentFlightNumber) {
+  els.aircraftScheduleList.innerHTML = "";
+  if (!legs || !legs.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted small";
+    empty.textContent = "Keine Daten gefunden.";
+    els.aircraftScheduleList.appendChild(empty);
+    return;
+  }
+  for (const leg of legs) {
+    const row = document.createElement("div");
+    row.className = "route-weather-row";
+
+    const label = document.createElement("span");
+    label.className = "route-weather-city";
+    label.textContent = `${leg.depCode} → ${leg.arrCode}`;
+    if (leg.flightNumber === currentFlightNumber) label.style.color = "var(--accent)";
+
+    const info = document.createElement("span");
+    info.className = "route-weather-info muted";
+    info.textContent = `${fmtTime(leg.depDate)}–${fmtTime(leg.arrDate)} · ${leg.flightNumber}`;
+
+    row.appendChild(label);
+    row.appendChild(info);
+    els.aircraftScheduleList.appendChild(row);
+  }
+}
+
+// Same lazy-load-on-first-open pattern as loadRouteWeather() - fetched
+// once per registration and cached, so re-opening the panel (or the
+// 30s/5min re-renders elsewhere) doesn't refetch every time.
+async function toggleAircraftSchedule() {
+  const willOpen = els.aircraftScheduleList.hidden;
+  els.aircraftScheduleList.hidden = !willOpen;
+  els.aircraftScheduleBtn.setAttribute("aria-expanded", String(willOpen));
+  if (!willOpen) return;
+
+  const f = state.flights[state.index];
+  const registration = f && f.registration;
+  if (!registration || registration === "–") return;
+
+  const cached = aircraftScheduleCache.get(registration);
+  if (cached && Date.now() - cached.fetchedAt < AIRCRAFT_SCHEDULE_CACHE_MS) {
+    renderAircraftScheduleList(cached.legs, f.flightNumber);
+    return;
+  }
+
+  els.aircraftScheduleList.innerHTML = "";
+  const loading = document.createElement("div");
+  loading.className = "muted small";
+  loading.textContent = "Lädt …";
+  els.aircraftScheduleList.appendChild(loading);
+
+  const legs = await fetchAircraftSchedule(registration);
+  aircraftScheduleCache.set(registration, { legs: legs || [], fetchedAt: Date.now() });
+  // The pilot may have paged to a different flight while this was loading.
+  const stillCurrent = state.flights[state.index] === f;
+  if (stillCurrent && !els.aircraftScheduleList.hidden) {
+    renderAircraftScheduleList(legs, f.flightNumber);
+  }
+}
+
 let currentRouteStops = null;   // [{icao, dateKey}] for the route currently shown, or null
 let routeWeatherLoaded = false; // avoid re-fetching every time the panel is toggled open again
 
@@ -2708,9 +2886,28 @@ els.resetRosterBtn.addEventListener("click", () => {
   renderLayover();
 });
 
+els.saveAeroDataBoxBtn.addEventListener("click", () => {
+  const val = els.aeroDataBoxKeyInput.value.trim();
+  if (!val) return;
+  setAeroDataBoxKey(val);
+  els.aeroDataBoxKeyInput.value = "";
+  aircraftScheduleCache.clear();
+  renderAeroDataBoxStatus();
+  renderFlight();
+});
+
+els.resetAeroDataBoxBtn.addEventListener("click", () => {
+  if (!confirm("AeroDataBox-API-Schlüssel auf diesem Gerät entfernen?")) return;
+  clearAeroDataBoxKey();
+  aircraftScheduleCache.clear();
+  renderAeroDataBoxStatus();
+  renderFlight();
+});
+
 els.refreshBtn.addEventListener("click", loadFlights);
 
 els.dutyStatusRouteBtn.addEventListener("click", toggleRouteWeather);
+els.aircraftScheduleBtn.addEventListener("click", toggleAircraftSchedule);
 
 els.prevFlightBtn.addEventListener("click", () => {
   if (state.index > 0) { state.index--; renderFlight(); }

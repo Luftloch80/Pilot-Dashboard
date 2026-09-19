@@ -177,7 +177,8 @@ body {
 
 /* Setup */
 .setup-card label,
-#rosterCard label {
+#rosterCard label,
+#aeroDataBoxCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -187,7 +188,9 @@ body {
 .setup-card input[type="password"],
 .setup-card input[type="text"],
 #rosterCard input[type="password"],
-#rosterCard input[type="text"] {
+#rosterCard input[type="text"],
+#aeroDataBoxCard input[type="password"],
+#aeroDataBoxCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -249,6 +252,13 @@ body {
   margin-top: 14px;
 }
 #rosterCard #resetRosterBtn {
+  margin-top: 16px;
+}
+
+#aeroDataBoxCard #saveAeroDataBoxBtn {
+  margin-top: 14px;
+}
+#aeroDataBoxCard #resetAeroDataBoxBtn {
   margin-top: 16px;
 }
 

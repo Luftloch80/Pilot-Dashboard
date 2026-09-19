@@ -2136,12 +2136,8 @@ function renderLayover() {
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
-  // On a flight day the flight card already anchors the location; the
-  // "Layover" heading and city name would just repeat what's shown there,
-  // so only show them on a pure rest day (no flight of the day at all).
-  const isFlightDay = state.flights.length > 0;
-  els.layoverTitle.hidden = isFlightDay;
-  els.layoverPlace.hidden = isFlightDay;
+  els.layoverTitle.hidden = false;
+  els.layoverPlace.hidden = false;
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -2153,32 +2149,10 @@ function renderLayover() {
   els.layoverPickup.hidden = !pickup;
   els.layoverPickup.textContent = pickup ? `Pickup morgen: ${pickup}` : "";
 
-  // renderLayoverCurrency() resolves the currency section's own hidden
-  // state asynchronously (a live rate fetch) - re-check afterwards too, or
-  // an empty card could get hidden here just before currency info shows
-  // up, or stay shown as an empty shell if it doesn't.
-  renderLayoverCurrency(layover.arrCode).then(updateLayoverCardVisibility);
+  renderLayoverCurrency(layover.arrCode);
 
-  // Same reasoning as the heading/city above: on a flight day the flight
-  // card is already the focus, so room numbers (for last night's hotel)
-  // stay hidden entirely there too - only shown on a pure rest day.
-  // findApiLayover() already only calls this a layover once there's more
-  // than LAYOVER_MIN_GAP_MS until the next flight, so there's no separate
-  // same-day-connection check needed here anymore.
-  els.roomDetails.hidden = isFlightDay;
-  if (!isFlightDay) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
-
-  updateLayoverCardVisibility();
-}
-
-// On a flight day, everything inside the layover card (heading/city, room
-// numbers) can end up hidden at once, along with an empty hotel/pickup/
-// currency - leaving just an empty card shell with nothing in it but its
-// own box-shadow. Hides the whole card in that case instead.
-function updateLayoverCardVisibility() {
-  els.layoverCard.hidden = els.layoverTitle.hidden && els.layoverPlace.hidden &&
-    els.layoverHotel.hidden && els.layoverPickup.hidden &&
-    els.layoverCurrency.hidden && els.roomDetails.hidden;
+  els.roomDetails.hidden = false;
+  renderLayoverCrew(layover.arrCode, hotel, layover.flight);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as

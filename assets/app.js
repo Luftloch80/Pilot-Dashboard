@@ -5,11 +5,33 @@ const STORAGE_KEY = "oal_api_key";
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const FETCH_TIMEOUT_MS = 15000;
 
-// Home base the rotation returns to - confirmed by the pilot as Frankfurt
-// (OpenAirLog uses the ICAO code EDDF throughout, not the IATA "FRA").
-// Used both to detect the post-landing Ortstag switch and to make sure
-// landing back home is never mistaken for a hotel layover.
-const HOME_BASE = "EDDF";
+// Home base the rotation returns to - OpenAirLog has no field for this
+// anywhere (checked every field on a real flight object), so it's
+// detected instead from the flight data itself: every rotation starts and
+// ends there, so whichever airport shows up as a departure/arrival most
+// often in the loaded window is it - see detectHomeBase() below, run once
+// flights are loaded. Confirmed against this pilot's own real logbook: a
+// past base change (Munich, historically, to the current Frankfurt) shows
+// up exactly as a shift in which airport dominates a recent window - a
+// plain frequency count on real data, not a guess about anything
+// airline-internal. "EDDF" here is just the fallback before that first
+// detection runs (OpenAirLog uses ICAO codes throughout, not IATA "FRA").
+let HOME_BASE = "EDDF";
+
+// Returns null only when there's no flight data at all to go on - the
+// caller then keeps whatever HOME_BASE already is instead of resetting it.
+function detectHomeBase(allFlights) {
+  const counts = new Map();
+  for (const f of allFlights) {
+    if (f.depCode) counts.set(f.depCode, (counts.get(f.depCode) || 0) + 1);
+    if (f.arrCode) counts.set(f.arrCode, (counts.get(f.arrCode) || 0) + 1);
+  }
+  let best = null;
+  for (const [code, count] of counts) {
+    if (!best || count > best.count) best = { code, count };
+  }
+  return best ? best.code : null;
+}
 
 // Plain fetch() never times out on its own - a stalled connection (bad
 // network, an unresponsive server) would otherwise leave the UI stuck on
@@ -1145,6 +1167,7 @@ async function loadFlights() {
   state.flights = flights;
   state.allFlights = allFlights;
   state.allDuties = allDuties;
+  HOME_BASE = detectHomeBase(allFlights) || HOME_BASE;
   // Whatever just loaded is the new baseline - mark it fresh again until
   // the next background check finds something newer on the server.
   state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);

@@ -986,9 +986,13 @@ function mergeCrewWithPdf(apiCrew, pdfCrew) {
 // undocumented syntax.
 const PDF_REF_RE = /^([A-Z]{1,3}\d{2,5})\s+-?\d{1,2}\/(\d{1,2})$/;
 
-function formatPdfFlightRef(raw, contextDateKey, route) {
+// Shared by formatPdfFlightRef() and the AeroDataBox lookups below: picks
+// whichever of the neighboring three months makes the PDF's bare
+// day-of-month fall closest to the flight this reference is shown on -
+// arithmetic on a confirmed digit, not a guess about undocumented syntax.
+function resolvePdfRef(raw, contextDateKey) {
   const m = PDF_REF_RE.exec(raw);
-  if (!m || !contextDateKey) return raw;
+  if (!m || !contextDateKey) return null;
   const [, flightNumber, dayStr] = m;
   const day = Number(dayStr);
   const [ctxY, ctxM, ctxD] = contextDateKey.split("-").map(Number);
@@ -1000,10 +1004,16 @@ function formatPdfFlightRef(raw, contextDateKey, route) {
     const diff = Math.abs(candidate.getTime() - contextTime);
     if (!best || diff < best.diff) best = { candidate, diff };
   }
+  const dateKey = best.candidate.toISOString().slice(0, 10);
+  return { flightNumber, dateKey, candidate: best.candidate };
+}
 
-  const dateLabel = best.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
+function formatPdfFlightRef(raw, contextDateKey, route) {
+  const resolved = resolvePdfRef(raw, contextDateKey);
+  if (!resolved) return raw;
+  const dateLabel = resolved.candidate.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", timeZone: "UTC" });
   const routeLabel = route ? ` (${route.depCode}–${route.arrCode})` : "";
-  return `${flightNumber}${routeLabel} am ${dateLabel}`;
+  return `${resolved.flightNumber}${routeLabel} am ${dateLabel}`;
 }
 
 // A colleague's Ex/To flight number (e.g. "LH1168") is one the pilot's
@@ -1056,12 +1066,33 @@ function formatExRefLabel(refFlightNumber, route) {
   return refFlightNumber;
 }
 
+// Live variants via AeroDataBox (see ensureFlightByNumberLoaded()),
+// preferred over the OpenAirLog-history fallback above whenever a key is
+// configured - they reflect this exact occurrence's actual status, not
+// just whichever route/time this flight number happened to have on some
+// past day in the pilot's own logbook. A joining colleague's info uses
+// the current (revised-if-known) arrival time - when they actually
+// become available; a leaving colleague's uses the connecting flight's
+// scheduled (not revised) departure - the plan they're working from, not
+// a live delay that may still change before they even get there.
+function formatExRefLabelLive(flightNumber, leg) {
+  if (!flightNumber) return null;
+  if (leg && leg.arrDate) return `${flightNumber} ${fmtTime(leg.arrDate)}`;
+  return flightNumber;
+}
+function formatToRefLabelLive(flightNumber, leg) {
+  if (!flightNumber) return null;
+  if (leg && leg.depSchedDate) return `${flightNumber} ${fmtTime(leg.depSchedDate)}`;
+  return flightNumber;
+}
+
 // Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted
-// via formatPdfFlightRef()/formatExRefLabel()) that applies to this exact
-// flight - an "exRef" only counts for the block's first flight, a
-// "toRef" only for its last (see parseCrewFromLines()), so a colleague
-// who shows up in more than one PDF block doesn't leak the wrong block's
-// reference onto a flight it doesn't belong to.
+// via the live AeroDataBox lookup when available, else the OpenAirLog-
+// history fallback) that applies to this exact flight - an "exRef" only
+// counts for the block's first flight, a "toRef" only for its last (see
+// parseCrewFromLines()), so a colleague who shows up in more than one PDF
+// block doesn't leak the wrong block's reference onto a flight it
+// doesn't belong to.
 function buildPdfRefMap(f, field) {
   const map = new Map();
   if (!state.pdfCrew) return map;
@@ -1069,17 +1100,29 @@ function buildPdfRefMap(f, field) {
   for (const m of state.pdfCrew.crew) {
     if (!m[field] || m[blockField] !== f.flightNumber) continue;
 
-    const refMatch = PDF_REF_RE.exec(m[field]);
-    const refFlightNumber = refMatch ? refMatch[1] : null;
-    let route = null;
-    if (refFlightNumber) {
-      const cached = flightRouteCache.get(refFlightNumber);
-      if (cached && cached.status === "ok") route = cached;
-      else if (!cached) ensureFlightRouteLoaded(refFlightNumber, f);
+    const resolved = resolvePdfRef(m[field], f.raw && f.raw.date);
+    let label = m[field];
+
+    if (resolved && getAeroDataBoxKey()) {
+      const cacheKey = `${resolved.flightNumber}|${resolved.dateKey}`;
+      const cached = flightByNumberCache.get(cacheKey);
+      if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+        ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
+      }
+      const leg = cached && cached.leg;
+      label = field === "exRef"
+        ? (formatExRefLabelLive(resolved.flightNumber, leg) || m[field])
+        : (formatToRefLabelLive(resolved.flightNumber, leg) || m[field]);
+    } else if (resolved) {
+      const refFlightNumber = resolved.flightNumber;
+      const cachedRoute = flightRouteCache.get(refFlightNumber);
+      if (!cachedRoute) ensureFlightRouteLoaded(refFlightNumber, f);
+      const route = cachedRoute && cachedRoute.status === "ok" ? cachedRoute : null;
+      label = field === "exRef"
+        ? (formatExRefLabel(refFlightNumber, route) || m[field])
+        : formatPdfFlightRef(m[field], f.raw && f.raw.date, route);
     }
-    const label = field === "exRef"
-      ? (formatExRefLabel(refFlightNumber, route) || m[field])
-      : formatPdfFlightRef(m[field], f.raw && f.raw.date, route);
+
     map.set(crewKey(m.role, m.name), label);
   }
   return map;
@@ -2372,6 +2415,11 @@ function normalizeAircraftLeg(leg) {
     depCode: (dep.airport && dep.airport.icao) || "---",
     arrCode: (arr.airport && arr.airport.icao) || "---",
     depDate, arrDate,
+    // Scheduled-only (never revised) - kept separate from depDate/arrDate
+    // above for callers that specifically want the plan rather than the
+    // live/updated time, e.g. "fliegt weiter mit"'s departure.
+    depSchedDate: parseAeroDataBoxUtc(dep.scheduledTime && dep.scheduledTime.utc),
+    arrSchedDate: parseAeroDataBoxUtc(arr.scheduledTime && arr.scheduledTime.utc),
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
@@ -2423,6 +2471,9 @@ async function fetchFlightByNumber(flightNumber, dateKey) {
 }
 
 const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
+const flightByNumberLoading = new Set(); // cacheKey currently in flight, to avoid duplicate requests -
+// buildPdfRefMap() can ask for the same flight number/date from several
+// crew rows (and re-renders) before the first request even resolves.
 
 // Fire-and-forget, same pattern as ensureAircraftScheduleLoaded() - once
 // this resolves a registration, also kicks off the normal Reg-based
@@ -2430,7 +2481,10 @@ const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetch
 // with on the next render.
 async function ensureFlightByNumberLoaded(flightNumber, dateKey) {
   const cacheKey = `${flightNumber}|${dateKey}`;
+  if (flightByNumberLoading.has(cacheKey)) return;
+  flightByNumberLoading.add(cacheKey);
   const leg = await fetchFlightByNumber(flightNumber, dateKey);
+  flightByNumberLoading.delete(cacheKey);
   flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now() });
   if (leg && leg.registration) ensureAircraftScheduleLoaded(leg.registration);
   else renderFlight();

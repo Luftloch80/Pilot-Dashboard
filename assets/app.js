@@ -1613,17 +1613,23 @@ async function renderLayoverCurrency(arrCode) {
   els.currencyNote.textContent = live ? "" : "Ungefährer Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).";
 }
 
-// The layover view gives way to flight prep 2h before the next departure -
-// not just once that flight has actually left, which would be too late to
-// be useful (checkout, transport to the airport etc. all happen before
-// then).
+// A layover is purely about how much time sits between two flights - more
+// than 10h counts as one regardless of whether that gap crosses a
+// calendar day or not (a same-day quick turn with a big schedule gap is
+// just as much "staying somewhere" as an overnight that happens to cross
+// midnight). Below that, it's just a connection.
+const LAYOVER_MIN_GAP_MS = 10 * 60 * 60 * 1000;
+
+// The layover view then gives way to flight prep 2h before that next
+// departure - not just once the flight has actually left, which would be
+// too late to be useful (checkout, transport to the airport etc. all
+// happen before then).
 const LAYOVER_END_LEAD_MS = 2 * 60 * 60 * 1000;
 
 // Primary layover detection: OpenAirLog flight data, not the PDF. The most
-// recent completed arrival that hasn't been followed by a later departure
-// (or one about to happen - see LAYOVER_END_LEAD_MS above) means we're
-// still there - "if the day before ended in RMO, that's an overnight stay
-// there."
+// recent completed arrival, still more than LAYOVER_MIN_GAP_MS before
+// whatever flight comes next (or with no next flight loaded at all) -
+// "if the day before ended in RMO, that's an overnight stay there."
 function findApiLayover(allFlights) {
   const now = new Date();
   let current = null;
@@ -1638,11 +1644,18 @@ function findApiLayover(allFlights) {
   // the most recent arrival being EDDF (e.g. right before a vacation or
   // Ortstag) would otherwise show a nonsensical "layover" card for home.
   if (current.arrCode === HOME_BASE) return null;
-  const nextDepartureSoon = allFlights.some((f) => {
+
+  let nextDep = null;
+  for (const f of allFlights) {
     const dep = f.depActualDate || f.depSchedDate;
-    return dep && dep > currentArr && dep - now <= LAYOVER_END_LEAD_MS;
-  });
-  return nextDepartureSoon ? null : { arrCode: current.arrCode, arrTime: currentArr, flight: current };
+    if (dep && dep > currentArr && (!nextDep || dep < nextDep)) nextDep = dep;
+  }
+  if (nextDep) {
+    if (nextDep - currentArr <= LAYOVER_MIN_GAP_MS) return null; // just a connection
+    if (nextDep - now <= LAYOVER_END_LEAD_MS) return null; // give way to flight prep
+  }
+
+  return { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }
 
 // The PDF is only used to enrich this with a hotel name, if a matching leg
@@ -2114,19 +2127,14 @@ function renderLayover() {
 
   renderLayoverCurrency(layover.arrCode);
 
-  // A same-day connection (the next flight departs later the same
-  // calendar day this one landed) isn't a real overnight stay yet - room
-  // numbers would be premature, since the pilot is still flying on to
-  // wherever the actual layover turns out to be once that flight lands.
-  const nextFlight = layover.flight ? adjacentFlight(layover.flight, 1) : null;
-  const sameDayConnection = !!(nextFlight && nextFlight.raw && layover.flight.raw &&
-    nextFlight.raw.date === layover.flight.raw.date);
   // Same reasoning as the heading/city above: on a flight day the flight
   // card is already the focus, so room numbers (for last night's hotel)
   // stay hidden entirely there too - only shown on a pure rest day.
-  const hideRoomDetails = sameDayConnection || isFlightDay;
-  els.roomDetails.hidden = hideRoomDetails;
-  if (!hideRoomDetails) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
+  // findApiLayover() already only calls this a layover once there's more
+  // than LAYOVER_MIN_GAP_MS until the next flight, so there's no separate
+  // same-day-connection check needed here anymore.
+  els.roomDetails.hidden = isFlightDay;
+  if (!isFlightDay) renderLayoverCrew(layover.arrCode, hotel, layover.flight);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as

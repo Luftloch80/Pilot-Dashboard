@@ -799,6 +799,15 @@ function flightRefLabel(flight) {
   return dateLabel ? `${flight.flightNumber}${routeLabel} am ${dateLabel}` : `${flight.flightNumber}${routeLabel}`;
 }
 
+// "nächster Flug" only needs the flight number and its departure time -
+// already known locally (this is our own adjacent flight from
+// OpenAirLog, not a lookup), unlike flightRefLabel()'s citypair/date
+// schema still used for "vorheriger Flug".
+function nextFlightRefLabel(flight) {
+  if (!flight) return null;
+  return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
+}
+
 function renderCrewMembers(listEl, crew, opts = {}) {
   const {
     leaving = new Set(), joining = new Set(),
@@ -1111,7 +1120,7 @@ function renderCrew(f) {
     const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
     renderCrewMembers(els.crewList, merged, {
       leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
-      leavingInfo: flightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+      leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
       pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
     });
     return;
@@ -1142,7 +1151,7 @@ function renderCrew(f) {
 
   renderCrewMembers(els.crewList, apiCrew, {
     leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
-    leavingInfo: flightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+    leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
     pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
   });
 }

@@ -800,6 +800,28 @@ function findRosterPickupForFlight(flight) {
   return findRosterPickup(rosterEventsCache.events, flight.arrCode, arr);
 }
 
+// Backup pickup estimate for when the MyTime roster has no matching event
+// (not loaded, no URL configured, or this leg just isn't in it yet) -
+// used only as a fallback, never in place of a roster match. Unlike the
+// earlier flat "-60 min" guess (confirmed wrong - it ignored the actual
+// hotel-to-airport transfer time), this one is anchored to the airline's
+// own reference transfer time for the arrival station (see
+// hotelTransferMinutes()): pickup = next flight's scheduled departure -
+// 60 min buffer - that transfer time. Returns null (no backup shown, not
+// a wrong one) when either the transfer time or the next flight isn't
+// known - the next flight is looked up across the whole loaded rotation
+// (adjacentFlight()), not just today's cards, since it's often tomorrow's.
+function computeBackupPickup(flight) {
+  const transferMin = hotelTransferMinutes(flight.arrCode);
+  if (transferMin == null || !flight.arrSchedDate) return null;
+  const onward = adjacentFlight(flight, 1);
+  const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
+  if (!onwardDep) return null;
+  const pickupUtc = new Date(onwardDep.getTime() - (60 + transferMin) * 60000);
+  const restStart = new Date(flight.arrSchedDate.getTime() + 30 * 60000);
+  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
+}
+
 // Transit to the next own flight and, on a Flugzeugwechsel (its
 // registration differs from this one's), which aircraft that is - plus,
 // when an AeroDataBox key is configured, when that aircraft is scheduled
@@ -814,10 +836,11 @@ function renderFlightCardTransit(i, isActive, cardEls) {
 
   // Last flight of the day: no more flights today to transit into, but if
   // this landing isn't back at home base, it's a layover - show that
-  // instead of leaving the line blank. Pickup/rest time only ever comes
-  // from the MyTime roster (see findRosterPickupForFlight()) - a
-  // computed guess from the next flight's schedule was tried and
-  // confirmed wrong, so it's shown only when the roster actually has it.
+  // instead of leaving the line blank. The MyTime roster is the
+  // authoritative pickup source (see findRosterPickupForFlight()); only
+  // when it has no match does the reference-sheet backup estimate (see
+  // computeBackupPickup()) fill in, shown in UTC ("Z") to stay visibly
+  // distinct from a roster-confirmed "LT" time.
   if (!nextFlight) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
@@ -832,6 +855,12 @@ function renderFlightCardTransit(i, isActive, cardEls) {
       const restLabel = arr ? fmtDurationHM(pickup.dtstart.getTime() - (arr.getTime() + 30 * 60000)) : null;
       if (restLabel) text += ` · Ruhezeit ${restLabel}`;
       text += ` · Pickup ${pickup.time} LT`;
+    } else {
+      const backup = computeBackupPickup(f);
+      if (backup) {
+        if (backup.restLabel) text += ` · Ruhezeit ${backup.restLabel}`;
+        text += ` · Pickup ${fmtTime(backup.pickupUtc)}`;
+      }
     }
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = text;
@@ -2001,6 +2030,53 @@ function threeLetterCode(icao) {
   return THREE_LETTER_CODE[icao] || icao;
 }
 
+// Standard crew transfer time (hotel <-> airport), in minutes, from the
+// airline's own "Crewhotel- und Transportmanagement" reference sheet -
+// keyed by the same airline station code as THREE_LETTER_CODE (which for
+// some stations differs from the official IATA code, e.g. Chișinău is
+// "RMO" here, not "KIV"). Transcribed as printed; a station listed more
+// than once (different hotels, e.g. two Munich hotels at 25 and 45 min)
+// keeps the longer duration, since this only ever feeds a conservative
+// backup pickup estimate - a bit early beats a bit late. "fussläufig"
+// (Frankfurt) becomes 5 min. Only usable for ICAO codes THREE_LETTER_CODE
+// already confirms a station code for - see hotelTransferMinutes().
+const HOTEL_TRANSFER_MIN = {
+  ABV: 50, AGP: 20, ALA: 30, AMM: 40, AMS: 25, ARN: 35, ATH: 30, ATL: 30, AUS: 40,
+  BCN: 25, BEG: 20, BER: 45, BEY: 25, BGO: 30, BHX: 40, BIO: 20, BKK: 45, BLL: 35,
+  BLQ: 40, BLR: 50, BOG: 60, BOM: 15, BOS: 20, BRE: 15, BUD: 35,
+  CAI: 25, CDG: 60, CGN: 25, CLJ: 20, CLT: 30, CPH: 45, CPT: 35, CTA: 25,
+  DEL: 40, DEN: 35, DFW: 30, DMM: 25, DRS: 25, DTW: 20, DUB: 30, DUS: 30, DXB: 25,
+  EDI: 40, EVN: 30, EWR: 40, EZE: 50,
+  FCO: 30, FRA: 5,
+  GDN: 40, GIG: 40, GLA: 25, GOT: 25, GRU: 90, GRZ: 20, GYD: 30,
+  HAJ: 30, HAM: 25, HEL: 35, HKG: 40, HND: 30, HYD: 70,
+  IAD: 45, IAH: 40, ICN: 50, IKA: 10, IST: 70,
+  JFK: 70, JNB: 50,
+  KIX: 70, KRK: 25, KWI: 20,
+  LAX: 75, LCA: 20, LHR: 70, LIN: 20, LIS: 15, LJU: 25, LOS: 25, LYS: 45,
+  MAA: 25, MAD: 25, MAN: 30, MEX: 70, MIA: 30, MLA: 25, MRS: 25, MSP: 20, MUC: 45, MXP: 30,
+  NAP: 25, NBJ: 90, NBO: 15, NCE: 20, NGO: 60, NKG: 45, NQZ: 30, NUE: 20,
+  OPO: 25, ORD: 60, OSL: 50, OTP: 35,
+  PEK: 45, PHC: 55, PHL: 30, POZ: 30, PRG: 30, PVG: 75,
+  RDU: 30, RIX: 25, RMO: 25, RUH: 30, RZE: 20,
+  SAN: 20, SEA: 35, SFO: 25, SHE: 40, SIN: 45, SJJ: 15, SJO: 60, SKP: 35, SOF: 30,
+  SSG: 35, STL: 30, STR: 15, SVG: 20, SZG: 20,
+  TBS: 30, TIA: 45, TLL: 15, TLS: 40, TLV: 30, TSR: 25,
+  VCE: 15, VLC: 20, VNO: 20,
+  WAW: 20,
+  YUL: 25, YVR: 45, YYZ: 60,
+  ZAG: 30,
+};
+
+// Standard crew transfer time for an ICAO code, or null when
+// THREE_LETTER_CODE has no confirmed station code for it (never falls
+// back to the raw ICAO code as a lookup key - that's 4 letters, this
+// table's keys are all 3, so it would just always miss, safely).
+function hotelTransferMinutes(icao) {
+  const code = threeLetterCode(icao);
+  return Object.prototype.hasOwnProperty.call(HOTEL_TRANSFER_MIN, code) ? HOTEL_TRANSFER_MIN[code] : null;
+}
+
 // ISO 4217 currency per ICAO code - only for airports outside the eurozone
 // (a code from ICAO_CITY that's absent here uses the euro, needs no table).
 // Not exhaustive: covers the airports already in ICAO_CITY.
@@ -3012,15 +3088,22 @@ function renderLayover() {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
-  // Pickup only ever comes from the MyTime roster - a computed guess
-  // from the next flight's schedule was tried and confirmed wrong, so
-  // there's no fallback here: nothing shown beats a wrong time.
+  // MyTime roster is the authoritative pickup source; the reference-sheet
+  // backup (see computeBackupPickup()) only fills in when the roster has
+  // no matching event, shown in UTC ("Z") to stay visibly distinct from a
+  // roster-confirmed "LT" time.
   if (getRosterUrl()) ensureRosterLoaded();
   const rosterPickup = getRosterUrl() && rosterEventsCache.events
     ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
     : null;
-  els.layoverPickup.hidden = !rosterPickup;
-  els.layoverPickup.textContent = rosterPickup ? `Pickup: ${rosterPickup.time} LT` : "";
+  if (rosterPickup) {
+    els.layoverPickup.hidden = false;
+    els.layoverPickup.textContent = `Pickup: ${rosterPickup.time} LT`;
+  } else {
+    const backup = layover.flight ? computeBackupPickup(layover.flight) : null;
+    els.layoverPickup.hidden = !backup;
+    els.layoverPickup.textContent = backup ? `Pickup: ${fmtTime(backup.pickupUtc)}` : "";
+  }
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -3353,11 +3436,16 @@ els.testAeroDataBoxBtn.addEventListener("click", testAeroDataBoxConnection);
 // re-fetch whatever's relevant to what ends up shown once loadFlights()
 // re-renders - own flight's callsign/deviation, the transit line's next
 // A/C, and crew ex/to refs all go through the same two caches.
-function refreshAll() {
+async function refreshAll() {
   flightByNumberCache.clear();
   aircraftScheduleCache.clear();
-  ensureRosterLoaded(true);
-  loadFlights();
+  // Roster overrides apply to state.allFlights, so this has to wait for
+  // loadFlights() to finish replacing it with the fresh window first -
+  // firing both at once let the roster fetch (if it happened to resolve
+  // first) apply to the about-to-be-discarded old flights, silently
+  // losing the override once loadFlights() landed.
+  await loadFlights();
+  await ensureRosterLoaded(true);
 }
 
 els.refreshBtn.addEventListener("click", refreshAll);

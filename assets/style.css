@@ -353,18 +353,23 @@ body {
 
 .airline-badge {
   flex: 0 0 auto;
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 0.85rem;
-  letter-spacing: 0.02em;
+  gap: 4px;
+}
+.airline-badge-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: var(--airline-bg, var(--accent));
-  color: var(--airline-fg, var(--accent-text));
   box-shadow: 0 1px 3px color-mix(in srgb, black 20%, transparent);
+}
+.airline-badge-code {
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
 }
 
 /* Duty status (Urlaub / Ortstag) */

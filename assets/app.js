@@ -641,7 +641,7 @@ function getOwnFlightAeroDataBoxLeg(f) {
   if (!getAeroDataBoxKey() || !f.flightNumber || !dateKey) return null;
   const cacheKey = `${f.flightNumber}|${dateKey}`;
   const cached = flightByNumberCache.get(cacheKey);
-  if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+  if (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
     ensureFlightByNumberLoaded(f.flightNumber, dateKey);
   }
   return cached ? cached.leg : null;
@@ -876,7 +876,7 @@ function renderFlight() {
     const dateKey = nextFlight.raw && nextFlight.raw.date;
     const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
     const cachedByNumber = flightByNumberCache.get(cacheKey);
-    if (!cachedByNumber || Date.now() - cachedByNumber.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+    if (!cachedByNumber || Date.now() - cachedByNumber.fetchedAt >= (cachedByNumber.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
       ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
     } else if (cachedByNumber.leg) {
       nextRegistration = cachedByNumber.leg.registration || null;
@@ -1233,7 +1233,7 @@ function buildPdfRefMap(f, field) {
     if (resolved && getAeroDataBoxKey()) {
       const cacheKey = `${resolved.flightNumber}|${resolved.dateKey}`;
       const cached = flightByNumberCache.get(cacheKey);
-      if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+      if (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
         ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
       }
       const leg = cached && cached.leg;
@@ -2614,11 +2614,39 @@ function normalizeAircraftLeg(leg) {
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
     callSign: leg.callSign || null,
+    // When AeroDataBox itself last refreshed this record - used to back
+    // off polling once it stops changing (see nextAeroDataBoxPollDelay()),
+    // since asking again before the source has updated just burns quota
+    // for the same answer.
+    lastUpdatedUtc: parseAeroDataBoxUtc(leg.lastUpdatedUtc) || null,
   };
 }
 
 const aircraftScheduleCache = new Map(); // registration -> { legs, fetchedAt }
 const AIRCRAFT_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
+
+// How often a single flight-number lookup gets re-polled. Adaptive
+// between these bounds based on AeroDataBox's own lastUpdatedUtc (see
+// nextAeroDataBoxPollDelay()) rather than a fixed interval - the API
+// quota is limited, and polling faster than the source itself updates
+// just spends it for an identical answer.
+const AERODATABOX_POLL_MIN_MS = 3 * 60 * 1000;
+const AERODATABOX_POLL_MAX_MS = 20 * 60 * 1000;
+
+// Back off (double, capped) while lastUpdatedUtc stays the same across
+// polls - nothing changed, so there's no reason to ask again this soon.
+// Snap back to the minimum the moment it does change: that's exactly
+// when something is actively happening (boarding, pushback, landing)
+// and later updates are worth catching quickly.
+function nextAeroDataBoxPollDelay(previous, leg) {
+  if (!leg || !leg.lastUpdatedUtc) return AERODATABOX_POLL_MIN_MS;
+  const prevLeg = previous && previous.leg;
+  if (prevLeg && prevLeg.lastUpdatedUtc && prevLeg.lastUpdatedUtc.getTime() === leg.lastUpdatedUtc.getTime()) {
+    const prevDelay = previous.pollDelayMs || AERODATABOX_POLL_MIN_MS;
+    return Math.min(prevDelay * 2, AERODATABOX_POLL_MAX_MS);
+  }
+  return AERODATABOX_POLL_MIN_MS;
+}
 
 async function fetchAircraftSchedule(registration) {
   const key = getAeroDataBoxKey();
@@ -2686,7 +2714,7 @@ async function fetchFlightByNumber(flightNumber, dateKey) {
   }
 }
 
-const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
+const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt, pollDelayMs }
 const flightByNumberLoading = new Set(); // cacheKey currently in flight, to avoid duplicate requests -
 // buildPdfRefMap() can ask for the same flight number/date from several
 // crew rows (and re-renders) before the first request even resolves.
@@ -2699,9 +2727,11 @@ async function ensureFlightByNumberLoaded(flightNumber, dateKey) {
   const cacheKey = `${flightNumber}|${dateKey}`;
   if (flightByNumberLoading.has(cacheKey)) return;
   flightByNumberLoading.add(cacheKey);
+  const previous = flightByNumberCache.get(cacheKey);
   const leg = await fetchFlightByNumber(flightNumber, dateKey);
   flightByNumberLoading.delete(cacheKey);
-  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now() });
+  const pollDelayMs = nextAeroDataBoxPollDelay(previous, leg);
+  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now(), pollDelayMs });
   if (leg && leg.registration) ensureAircraftScheduleLoaded(leg.registration);
   else renderFlight();
 }

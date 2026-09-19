@@ -95,17 +95,18 @@
     <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
   </section>
 
-  <!-- AeroDataBox (optional, nur in den Settings): Tagesplan der aktuellen
-       Maschine, über api.market abgefragt. -->
+  <!-- AeroDataBox (optional, nur in den Settings): bei einem
+       Flugzeugwechsel die Ankunft der neuen Maschine vom Flug davor,
+       über api.market abgefragt. -->
   <section id="aeroDataBoxCard" class="card crew-pdf-card" hidden>
     <div class="crew-pdf-head">
       <h2>AeroDataBox</h2>
       <span class="muted small">optional</span>
     </div>
     <p class="muted small">
-      Zeigt beim aktuellen Flug den Tagesplan der Maschine (alle Flüge
-      dieses Kennzeichens). Der Schlüssel wird nur lokal auf diesem Gerät
-      gespeichert und bei jeder Anfrage direkt an
+      Zeigt bei einem Flugzeugwechsel in der Transit-Zeile, wann die neue
+      Maschine vom Flug davor ankommt. Der Schlüssel wird nur lokal auf
+      diesem Gerät gespeichert und bei jeder Anfrage direkt an
       <code>prod.api.market</code> gesendet. Er verlässt dieses Gerät
       sonst nicht.
     </p>
@@ -177,12 +178,10 @@
       <div class="meta-item">
         <div class="meta-key">Kennzeichen</div>
         <div class="meta-val" id="registration">–</div>
-        <button id="aircraftScheduleBtn" type="button" class="route-toggle muted small" hidden aria-expanded="false"></button>
       </div>
     </div>
 
     <div id="transitInfo" class="transit-info muted small" hidden>–</div>
-    <div id="aircraftScheduleList" class="route-weather" hidden></div>
   </section>
 
   <!-- Dienstplan-Status: Urlaub ("U<n>") oder Ortstag, aus OpenAirLog erkannt -->
@@ -253,6 +252,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=64"></script>
+<script src="assets/app.js?v=65"></script>
 </body>
 </html>

@@ -77,8 +77,6 @@ const els = {
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
   transitInfo: document.getElementById("transitInfo"),
-  aircraftScheduleBtn: document.getElementById("aircraftScheduleBtn"),
-  aircraftScheduleList: document.getElementById("aircraftScheduleList"),
 
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
@@ -731,19 +729,11 @@ function renderFlight() {
   els.registration.textContent = f.registration;
   renderAirlineBadge(f.flightNumber);
 
-  // Only offered once an AeroDataBox key is configured (optional, see
-  // Settings) - collapses back and drops any panel content from the
-  // previously shown flight's aircraft on every render, since it would
-  // otherwise be showing a stale, unrelated registration's schedule.
-  const hasRegistration = f.registration && f.registration !== "–";
-  els.aircraftScheduleBtn.hidden = !getAeroDataBoxKey() || !hasRegistration;
-  els.aircraftScheduleBtn.textContent = hasRegistration ? `Tagesplan ${f.registration}` : "";
-  els.aircraftScheduleBtn.setAttribute("aria-expanded", "false");
-  els.aircraftScheduleList.hidden = true;
-  els.aircraftScheduleList.innerHTML = "";
-
   // Transit to the next own flight and, on a Flugzeugwechsel (its
-  // registration differs from this one's), which aircraft that is.
+  // registration differs from this one's), which aircraft that is - plus,
+  // when an AeroDataBox key is configured, when that aircraft is
+  // scheduled to arrive from whatever it flew right before (see
+  // ensureAircraftScheduleLoaded()/findPriorLegArrival()).
   const nextFlight = state.flights[state.index + 1];
   const transitLabel = nextFlight
     ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
@@ -752,7 +742,18 @@ function renderFlight() {
     nextFlight.registration !== "–" && nextFlight.registration !== f.registration;
 
   let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
-  if (aircraftChange) transitText += ` · Flugzeugwechsel auf ${nextFlight.registration}`;
+  if (aircraftChange) {
+    transitText += ` · Flugzeugwechsel auf ${nextFlight.registration}`;
+    if (getAeroDataBoxKey()) {
+      const cached = aircraftScheduleCache.get(nextFlight.registration);
+      if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+        ensureAircraftScheduleLoaded(nextFlight.registration);
+      } else {
+        const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
+        if (priorLeg && priorLeg.arrDate) transitText += ` (Ankunft ${fmtTime(priorLeg.arrDate)})`;
+      }
+    }
+  }
   els.transitInfo.hidden = !transitText;
   els.transitInfo.textContent = transitText;
 
@@ -2349,66 +2350,29 @@ async function fetchAircraftSchedule(registration) {
   }
 }
 
-function renderAircraftScheduleList(legs, currentFlightNumber) {
-  els.aircraftScheduleList.innerHTML = "";
-  if (!legs || !legs.length) {
-    const empty = document.createElement("div");
-    empty.className = "muted small";
-    empty.textContent = "Keine Daten gefunden.";
-    els.aircraftScheduleList.appendChild(empty);
-    return;
-  }
+// Within that aircraft's day schedule, the leg landing at the given
+// station right before the given departure time - i.e. what this
+// aircraft flew immediately before becoming available for pickup there.
+// Requires an exact station match for the same reason findApiLayover()'s
+// predecessor (findIncomingLeg(), since removed) did: without it there
+// could be an earlier, unrelated leg in between.
+function findPriorLegArrival(legs, stationIcao, beforeDate) {
+  if (!legs || !beforeDate) return null;
+  let best = null;
   for (const leg of legs) {
-    const row = document.createElement("div");
-    row.className = "route-weather-row";
-
-    const label = document.createElement("span");
-    label.className = "route-weather-city";
-    label.textContent = `${leg.depCode} → ${leg.arrCode}`;
-    if (leg.flightNumber === currentFlightNumber) label.style.color = "var(--accent)";
-
-    const info = document.createElement("span");
-    info.className = "route-weather-info muted";
-    info.textContent = `${fmtTime(leg.depDate)}–${fmtTime(leg.arrDate)} · ${leg.flightNumber}`;
-
-    row.appendChild(label);
-    row.appendChild(info);
-    els.aircraftScheduleList.appendChild(row);
+    if (leg.arrCode !== stationIcao || !leg.arrDate || leg.arrDate >= beforeDate) continue;
+    if (!best || leg.arrDate > best.arrDate) best = leg;
   }
+  return best;
 }
 
-// Same lazy-load-on-first-open pattern as loadRouteWeather() - fetched
-// once per registration and cached, so re-opening the panel (or the
-// 30s/5min re-renders elsewhere) doesn't refetch every time.
-async function toggleAircraftSchedule() {
-  const willOpen = els.aircraftScheduleList.hidden;
-  els.aircraftScheduleList.hidden = !willOpen;
-  els.aircraftScheduleBtn.setAttribute("aria-expanded", String(willOpen));
-  if (!willOpen) return;
-
-  const f = state.flights[state.index];
-  const registration = f && f.registration;
-  if (!registration || registration === "–") return;
-
-  const cached = aircraftScheduleCache.get(registration);
-  if (cached && Date.now() - cached.fetchedAt < AIRCRAFT_SCHEDULE_CACHE_MS) {
-    renderAircraftScheduleList(cached.legs, f.flightNumber);
-    return;
-  }
-
-  els.aircraftScheduleList.innerHTML = "";
-  const loading = document.createElement("div");
-  loading.className = "muted small";
-  loading.textContent = "Lädt …";
-  els.aircraftScheduleList.appendChild(loading);
-
+// Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
+// once per registration, caches (including failures, as an empty list,
+// so a lookup miss doesn't retry every render), then re-renders.
+async function ensureAircraftScheduleLoaded(registration) {
   const legs = await fetchAircraftSchedule(registration);
   aircraftScheduleCache.set(registration, { legs: legs || [], fetchedAt: Date.now() });
-  // The pilot may have paged to a different flight while this was loading.
-  const stillCurrent = state.flights[state.index] === f;
-  if (stillCurrent && !els.aircraftScheduleList.hidden) {
-    renderAircraftScheduleList(legs, f.flightNumber);
-  }
+  renderFlight();
 }
 
 let currentRouteStops = null;   // [{icao, dateKey}] for the route currently shown, or null
@@ -2907,7 +2871,6 @@ els.resetAeroDataBoxBtn.addEventListener("click", () => {
 els.refreshBtn.addEventListener("click", loadFlights);
 
 els.dutyStatusRouteBtn.addEventListener("click", toggleRouteWeather);
-els.aircraftScheduleBtn.addEventListener("click", toggleAircraftSchedule);
 
 els.prevFlightBtn.addEventListener("click", () => {
   if (state.index > 0) { state.index--; renderFlight(); }

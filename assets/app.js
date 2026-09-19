@@ -846,8 +846,9 @@ function renderFlightCardTransit(i, isActive, cardEls) {
   // instead of leaving the line blank. The MyTime roster is the
   // authoritative pickup source (see findRosterPickupForFlight()); only
   // when it has no match does the reference-sheet backup estimate (see
-  // computeBackupPickup()) fill in, shown in UTC ("Z") to stay visibly
-  // distinct from a roster-confirmed "LT" time.
+  // computeBackupPickup()) fill in - always local time (LT, see
+  // fmtLocalTimeAtIcao()), with the note below (BACKUP_PICKUP_NOTE)
+  // marking it as an estimate rather than a "Z" vs "LT" switch.
   if (!nextFlight) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
@@ -869,7 +870,7 @@ function renderFlightCardTransit(i, isActive, cardEls) {
       const backup = computeBackupPickup(f);
       if (backup) {
         if (backup.restLabel) text += ` · Ruhezeit ${backup.restLabel}`;
-        text += ` · Pickup ${fmtTime(backup.pickupUtc)}`;
+        text += ` · Pickup ${fmtLocalTimeAtIcao(backup.pickupUtc, f.arrCode) || fmtTime(backup.pickupUtc)}`;
         usedBackup = true;
       }
     }
@@ -1073,6 +1074,51 @@ function easaMaxFdpMinutes(reportLocalMin, sectorCount) {
   return band.max[colIdx];
 }
 
+// ---------- DLH MTV Nr. 6 (Manteltarifvertrag Nr. 6), § 4 2. Abschnitt
+// Abs. (2), table for Umlaufbeginn ab 01.01.2024 ----------
+//
+// The airline's own collective agreement caps daily FDP more tightly than
+// bare EASA Table 2 in most bands, and stops at 5 sectors rather than 10+
+// (more than 5 landings in one shift isn't plannable at all under Abs.
+// (3), so a day with more sectors than that has no defined MTV value -
+// null, same as an "X" cell in the printed table, i.e. not permitted at
+// this start time regardless of FDP length). Columns: 1-2, 3, 4, 5
+// sectors. Doesn't model Abs. (5)/(5a)'s FDP extensions (limited per
+// 7-day period, needs specific rest before/after) - like the EASA side,
+// this is the base table only, not every exception.
+const MTV_FDP_BANDS = [
+  { start: 0, end: 239, max: [630, 570, null, null] }, // 22:00-03:59 (wraps midnight)
+  { start: 240, end: 299, max: [630, 600, 570, null] }, // 04:00-04:59
+  { start: 300, end: 314, max: [720, 630, 630, 450] }, // 05:00-05:14
+  { start: 315, end: 329, max: [735, 630, 630, 450] }, // 05:15-05:29
+  { start: 330, end: 344, max: [750, 630, 630, 600] }, // 05:30-05:44
+  { start: 345, end: 359, max: [750, 675, 645, 615] }, // 05:45-05:59
+  { start: 360, end: 419, max: [750, 720, 690, 660] }, // 06:00-06:59
+  { start: 420, end: 809, max: [780, 720, 690, 660] }, // 07:00-13:29
+  { start: 810, end: 839, max: [765, 705, 675, 645] }, // 13:30-13:59
+  { start: 840, end: 869, max: [750, 690, 660, 600] }, // 14:00-14:29
+  { start: 870, end: 899, max: [735, 660, 645, 585] }, // 14:30-14:59
+  { start: 900, end: 929, max: [720, 630, 615, 570] }, // 15:00-15:29
+  { start: 930, end: 959, max: [705, 615, 600, 555] }, // 15:30-15:59
+  { start: 960, end: 989, max: [690, 615, 600, 540] }, // 16:00-16:29
+  { start: 990, end: 1019, max: [675, 600, 585, 450] }, // 16:30-16:59
+  { start: 1020, end: 1319, max: [630, 600, 570, null] }, // 17:00-21:59
+  { start: 1320, end: 1439, max: [630, 570, null, null] }, // 22:00-23:59 (wraps to start:0)
+];
+
+// Same shape as easaMaxFdpMinutes(), against the MTV table instead -
+// returns null both when the start time falls outside the table (can't
+// happen, it covers 24h) and when the cell for this many sectors is "X"
+// (not permitted at this start time under the Tarifvertrag, see
+// MTV_FDP_BANDS's comment). More than 5 sectors reuses the 5-sector
+// column, the most restrictive one actually defined.
+function mtvMaxFdpMinutes(reportLocalMin, sectorCount) {
+  const band = MTV_FDP_BANDS.find((b) => reportLocalMin >= b.start && reportLocalMin <= b.end);
+  if (!band) return null;
+  const colIdx = sectorCount <= 2 ? 0 : Math.min(sectorCount - 2, band.max.length - 1);
+  return band.max[colIdx];
+}
+
 // Standard report time before the first sector's scheduled departure -
 // OpenAirLog has no explicit report-time field, so this assumes the
 // pilot's own narrowbody (A320-family) standard briefing time; wrong for
@@ -1094,9 +1140,11 @@ function sectorsForDutyDay(flight) {
 }
 
 // Latest legal on-block time for the LAST sector of this flight's duty
-// day, under EASA's Table 2 (see easaMaxFdpMinutes()): report time (see
-// STANDARD_REPORT_BEFORE_DEP_MIN) + the max FDP for that report time and
-// the day's total sector count. A simplified estimate (see
+// day: report time (see STANDARD_REPORT_BEFORE_DEP_MIN) + the shorter of
+// EASA's Table 2 (easaMaxFdpMinutes()) and the airline's own MTV Nr. 6
+// table (mtvMaxFdpMinutes()) for that report time and the day's total
+// sector count - whichever actually binds in practice, not both shown
+// side by side. A simplified estimate either way (see
 // localMinuteOfDayBerlin()'s comment) - not a substitute for the
 // airline's own FTL system, and shown for information only.
 function computeMaxLegalOnBlock(flight) {
@@ -1104,11 +1152,19 @@ function computeMaxLegalOnBlock(flight) {
   const first = dutyDay[0];
   if (!first || !first.depSchedDate) return null;
   const reportUtc = new Date(first.depSchedDate.getTime() - STANDARD_REPORT_BEFORE_DEP_MIN * 60000);
-  const maxFdpMin = easaMaxFdpMinutes(localMinuteOfDayBerlin(reportUtc), dutyDay.length);
-  if (maxFdpMin == null) return null;
+  const reportLocalMin = localMinuteOfDayBerlin(reportUtc);
+  const easaMax = easaMaxFdpMinutes(reportLocalMin, dutyDay.length);
+  const mtvMax = mtvMaxFdpMinutes(reportLocalMin, dutyDay.length);
+  const candidates = [
+    easaMax != null ? { min: easaMax, source: "EASA" } : null,
+    mtvMax != null ? { min: mtvMax, source: "MTV" } : null,
+  ].filter(Boolean);
+  if (!candidates.length) return null;
+  const strictest = candidates.reduce((a, b) => (b.min < a.min ? b : a));
   return {
-    latestOnBlockUtc: new Date(reportUtc.getTime() + maxFdpMin * 60000),
+    latestOnBlockUtc: new Date(reportUtc.getTime() + strictest.min * 60000),
     sectorCount: dutyDay.length,
+    source: strictest.source,
   };
 }
 
@@ -1501,7 +1557,7 @@ function renderCrew(f) {
   const ownName = getOwnName();
   const maxDuty = computeMaxLegalOnBlock(f);
   const legalOnBlockLabel = maxDuty
-    ? `Späteste legale Onblock: ${fmtTime(maxDuty.latestOnBlockUtc)} (EASA, ${maxDuty.sectorCount} Sekt.)`
+    ? `Späteste legale Onblock: ${fmtTime(maxDuty.latestOnBlockUtc)} (${maxDuty.source}, ${maxDuty.sectorCount} Sekt.)`
     : null;
 
   if (useSource === "pdf") {
@@ -2151,6 +2207,36 @@ const THREE_LETTER_CODE = {
 
 function threeLetterCode(icao) {
   return THREE_LETTER_CODE[icao] || icao;
+}
+
+// IANA time zone per ICAO code - unlike THREE_LETTER_CODE's airline-
+// internal station codes, an airport's time zone is plain geography, not
+// something that needs confirming per station. Scoped to exactly the
+// codes THREE_LETTER_CODE already covers (extend both together) - that's
+// also every station computeBackupPickup() can ever produce a time for,
+// so a backup pickup can always be shown in local time, matching a
+// roster pickup's "LT" formatting instead of a bare UTC instant.
+const TIMEZONE_BY_ICAO = {
+  EDDF: "Europe/Berlin",
+  LUKK: "Europe/Chisinau",
+  LPPT: "Europe/Lisbon",
+  EKBI: "Europe/Copenhagen",
+  EPWA: "Europe/Warsaw",
+  EDDH: "Europe/Berlin",
+};
+
+// "HH:MM LT" for a UTC instant at the given ICAO code's local time, or
+// null when no time zone is on file for it (see TIMEZONE_BY_ICAO).
+function fmtLocalTimeAtIcao(utcDate, icao) {
+  const tz = TIMEZONE_BY_ICAO[icao];
+  if (!tz || !utcDate) return null;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(utcDate);
+  let hh = Number(parts.find((p) => p.type === "hour").value);
+  const mm = Number(parts.find((p) => p.type === "minute").value);
+  if (hh === 24) hh = 0;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} LT`;
 }
 
 // Standard crew transfer time (hotel <-> airport), in minutes, from the
@@ -3213,8 +3299,9 @@ function renderLayover() {
 
   // MyTime roster is the authoritative pickup source; the reference-sheet
   // backup (see computeBackupPickup()) only fills in when the roster has
-  // no matching event, shown in UTC ("Z") to stay visibly distinct from a
-  // roster-confirmed "LT" time.
+  // no matching event. Both always shown in local time (LT) - see
+  // fmtLocalTimeAtIcao() - the note below (see BACKUP_PICKUP_NOTE) is
+  // what marks a backup value as an estimate, not a "Z" vs "LT" switch.
   if (getRosterUrl()) ensureRosterLoaded();
   const rosterPickup = getRosterUrl() && rosterEventsCache.events
     ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
@@ -3226,8 +3313,11 @@ function renderLayover() {
     els.layoverPickupNote.textContent = "";
   } else {
     const backup = layover.flight ? computeBackupPickup(layover.flight) : null;
+    const backupLabel = backup
+      ? fmtLocalTimeAtIcao(backup.pickupUtc, layover.arrCode) || fmtTime(backup.pickupUtc)
+      : null;
     els.layoverPickup.hidden = !backup;
-    els.layoverPickup.textContent = backup ? `Pickup: ${fmtTime(backup.pickupUtc)}` : "";
+    els.layoverPickup.textContent = backup ? `Pickup: ${backupLabel}` : "";
     els.layoverPickupNote.hidden = !backup;
     els.layoverPickupNote.textContent = backup ? BACKUP_PICKUP_NOTE : "";
   }

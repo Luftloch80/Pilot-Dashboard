@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=32" />
+<link rel="stylesheet" href="assets/style.css?v=33" />
 </head>
 <body>
 
@@ -140,53 +140,51 @@
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
 
-  <!-- Andere Flüge des Tages durchblättern -->
-  <section id="flightNav" class="flight-nav" hidden>
-    <button id="prevFlightBtn" class="icon-btn" aria-label="Vorheriger Flug">‹</button>
-    <div class="flight-nav-label">
-      <div id="flightNavTitle" class="flight-nav-title">–</div>
-    </div>
-    <button id="nextFlightBtn" class="icon-btn" aria-label="Nächster Flug">›</button>
-  </section>
+  <!-- Flugkarten: eine pro Flug des Tages, horizontal durchwischbar statt
+       über Pfeile/"Flug X von Y" - buildFlightCards() in app.js befüllt
+       #flightCardTrack mit einer Kopie von #flightCardTemplate je Flug. -->
+  <div id="flightCardTrack" class="flight-card-track" hidden></div>
+  <div id="flightCardDots" class="flight-card-dots" hidden></div>
 
-  <!-- Hauptkarte: der Flug, der jetzt zu Datum/Uhrzeit passt -->
-  <section id="flightCard" class="card flight-card" hidden>
-    <div class="flight-header">
-      <div class="flight-number" id="flightNumber">–</div>
-      <div id="flightStatus" class="status-pill">–</div>
-    </div>
+  <template id="flightCardTemplate">
+    <section class="card flight-card">
+      <div class="flight-header">
+        <div class="flight-number">–</div>
+        <div class="status-pill">–</div>
+      </div>
 
-    <div class="route">
-      <div class="route-point">
-        <div class="route-code" id="depCode">---</div>
-        <div class="route-label">Abflug</div>
-        <div class="route-time" id="depTime">–</div>
-        <div id="depActualTime" class="route-actual-time" hidden></div>
+      <div class="route">
+        <div class="route-point">
+          <div class="route-code dep-code">---</div>
+          <div class="route-label">Abflug</div>
+          <div class="route-time dep-time">–</div>
+          <div class="route-actual-time dep-actual-time" hidden></div>
+        </div>
+        <div class="route-line" aria-hidden="true">
+          <span class="plane">✈</span>
+        </div>
+        <div class="route-point">
+          <div class="route-code arr-code">---</div>
+          <div class="route-label">Ankunft</div>
+          <div class="route-time arr-time">–</div>
+          <div class="route-actual-time arr-actual-time" hidden></div>
+        </div>
       </div>
-      <div class="route-line" aria-hidden="true">
-        <span class="plane">✈</span>
-      </div>
-      <div class="route-point">
-        <div class="route-code" id="arrCode">---</div>
-        <div class="route-label">Ankunft</div>
-        <div class="route-time" id="arrTime">–</div>
-        <div id="arrActualTime" class="route-actual-time" hidden></div>
-      </div>
-    </div>
 
-    <div class="meta-row">
-      <div class="meta-item">
-        <div class="meta-key">Flugzeug</div>
-        <div class="meta-val" id="aircraft">–</div>
+      <div class="meta-row">
+        <div class="meta-item">
+          <div class="meta-key">Flugzeug</div>
+          <div class="meta-val aircraft">–</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-key">Kennzeichen</div>
+          <div class="meta-val registration">–</div>
+        </div>
       </div>
-      <div class="meta-item">
-        <div class="meta-key">Kennzeichen</div>
-        <div class="meta-val" id="registration">–</div>
-      </div>
-    </div>
 
-    <div id="transitInfo" class="transit-info muted small" hidden>–</div>
-  </section>
+      <div class="transit-info muted small" hidden>–</div>
+    </section>
+  </template>
 
   <!-- Dienstplan-Status: Urlaub ("U<n>") oder Ortstag, aus OpenAirLog erkannt -->
   <section id="dutyStatusCard" class="card duty-status-card" hidden>
@@ -256,6 +254,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=84"></script>
+<script src="assets/app.js?v=85"></script>
 </body>
 </html>

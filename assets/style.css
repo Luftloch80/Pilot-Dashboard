@@ -131,7 +131,6 @@ body {
   align-items: center;
   justify-content: center;
 }
-.icon-btn.invisible { visibility: hidden; }
 
 /* Freshness signal (see renderDataStamp() in app.js): the refresh icon's
    own color, always visible regardless of which card is shown - green
@@ -275,15 +274,35 @@ body {
 .status-banner.error { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
 .status-banner.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
 
-/* Flight nav */
-.flight-nav {
+/* Flight cards: one per flight of the day, swiped between horizontally
+   instead of the old prev/next buttons + "Flug X von Y" text. */
+.flight-card-track {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.flight-nav-label { text-align: center; flex: 1; }
-.flight-nav-title { font-weight: 600; }
+.flight-card-track::-webkit-scrollbar { display: none; }
+.flight-card-track .flight-card {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.flight-card-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+.flight-card-dots .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.flight-card-dots .dot.active { background: var(--accent); }
 
 /* Flight card */
 .flight-header {
@@ -388,7 +407,7 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-#registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
+.registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
 
 /* Duty status (Urlaub / Ortstag) */
 #dutyStatusCountdown { margin-top: 4px; }

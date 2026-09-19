@@ -61,23 +61,9 @@ const els = {
 
   statusBanner: document.getElementById("statusBanner"),
 
-  flightNav: document.getElementById("flightNav"),
-  prevFlightBtn: document.getElementById("prevFlightBtn"),
-  nextFlightBtn: document.getElementById("nextFlightBtn"),
-  flightNavTitle: document.getElementById("flightNavTitle"),
-
-  flightCard: document.getElementById("flightCard"),
-  flightNumber: document.getElementById("flightNumber"),
-  flightStatus: document.getElementById("flightStatus"),
-  depCode: document.getElementById("depCode"),
-  arrCode: document.getElementById("arrCode"),
-  depTime: document.getElementById("depTime"),
-  arrTime: document.getElementById("arrTime"),
-  depActualTime: document.getElementById("depActualTime"),
-  arrActualTime: document.getElementById("arrActualTime"),
-  aircraft: document.getElementById("aircraft"),
-  registration: document.getElementById("registration"),
-  transitInfo: document.getElementById("transitInfo"),
+  flightCardTrack: document.getElementById("flightCardTrack"),
+  flightCardDots: document.getElementById("flightCardDots"),
+  flightCardTemplate: document.getElementById("flightCardTemplate"),
 
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
@@ -139,7 +125,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], lastKnownUpdatedAt: null };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], lastKnownUpdatedAt: null, cardNodes: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -567,8 +553,8 @@ function setSettingsOpen(open) {
   if (open) {
     renderRosterStatus();
     renderAeroDataBoxStatus();
-    els.flightNav.hidden = true;
-    els.flightCard.hidden = true;
+    els.flightCardTrack.hidden = true;
+    els.flightCardDots.hidden = true;
     els.layoverCard.hidden = true;
     els.crewCard.hidden = true;
     els.dutyStatusCard.hidden = true;
@@ -615,33 +601,31 @@ function pickInitialIndex(flights) {
   return flights.length ? flights.length - 1 : -1; // all of today's flights are done
 }
 
-function renderFlightNav() {
-  const n = state.flights.length;
-  els.flightNav.hidden = n === 0;
-  // Nothing to scroll to in that direction - made invisible rather than
-  // hidden (covers both the single-flight day and the first/last flight
-  // of a day with several): "hidden" removes it from layout, which threw
-  // the space-between flex off-center and made the title shift sideways
-  // whenever only one arrow was showing. visibility:hidden keeps its
-  // layout space, so the title stays centered either way.
-  els.prevFlightBtn.classList.toggle("invisible", state.index <= 0);
-  els.nextFlightBtn.classList.toggle("invisible", state.index >= n - 1);
-  els.prevFlightBtn.disabled = state.index <= 0;
-  els.nextFlightBtn.disabled = state.index >= n - 1;
-  els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";
+// Small dots below the flight-card track, one per flight of the day,
+// standing in for the removed "Flug X von Y" text now that the cards
+// scroll horizontally - just marks count/position, no text.
+function renderFlightDots() {
+  const dots = els.flightCardDots.children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].classList.toggle("active", i === state.index);
+  }
 }
 
 // Shared by the flight number's callsign suffix and the depTime/arrTime
 // deviation labels - all three want the same AeroDataBox lookup for this
 // pilot's own current flight (its own flight number + date), so this is
 // the one place that checks the cache and triggers a fetch if it's
-// stale, rather than each caller doing that separately.
-function getOwnFlightAeroDataBoxLeg(f) {
+// stale, rather than each caller doing that separately. peekOnly reads
+// whatever's cached without triggering a new fetch - used for the cards
+// the user isn't currently looking at, so scrolling past several of them
+// doesn't fire off a lookup for each one.
+function getOwnFlightAeroDataBoxLeg(f, opts) {
   const dateKey = f.raw && f.raw.date;
   if (!getAeroDataBoxKey() || !f.flightNumber || !dateKey) return null;
   const cacheKey = `${f.flightNumber}|${dateKey}`;
   const cached = flightByNumberCache.get(cacheKey);
-  if (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
+  const peekOnly = opts && opts.peekOnly;
+  if (!peekOnly && (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS))) {
     ensureFlightByNumberLoaded(f.flightNumber, dateKey);
   }
   return cached ? cached.leg : null;
@@ -656,7 +640,11 @@ function getOwnFlightAeroDataBoxLeg(f) {
 function renderTimeDeviation(el, scheduledDate, currentDate) {
   el.hidden = true;
   el.textContent = "";
-  el.className = "route-actual-time";
+  // classList.remove rather than resetting className outright - this
+  // element also carries a dep-actual-time/arr-actual-time selector class
+  // (see getCardEls()) that a full overwrite would silently strip on the
+  // second render, leaving that card's lookup unable to find it again.
+  el.classList.remove("early", "late");
   if (!scheduledDate || !currentDate) return;
   const diffMin = Math.round((currentDate.getTime() - scheduledDate.getTime()) / 60000);
   if (diffMin <= -3) {
@@ -672,24 +660,24 @@ function renderTimeDeviation(el, scheduledDate, currentDate) {
 
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
-function renderTimerPill(f) {
+function renderTimerPill(f, statusEl) {
   if (f.isDeadhead) {
-    els.flightStatus.textContent = "DH";
-    els.flightStatus.className = "status-pill deadhead";
+    statusEl.textContent = "DH";
+    statusEl.className = "status-pill deadhead";
     return;
   }
   if (!f.depSchedDate) {
-    els.flightStatus.textContent = "–";
-    els.flightStatus.className = "status-pill";
+    statusEl.textContent = "–";
+    statusEl.className = "status-pill";
     return;
   }
   const diffMin = Math.round((f.depSchedDate.getTime() - Date.now()) / 60000);
   if (diffMin > 0) {
-    els.flightStatus.textContent = `-${diffMin} min`;
-    els.flightStatus.className = "status-pill timer-before";
+    statusEl.textContent = `-${diffMin} min`;
+    statusEl.className = "status-pill timer-before";
   } else {
-    els.flightStatus.textContent = `+${Math.abs(diffMin)} min`;
-    els.flightStatus.className = "status-pill timer-after";
+    statusEl.textContent = `+${Math.abs(diffMin)} min`;
+    statusEl.className = "status-pill timer-after";
   }
 }
 
@@ -697,16 +685,16 @@ function renderTimerPill(f) {
 // the real time - once AeroDataBox has actually resolved a current
 // departure time (whether or not it's off enough from schedule to show
 // as a deviation next to depTime/arrTime), it's redundant and goes away
-// rather than sitting there next to more current information. Called
-// both from renderFlight() and the 30s ticker below, so the pill doesn't
-// reappear on the next tick after being hidden here.
-function updateFlightTimerDisplay(f, ownLeg) {
+// rather than sitting there next to more current information. Called for
+// every card on each render/tick, so the pill doesn't reappear on a card
+// after being hidden here.
+function updateFlightTimerDisplay(f, ownLeg, statusEl) {
   if (!f.isDeadhead && ownLeg && ownLeg.depDate) {
-    els.flightStatus.hidden = true;
+    statusEl.hidden = true;
     return;
   }
-  els.flightStatus.hidden = false;
-  renderTimerPill(f);
+  statusEl.hidden = false;
+  renderTimerPill(f, statusEl);
 }
 
 // IATA airline designator (the leading 2 chars of the flight number, which
@@ -815,53 +803,61 @@ async function checkForUpdate() {
   }
 }
 
-function renderFlight() {
-  const f = state.flights[state.index];
-  // 30+ min after today's last flight lands back at home base, show the
-  // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). And while
-  // still genuinely in a layover (more than 2h before the next departure -
-  // see findApiLayover()/LAYOVER_END_LEAD_MS), the layover card is the
-  // whole story; showing today's flight card hours in advance would just
-  // be premature "Fluginfo" on top of it.
-  const inLayover = !!(effectiveDutyType() ? null : findApiLayover(state.allFlights));
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !inLayover;
+// Cloned once per flight of the day into #flightCardTrack (see
+// buildFlightCards()) - the inner fields are looked up by class rather
+// than id, since (unlike the old single reused card) several copies of
+// this template now exist in the DOM at once.
+function getCardEls(node) {
+  return {
+    flightNumber: node.querySelector(".flight-number"),
+    flightStatus: node.querySelector(".status-pill"),
+    depCode: node.querySelector(".dep-code"),
+    depTime: node.querySelector(".dep-time"),
+    depActualTime: node.querySelector(".dep-actual-time"),
+    arrCode: node.querySelector(".arr-code"),
+    arrTime: node.querySelector(".arr-time"),
+    arrActualTime: node.querySelector(".arr-actual-time"),
+    aircraft: node.querySelector(".aircraft"),
+    registration: node.querySelector(".registration"),
+    transitInfo: node.querySelector(".transit-info"),
+  };
+}
 
-  els.flightCard.hidden = !showFlightCard;
-  els.crewCard.hidden = !showFlightCard;
+// (Re)builds one card per today's flight into the horizontally scrollable
+// track, plus a matching dot per card - only needed when the actual set
+// of flights changes (see the signature check in renderFlight()), not on
+// every re-render, so an AeroDataBox lookup resolving mid-scroll doesn't
+// wipe the user's scroll position.
+function buildFlightCards() {
+  els.flightCardTrack.innerHTML = "";
+  els.flightCardDots.innerHTML = "";
+  state.cardNodes = state.flights.map(() => {
+    const node = els.flightCardTemplate.content.firstElementChild.cloneNode(true);
+    els.flightCardTrack.appendChild(node);
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    els.flightCardDots.appendChild(dot);
+    return node;
+  });
+}
 
-  if (!showFlightCard) {
-    els.flightNav.hidden = true;
-    renderAirlineBadge(null);
-    renderDutyStatus();
-    return;
-  }
-  els.dutyStatusCard.hidden = true;
+function scrollTrackToIndex(index) {
+  const track = els.flightCardTrack;
+  if (!track.clientWidth) return;
+  track.scrollTo({ left: index * track.clientWidth, behavior: "auto" });
+}
 
-  // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
-  // main flight card, not in the crew list's inbound/outbound labels or
-  // the transit line, which are about other flights, not this one.
-  const ownLeg = getOwnFlightAeroDataBoxLeg(f);
-  els.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
-  updateFlightTimerDisplay(f, ownLeg);
-
-  els.depCode.textContent = f.depCode;
-  els.arrCode.textContent = f.arrCode;
-  els.depTime.textContent = fmtTime(f.depSchedDate);
-  els.arrTime.textContent = fmtTime(f.arrSchedDate);
-  renderTimeDeviation(els.depActualTime, f.depSchedDate, ownLeg && ownLeg.depDate);
-  renderTimeDeviation(els.arrActualTime, f.arrSchedDate, ownLeg && ownLeg.arrDate);
-
-  els.aircraft.textContent = f.aircraft;
-  els.registration.textContent = f.registration;
-  renderAirlineBadge(f.flightNumber);
-
-  // Transit to the next own flight and, on a Flugzeugwechsel (its
-  // registration differs from this one's), which aircraft that is - plus,
-  // when an AeroDataBox key is configured, when that aircraft is
-  // scheduled to arrive from whatever it flew right before (see
-  // ensureAircraftScheduleLoaded()/findPriorLegArrival()).
-  const nextFlight = state.flights[state.index + 1];
+// Transit to the next own flight and, on a Flugzeugwechsel (its
+// registration differs from this one's), which aircraft that is - plus,
+// when an AeroDataBox key is configured, when that aircraft is scheduled
+// to arrive from whatever it flew right before (see
+// ensureAircraftScheduleLoaded()/findPriorLegArrival()). Every card has
+// its own transit line (about its own next flight), but only the active
+// one is allowed to trigger AeroDataBox lookups - scrolling past several
+// cards shouldn't fire off a lookup for each.
+function renderFlightCardTransit(i, isActive, cardEls) {
+  const f = state.flights[i];
+  const nextFlight = state.flights[i + 1];
   const transitLabel = nextFlight
     ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
     : null;
@@ -877,7 +873,7 @@ function renderFlight() {
     const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
     const cachedByNumber = flightByNumberCache.get(cacheKey);
     if (!cachedByNumber || Date.now() - cachedByNumber.fetchedAt >= (cachedByNumber.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
-      ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
+      if (isActive) ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
     } else if (cachedByNumber.leg) {
       nextRegistration = cachedByNumber.leg.registration || null;
     }
@@ -892,20 +888,107 @@ function renderFlight() {
     if (getAeroDataBoxKey()) {
       const cached = aircraftScheduleCache.get(nextRegistration);
       if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
-        ensureAircraftScheduleLoaded(nextRegistration);
+        if (isActive) ensureAircraftScheduleLoaded(nextRegistration);
       } else {
         const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
         if (priorLeg && priorLeg.arrDate) transitText += ` ${priorLeg.flightNumber} ${fmtTime(priorLeg.arrDate)}`;
       }
     }
   }
-  els.transitInfo.hidden = !transitText;
-  els.transitInfo.textContent = transitText;
+  cardEls.transitInfo.hidden = !transitText;
+  cardEls.transitInfo.textContent = transitText;
+}
 
+// Fills one card's content. Only the active (currently scrolled-to) card
+// is allowed to trigger AeroDataBox lookups (getOwnFlightAeroDataBoxLeg's
+// peekOnly) - the others show whatever's already cached from an earlier
+// visit, so simply having several cards in the DOM doesn't multiply the
+// API quota this uses.
+function renderFlightCardContent(i, isActive) {
+  const f = state.flights[i];
+  const cardEls = getCardEls(state.cardNodes[i]);
+
+  // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
+  // main flight card, not in the crew list's inbound/outbound labels or
+  // the transit line, which are about other flights, not this one.
+  const ownLeg = getOwnFlightAeroDataBoxLeg(f, { peekOnly: !isActive });
+  cardEls.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
+  updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus);
+
+  cardEls.depCode.textContent = f.depCode;
+  cardEls.arrCode.textContent = f.arrCode;
+  cardEls.depTime.textContent = fmtTime(f.depSchedDate);
+  cardEls.arrTime.textContent = fmtTime(f.arrSchedDate);
+  renderTimeDeviation(cardEls.depActualTime, f.depSchedDate, ownLeg && ownLeg.depDate);
+  renderTimeDeviation(cardEls.arrActualTime, f.arrSchedDate, ownLeg && ownLeg.arrDate);
+
+  cardEls.aircraft.textContent = f.aircraft;
+  cardEls.registration.textContent = f.registration;
+
+  renderFlightCardTransit(i, isActive, cardEls);
+}
+
+// Identifies today's flight list by flight number + date only (not
+// times/registration, which can change on the same flight via a roster
+// refresh) - used to tell whether the cards actually need rebuilding
+// (added/removed/reordered flight) or just a content refresh in place.
+function flightsSignature(flights) {
+  return flights.map((f) => `${f.flightNumber}@${(f.raw && f.raw.date) || ""}`).join("|");
+}
+let lastCardSignature = null;
+
+// Whichever flight the carousel is currently scrolled to - re-renders its
+// content (promoting it to "active", so its own AeroDataBox lookups are
+// now allowed) plus everything below the cards that follows the current
+// flight (crew, airline badge, dots).
+function renderActiveFlightExtras() {
+  renderFlightDots();
+  const f = state.flights[state.index];
+  if (!f) return;
+  renderFlightCardContent(state.index, true);
+  renderAirlineBadge(f.flightNumber);
   renderCrew(f);
   ensureCrewLoaded(f);
+}
 
-  renderFlightNav();
+function renderFlight() {
+  const f = state.flights[state.index];
+  // 30+ min after today's last flight lands back at home base, show the
+  // Ortstag-style duty status view instead of the (by then stale-feeling)
+  // completed flight card - see shouldShowPostLandingHomeView(). And while
+  // still genuinely in a layover (more than 2h before the next departure -
+  // see findApiLayover()/LAYOVER_END_LEAD_MS), the layover card is the
+  // whole story; showing today's flight card hours in advance would just
+  // be premature "Fluginfo" on top of it.
+  const inLayover = !!(effectiveDutyType() ? null : findApiLayover(state.allFlights));
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !inLayover;
+
+  els.flightCardTrack.hidden = !showFlightCard;
+  els.crewCard.hidden = !showFlightCard;
+
+  if (!showFlightCard) {
+    els.flightCardDots.hidden = true;
+    renderAirlineBadge(null);
+    renderDutyStatus();
+    return;
+  }
+  els.dutyStatusCard.hidden = true;
+
+  const signature = flightsSignature(state.flights);
+  const rebuilt = signature !== lastCardSignature;
+  if (rebuilt) {
+    buildFlightCards();
+    lastCardSignature = signature;
+  }
+
+  state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
+  if (rebuilt) scrollTrackToIndex(state.index);
+  els.flightCardDots.hidden = state.flights.length <= 1;
+  renderFlightDots();
+
+  renderAirlineBadge(f.flightNumber);
+  renderCrew(f);
+  ensureCrewLoaded(f);
 }
 
 function crewKey(role, name) {
@@ -1556,7 +1639,7 @@ async function loadFlights() {
   dataStampFresh = true;
   renderDataStamp();
 
-  if (els.flightCard.hidden) {
+  if (els.flightCardTrack.hidden) {
     // A short hint only when the dashboard would otherwise show nothing at
     // all (no flight card, no layover, no recognized vacation/Ortstag/
     // post-landing status) - so it's clear the app loaded fine rather than
@@ -2908,10 +2991,10 @@ function renderDutyStatus() {
 // live, without going through the full renderFlight() - unnecessary here
 // since this is a purely time-based UI transition with no new data to load.
 function tickPostLandingSwitch() {
-  if (els.flightCard.hidden || !shouldShowPostLandingHomeView()) return;
-  els.flightCard.hidden = true;
+  if (els.flightCardTrack.hidden || !shouldShowPostLandingHomeView()) return;
+  els.flightCardTrack.hidden = true;
   els.crewCard.hidden = true;
-  els.flightNav.hidden = true;
+  els.flightCardDots.hidden = true;
   renderDutyStatus();
   const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
   showBanner(nothingToShow ? "Heute nichts geplant." : "", "");
@@ -3260,11 +3343,22 @@ els.refreshBtn.addEventListener("click", loadFlights);
 
 els.dutyStatusRouteBtn.addEventListener("click", toggleRouteWeather);
 
-els.prevFlightBtn.addEventListener("click", () => {
-  if (state.index > 0) { state.index--; renderFlight(); }
-});
-els.nextFlightBtn.addEventListener("click", () => {
-  if (state.index < state.flights.length - 1) { state.index++; renderFlight(); }
+// Replaces the old prev/next buttons: swiping the track between flights
+// is itself the navigation now. Debounced so this only fires once the
+// swipe has actually settled on a card, not on every scroll tick while
+// it's still moving.
+let cardScrollDebounce = null;
+els.flightCardTrack.addEventListener("scroll", () => {
+  clearTimeout(cardScrollDebounce);
+  cardScrollDebounce = setTimeout(() => {
+    const track = els.flightCardTrack;
+    if (!track.clientWidth || !state.flights.length) return;
+    const newIndex = Math.round(track.scrollLeft / track.clientWidth);
+    const clamped = Math.max(0, Math.min(state.flights.length - 1, newIndex));
+    if (clamped === state.index) return;
+    state.index = clamped;
+    renderActiveFlightExtras();
+  }, 120);
 });
 
 els.crewPdfInput.addEventListener("change", (e) => {
@@ -3315,8 +3409,15 @@ ensureRosterLoaded();
 // Keep the T-minus/T-plus countdown and the layover state current without
 // a full data refresh.
 setInterval(() => {
-  const f = state.flights[state.index];
-  if (f) updateFlightTimerDisplay(f, getOwnFlightAeroDataBoxLeg(f));
+  // Ticks every card's countdown pill (cheap, pure date math) - only the
+  // active card's own AeroDataBox lookup is allowed to actually fire.
+  state.flights.forEach((f, i) => {
+    const node = state.cardNodes[i];
+    if (!node) return;
+    const statusEl = node.querySelector(".status-pill");
+    const ownLeg = getOwnFlightAeroDataBoxLeg(f, { peekOnly: i !== state.index });
+    updateFlightTimerDisplay(f, ownLeg, statusEl);
+  });
   renderLayover();
   tickPostLandingSwitch();
 }, 30000);

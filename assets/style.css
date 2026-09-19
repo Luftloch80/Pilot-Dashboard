@@ -132,13 +132,6 @@ body {
   justify-content: center;
 }
 
-/* Freshness signal (see renderDataStamp() in app.js): the refresh icon's
-   own color, always visible regardless of which card is shown - green
-   while OpenAirLog has nothing newer than the last load, red once the
-   background check finds a change. */
-#refreshBtn.fresh { color: var(--ok); }
-#refreshBtn.stale { color: var(--danger); }
-
 /* #refreshBtn and #settingsBtn draw their icon as an inline SVG (not a
    Unicode glyph) specifically so they're guaranteed the same visual size -
    text glyphs like ↻/⚙︎ render at inconsistent, platform-dependent sizes

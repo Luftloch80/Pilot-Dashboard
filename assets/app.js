@@ -125,7 +125,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], lastKnownUpdatedAt: null, cardNodes: [] };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -216,22 +216,6 @@ function toDateOrNull(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
-}
-
-// Newest updated_at across every entry (real flights *and* duty entries
-// alike, e.g. ORTSTAG/U<n>) fetched in the -7d/+21d window - the freshness
-// signal shown on the refresh icon isn't tied to one specific flight (that
-// broke down on an Ortstag/Urlaub day with no flight selected at all), so
-// it compares this instead: "has OpenAirLog changed anything at all in the
-// currently loaded window" is a good-enough proxy for "there's something
-// new to pull in".
-function maxUpdatedAt(rawEntries) {
-  let max = null;
-  for (const raw of rawEntries) {
-    const d = toDateOrNull(pick(raw, ["updated_at", "updatedAt"]));
-    if (d && (!max || d > max)) max = d;
-  }
-  return max;
 }
 
 function todayISO(offsetDays) {
@@ -625,7 +609,10 @@ function getOwnFlightAeroDataBoxLeg(f, opts) {
   const cacheKey = `${f.flightNumber}|${dateKey}`;
   const cached = flightByNumberCache.get(cacheKey);
   const peekOnly = opts && opts.peekOnly;
-  if (!peekOnly && (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS))) {
+  // No time-based staleness re-fetch anymore - only ↻ (see refreshAll())
+  // clears this cache, so a lookup only ever fires once per flight until
+  // the pilot explicitly asks for new data.
+  if (!peekOnly && !cached) {
     ensureFlightByNumberLoaded(f.flightNumber, dateKey);
   }
   return cached ? cached.leg : null;
@@ -689,7 +676,11 @@ function renderTimerPill(f, statusEl) {
 // every card on each render/tick, so the pill doesn't reappear on a card
 // after being hidden here.
 function updateFlightTimerDisplay(f, ownLeg, statusEl) {
-  if (!f.isDeadhead && ownLeg && ownLeg.depDate) {
+  // depRunwayDate only exists once AeroDataBox reports the aircraft has
+  // actually left the blocks - a revised/estimated time alone (depDate)
+  // isn't enough to retire the countdown, since that can change again
+  // before departure actually happens.
+  if (!f.isDeadhead && ownLeg && ownLeg.depRunwayDate) {
     statusEl.hidden = true;
     return;
   }
@@ -742,65 +733,6 @@ function renderAirlineBadge(flightNumber) {
   els.brandAirlineBadge.title = title;
   els.brandAirlineBadge.style.setProperty("--airline-bg", bg);
   els.brandAirlineBadge.style.setProperty("--airline-fg", fg);
-}
-
-// Freshness signal, shown as the refresh icon's color (green/red) - not
-// tied to one specific flight (that broke down on an Ortstag/Urlaub day,
-// where there's no selected flight to hang it off at all), but to the
-// whole -7d/+21d window loadFlights() pulls in. Green while nothing in
-// that window has changed since the last load; red once the background
-// check (below) finds something newer on the server. The pilot still
-// decides when to actually pull it in via ↻ - this is only a signal that
-// doing so would show something new. Always visible, on every view.
-let dataStampFresh = true;
-
-function renderDataStamp() {
-  els.refreshBtn.title = dataStampFresh
-    ? "Aktualisieren - aktuell"
-    : "Aktualisieren - OpenAirLog hat neuere Daten, zum Übernehmen tippen";
-  els.refreshBtn.classList.toggle("fresh", dataStampFresh);
-  els.refreshBtn.classList.toggle("stale", !dataStampFresh);
-}
-
-// Background freshness check, every 5 minutes: re-fetches the same window
-// loadFlights() uses and compares the newest updated_at across it against
-// what was there at the last load - never replaces the rendered crew/
-// flight data itself, since the pilot asked to keep that manual (via ↻)
-// and just wants an early, passive signal here.
-const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-
-async function checkForUpdate() {
-  if (!state.lastKnownUpdatedAt) return;
-
-  const key = getApiKey();
-  if (!key) return;
-
-  const from = todayISO(-7);
-  const to = todayISO(21);
-  const url = `${API_BASE}/flights?from=${from}&to=${to}&per_page=100`;
-
-  let res;
-  try {
-    res = await fetchWithTimeout(url, {
-      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
-      cache: "no-store",
-    });
-  } catch {
-    return; // silent - background check, no user-facing error for this
-  }
-  if (!res.ok) return;
-
-  let json;
-  try { json = await res.json(); } catch { return; }
-
-  const freshMax = maxUpdatedAt(extractFlightsArray(json));
-  if (!freshMax) return;
-
-  const nowFresh = freshMax.getTime() <= state.lastKnownUpdatedAt.getTime();
-  if (nowFresh !== dataStampFresh) {
-    dataStampFresh = nowFresh;
-    renderDataStamp();
-  }
 }
 
 // Cloned once per flight of the day into #flightCardTrack (see
@@ -872,7 +804,7 @@ function renderFlightCardTransit(i, isActive, cardEls) {
     const dateKey = nextFlight.raw && nextFlight.raw.date;
     const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
     const cachedByNumber = flightByNumberCache.get(cacheKey);
-    if (!cachedByNumber || Date.now() - cachedByNumber.fetchedAt >= (cachedByNumber.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
+    if (!cachedByNumber) {
       if (isActive) ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
     } else if (cachedByNumber.leg) {
       nextRegistration = cachedByNumber.leg.registration || null;
@@ -887,7 +819,7 @@ function renderFlightCardTransit(i, isActive, cardEls) {
     transitText += ` · next A/C ${nextRegistration}`;
     if (getAeroDataBoxKey()) {
       const cached = aircraftScheduleCache.get(nextRegistration);
-      if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+      if (!cached) {
         if (isActive) ensureAircraftScheduleLoaded(nextRegistration);
       } else {
         const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
@@ -1316,7 +1248,7 @@ function buildPdfRefMap(f, field) {
     if (resolved && getAeroDataBoxKey()) {
       const cacheKey = `${resolved.flightNumber}|${resolved.dateKey}`;
       const cached = flightByNumberCache.get(cacheKey);
-      if (!cached || Date.now() - cached.fetchedAt >= (cached.pollDelayMs || AERODATABOX_POLL_MIN_MS)) {
+      if (!cached) {
         ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
       }
       const leg = cached && cached.leg;
@@ -1632,12 +1564,6 @@ async function loadFlights() {
   const allRaw = extractFlightsArray(json);
   saveFlightsCache(allRaw);
   applyLoadedFlights(allRaw);
-
-  // Whatever just loaded is the new baseline - mark it fresh again until
-  // the next background check finds something newer on the server.
-  state.lastKnownUpdatedAt = maxUpdatedAt(allRaw);
-  dataStampFresh = true;
-  renderDataStamp();
 
   if (els.flightCardTrack.hidden) {
     // A short hint only when the dashboard would otherwise show nothing at
@@ -2594,26 +2520,17 @@ function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
 }
 
 const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null };
-// Fetched on the same cadence as OpenAirLog's own background freshness
-// check (see UPDATE_CHECK_INTERVAL_MS) - both checkForUpdate() and this
-// are called from the same interval/visibilitychange hooks.
-const ROSTER_CACHE_MS = UPDATE_CHECK_INTERVAL_MS;
-
-function rosterCacheIsStale() {
-  const url = getRosterUrl();
-  if (!url) return false;
-  return rosterEventsCache.url !== url || !rosterEventsCache.events ||
-    Date.now() - rosterEventsCache.fetchedAt >= ROSTER_CACHE_MS;
-}
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
-// once, caches (success only - a failed fetch is retried on the next
-// call instead of being remembered as "no pickup"), applies whichever of
-// the two sources' flight times is fresher (see applyRosterMasterOverrides()),
-// then re-renders.
-async function ensureRosterLoaded() {
+// once per URL and never again on its own (no automatic refresh - see
+// refreshAll()) - applies whichever of the two sources' flight times is
+// fresher (see applyRosterMasterOverrides()), then re-renders. force
+// bypasses the "already fetched this URL" check, used by refreshAll()
+// to actually pull a new copy on ↻ instead of reusing the cached one.
+async function ensureRosterLoaded(force) {
   const url = getRosterUrl();
-  if (!url || !rosterCacheIsStale()) return;
+  if (!url) return;
+  if (!force && rosterEventsCache.url === url && rosterEventsCache.events) return;
   try {
     const res = await fetchWithTimeout(url, {});
     if (!res.ok) return;
@@ -2688,6 +2605,11 @@ function normalizeAircraftLeg(leg) {
     depCode: (dep.airport && dep.airport.icao) || "---",
     arrCode: (arr.airport && arr.airport.icao) || "---",
     depDate, arrDate,
+    // Genuinely confirmed off-block only (never a revised/scheduled
+    // estimate) - see updateFlightTimerDisplay(), which keeps the
+    // countdown pill showing until this specifically is set, not just
+    // any depDate (a revised estimate alone isn't "off block" yet).
+    depRunwayDate: parseAeroDataBoxUtc(dep.runwayTime && dep.runwayTime.utc),
     // Scheduled-only (never revised) - kept separate from depDate/arrDate
     // above for callers that specifically want the plan rather than the
     // live/updated time, e.g. the "outbound" label's departure.
@@ -2697,39 +2619,10 @@ function normalizeAircraftLeg(leg) {
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
     callSign: leg.callSign || null,
-    // When AeroDataBox itself last refreshed this record - used to back
-    // off polling once it stops changing (see nextAeroDataBoxPollDelay()),
-    // since asking again before the source has updated just burns quota
-    // for the same answer.
-    lastUpdatedUtc: parseAeroDataBoxUtc(leg.lastUpdatedUtc) || null,
   };
 }
 
 const aircraftScheduleCache = new Map(); // registration -> { legs, fetchedAt }
-const AIRCRAFT_SCHEDULE_CACHE_MS = 10 * 60 * 1000;
-
-// How often a single flight-number lookup gets re-polled. Adaptive
-// between these bounds based on AeroDataBox's own lastUpdatedUtc (see
-// nextAeroDataBoxPollDelay()) rather than a fixed interval - the API
-// quota is limited, and polling faster than the source itself updates
-// just spends it for an identical answer.
-const AERODATABOX_POLL_MIN_MS = 3 * 60 * 1000;
-const AERODATABOX_POLL_MAX_MS = 20 * 60 * 1000;
-
-// Back off (double, capped) while lastUpdatedUtc stays the same across
-// polls - nothing changed, so there's no reason to ask again this soon.
-// Snap back to the minimum the moment it does change: that's exactly
-// when something is actively happening (boarding, pushback, landing)
-// and later updates are worth catching quickly.
-function nextAeroDataBoxPollDelay(previous, leg) {
-  if (!leg || !leg.lastUpdatedUtc) return AERODATABOX_POLL_MIN_MS;
-  const prevLeg = previous && previous.leg;
-  if (prevLeg && prevLeg.lastUpdatedUtc && prevLeg.lastUpdatedUtc.getTime() === leg.lastUpdatedUtc.getTime()) {
-    const prevDelay = previous.pollDelayMs || AERODATABOX_POLL_MIN_MS;
-    return Math.min(prevDelay * 2, AERODATABOX_POLL_MAX_MS);
-  }
-  return AERODATABOX_POLL_MIN_MS;
-}
 
 async function fetchAircraftSchedule(registration) {
   const key = getAeroDataBoxKey();
@@ -2797,7 +2690,7 @@ async function fetchFlightByNumber(flightNumber, dateKey) {
   }
 }
 
-const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt, pollDelayMs }
+const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
 const flightByNumberLoading = new Set(); // cacheKey currently in flight, to avoid duplicate requests -
 // buildPdfRefMap() can ask for the same flight number/date from several
 // crew rows (and re-renders) before the first request even resolves.
@@ -2810,11 +2703,9 @@ async function ensureFlightByNumberLoaded(flightNumber, dateKey) {
   const cacheKey = `${flightNumber}|${dateKey}`;
   if (flightByNumberLoading.has(cacheKey)) return;
   flightByNumberLoading.add(cacheKey);
-  const previous = flightByNumberCache.get(cacheKey);
   const leg = await fetchFlightByNumber(flightNumber, dateKey);
   flightByNumberLoading.delete(cacheKey);
-  const pollDelayMs = nextAeroDataBoxPollDelay(previous, leg);
-  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now(), pollDelayMs });
+  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now() });
   if (leg && leg.registration) ensureAircraftScheduleLoaded(leg.registration);
   else renderFlight();
 }
@@ -3018,7 +2909,7 @@ function renderLayover() {
   els.layoverPlace.hidden = false;
 
   if (getRosterUrl()) {
-    if (rosterCacheIsStale()) ensureRosterLoaded();
+    ensureRosterLoaded();
     const pickup = rosterEventsCache.events
       ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
       : null;
@@ -3339,7 +3230,22 @@ els.resetAeroDataBoxBtn.addEventListener("click", () => {
 
 els.testAeroDataBoxBtn.addEventListener("click", testAeroDataBoxConnection);
 
-els.refreshBtn.addEventListener("click", loadFlights);
+// ↻ is now the only way any of this app's APIs get queried - there's no
+// background/interval polling left (see the removed 5-minute check and
+// the AeroDataBox lookups' plain "fetch if not yet cached" logic).
+// Clearing the AeroDataBox caches here, rather than adding a separate
+// "force" path to every lookup, lets that existing lazy logic naturally
+// re-fetch whatever's relevant to what ends up shown once loadFlights()
+// re-renders - own flight's callsign/deviation, the transit line's next
+// A/C, and crew ex/to refs all go through the same two caches.
+function refreshAll() {
+  flightByNumberCache.clear();
+  aircraftScheduleCache.clear();
+  ensureRosterLoaded(true);
+  loadFlights();
+}
+
+els.refreshBtn.addEventListener("click", refreshAll);
 
 els.dutyStatusRouteBtn.addEventListener("click", toggleRouteWeather);
 
@@ -3422,27 +3328,3 @@ setInterval(() => {
   tickPostLandingSwitch();
 }, 30000);
 
-// Passive background check only - never auto-applies new data, just flips
-// the "Stand" stamp red when OpenAirLog has something newer than what's
-// shown (see checkForUpdate() above for why). The MyTime roster is
-// fetched on the very same cadence (ROSTER_CACHE_MS === UPDATE_CHECK_INTERVAL_MS)
-// regardless of whether a layover is currently shown, so both sources
-// are compared for freshness (see applyRosterMasterOverrides()) just as
-// often as OpenAirLog itself is checked.
-setInterval(() => {
-  checkForUpdate();
-  ensureRosterLoaded();
-}, UPDATE_CHECK_INTERVAL_MS);
-
-// iOS Safari throttles/suspends setInterval timers while the tab is
-// backgrounded or the screen is locked - the 5-minute check above simply
-// doesn't run during that time, so re-opening the app can show "fresh"
-// long after that's stopped being true. Catch up immediately the moment
-// the pilot actually looks at the screen again, instead of waiting for
-// whatever's left of a timer that may not have ticked in hours.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    checkForUpdate();
-    ensureRosterLoaded();
-  }
-});

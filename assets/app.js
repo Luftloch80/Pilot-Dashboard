@@ -1541,7 +1541,7 @@ function renderDataStamp() {
   if (isOffline) {
     els.dataStamp.textContent = "Offline";
   } else if (lastUpdateAt) {
-    els.dataStamp.textContent = `Aktualisiert ${fmtLocalTime(lastUpdateAt)}`;
+    els.dataStamp.textContent = fmtLocalTime(lastUpdateAt);
   } else {
     els.dataStamp.hidden = true;
   }

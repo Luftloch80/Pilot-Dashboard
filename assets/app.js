@@ -74,6 +74,7 @@ const els = {
   arrTime: document.getElementById("arrTime"),
   aircraft: document.getElementById("aircraft"),
   registration: document.getElementById("registration"),
+  transitInfo: document.getElementById("transitInfo"),
   airlineBadge: document.getElementById("airlineBadge"),
   airlineBadgeCode: document.getElementById("airlineBadgeCode"),
 
@@ -152,6 +153,14 @@ function fmtTime(d) {
   const hh = String(d.getUTCHours()).padStart(2, "0");
   const mm = String(d.getUTCMinutes()).padStart(2, "0");
   return `${hh}:${mm}Z`;
+}
+
+function fmtDurationHM(ms) {
+  if (!(ms > 0)) return null;
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}:${String(m).padStart(2, "0")} Std`;
 }
 
 // Local (device) time, deliberately not UTC like fmtTime() - used only for
@@ -699,6 +708,16 @@ function renderFlight() {
   els.aircraft.textContent = f.aircraft;
   els.registration.textContent = f.registration;
   renderAirlineBadge(f.flightNumber);
+
+  // Transit = time between this flight's scheduled landing and the next
+  // flight's scheduled departure - only meaningful when another flight
+  // follows today, so it's left off after the day's last flight.
+  const nextFlight = state.flights[state.index + 1];
+  const transitLabel = nextFlight
+    ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
+    : null;
+  els.transitInfo.hidden = !transitLabel;
+  els.transitInfo.textContent = transitLabel ? `Transit: ${transitLabel}` : "";
 
   renderCrew(f);
   ensureCrewLoaded(f);

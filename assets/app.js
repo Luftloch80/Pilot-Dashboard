@@ -3,6 +3,7 @@
 const API_BASE = "https://openairlog.de/api/v1";
 const STORAGE_KEY = "oal_api_key";
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
+const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -115,6 +116,12 @@ const els = {
   crewPdfStatus: document.getElementById("crewPdfStatus"),
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
+
+  rosterCard: document.getElementById("rosterCard"),
+  rosterUrlInput: document.getElementById("rosterUrlInput"),
+  saveRosterBtn: document.getElementById("saveRosterBtn"),
+  rosterStatus: document.getElementById("rosterStatus"),
+  resetRosterBtn: document.getElementById("resetRosterBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   resetKeyBtn: document.getElementById("resetKeyBtn"),
@@ -386,6 +393,25 @@ function clearApiKey() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
 }
 
+// ---------- MyTime roster URL storage ----------
+
+function getRosterUrl() {
+  try { return localStorage.getItem(ROSTER_URL_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setRosterUrl(url) {
+  try { localStorage.setItem(ROSTER_URL_STORAGE_KEY, url); } catch { /* private mode etc. */ }
+}
+function clearRosterUrl() {
+  try { localStorage.removeItem(ROSTER_URL_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function renderRosterStatus() {
+  const url = getRosterUrl();
+  els.rosterStatus.hidden = !url;
+  els.rosterStatus.textContent = url ? "Roster-Link hinterlegt." : "";
+  els.resetRosterBtn.hidden = !url;
+}
+
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
 // not the PDF file itself - so it survives a page refresh instead of
@@ -437,7 +463,9 @@ function loadStoredPdfCrew() {
 function setSettingsOpen(open) {
   els.setupCard.hidden = !open;
   els.crewPdfCard.hidden = !open;
+  els.rosterCard.hidden = !open;
   if (open) {
+    renderRosterStatus();
     els.flightNav.hidden = true;
     els.flightCard.hidden = true;
     els.layoverCard.hidden = true;
@@ -2008,6 +2036,108 @@ async function ensureCurrentWeatherLoaded(icao, cityLabel) {
   renderLayover();
 }
 
+// ---------- MyTime roster (.ics) - pickup time ----------
+//
+// The roster share URL returns a raw iCalendar feed. Real event formats
+// below are confirmed from an actual export, never guessed:
+//   Flight:   "LH 1172: FRA-LIS"      (space after the airline code)
+//   Deadhead: "DH LH 895: VNO-FRA"
+//   Layover:  "Layover [LIS]"
+//   Pickup:   "14:55 LT Pickup LIS"   (local time already spelled out)
+//   Briefing: "20:00 LT Briefing FRA"
+// Only Pickup is used here - the local-time string in SUMMARY is shown
+// as-is, so no per-station timezone conversion is needed.
+
+function parseIcsEvents(text) {
+  const rawLines = text.split(/\r\n|\n|\r/);
+  // Unfold continuation lines (a leading space/tab means "part of the
+  // previous line") before splitting into KEY:VALUE pairs.
+  const lines = [];
+  for (const line of rawLines) {
+    if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length) {
+      lines[lines.length - 1] += line.slice(1);
+    } else {
+      lines.push(line);
+    }
+  }
+
+  const events = [];
+  let current = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") { current = {}; continue; }
+    if (line === "END:VEVENT") { if (current) events.push(current); current = null; continue; }
+    if (!current) continue;
+    const idx = line.indexOf(":");
+    if (idx < 0) continue;
+    const key = line.slice(0, idx).split(";")[0].toUpperCase();
+    const value = line.slice(idx + 1);
+    if (key === "SUMMARY") current.summary = value;
+    else if (key === "LOCATION") current.location = value;
+    else if (key === "DTSTART") current.dtstart = icsDateToDate(value);
+  }
+  return events;
+}
+
+function icsDateToDate(value) {
+  // "20260919T135500Z" (timed, UTC) or "20260803" (all-day date only).
+  const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(value || "");
+  if (!m) return null;
+  const [, y, mo, d, h, mi, s, z] = m;
+  if (h === undefined) return new Date(Date.UTC(+y, +mo - 1, +d));
+  return z
+    ? new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s))
+    : new Date(+y, +mo - 1, +d, +h, +mi, +s);
+}
+
+const PICKUP_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Pickup\s+(\S+)/i;
+
+// Next Pickup event for the given station after the layover's arrival
+// time - "next" rather than "closest", since a pickup only ever makes
+// sense in the future relative to landing.
+function findRosterPickup(events, stationIcao, afterDate) {
+  const station3 = threeLetterCode(stationIcao).toUpperCase();
+  let best = null;
+  for (const ev of events) {
+    if (!ev.summary || !ev.dtstart) continue;
+    const m = PICKUP_SUMMARY_RE.exec(ev.summary.trim());
+    if (!m) continue;
+    const evStation = (ev.location || m[2] || "").toUpperCase();
+    if (evStation !== station3) continue;
+    if (afterDate && ev.dtstart < afterDate) continue;
+    if (!best || ev.dtstart < best.dtstart) best = { time: m[1], dtstart: ev.dtstart };
+  }
+  return best;
+}
+
+const rosterEventsCache = { events: null, fetchedAt: 0, url: null };
+const ROSTER_CACHE_MS = 15 * 60 * 1000;
+
+function rosterCacheIsStale() {
+  const url = getRosterUrl();
+  if (!url) return false;
+  return rosterEventsCache.url !== url || !rosterEventsCache.events ||
+    Date.now() - rosterEventsCache.fetchedAt >= ROSTER_CACHE_MS;
+}
+
+// Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
+// once, caches (success only - a failed fetch is retried on the next
+// render instead of being remembered as "no pickup"), then re-renders.
+async function ensureRosterLoaded() {
+  const url = getRosterUrl();
+  if (!url || !rosterCacheIsStale()) return;
+  try {
+    const res = await fetchWithTimeout(url, {});
+    if (!res.ok) return;
+    const text = await res.text();
+    rosterEventsCache.events = parseIcsEvents(text);
+    rosterEventsCache.fetchedAt = Date.now();
+    rosterEventsCache.url = url;
+    renderLayover();
+  } catch {
+    /* stays stale, retried on next render */
+  }
+}
+
 let currentRouteStops = null;   // [{icao, dateKey}] for the route currently shown, or null
 let routeWeatherLoaded = false; // avoid re-fetching every time the panel is toggled open again
 
@@ -2178,11 +2308,19 @@ function renderLayover() {
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
-  // No pickup line: only "Layover" + place, hotel, room numbers and
-  // (for a non-euro country) the currency converter belong on this card.
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
-  els.layoverPickup.hidden = true;
+
+  if (getRosterUrl()) {
+    if (rosterCacheIsStale()) ensureRosterLoaded();
+    const pickup = rosterEventsCache.events
+      ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
+      : null;
+    els.layoverPickup.hidden = !pickup;
+    els.layoverPickup.textContent = pickup ? `Pickup: ${pickup.time} LT` : "";
+  } else {
+    els.layoverPickup.hidden = true;
+  }
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -2451,6 +2589,28 @@ els.resetKeyBtn.addEventListener("click", () => {
   state.flights = [];
   showBanner("", "");
   loadFlights();
+});
+
+els.saveRosterBtn.addEventListener("click", () => {
+  const val = els.rosterUrlInput.value.trim();
+  if (!val) return;
+  setRosterUrl(val);
+  els.rosterUrlInput.value = "";
+  rosterEventsCache.events = null;
+  rosterEventsCache.fetchedAt = 0;
+  rosterEventsCache.url = null;
+  renderRosterStatus();
+  renderLayover();
+});
+
+els.resetRosterBtn.addEventListener("click", () => {
+  if (!confirm("Roster-Link auf diesem Gerät entfernen?")) return;
+  clearRosterUrl();
+  rosterEventsCache.events = null;
+  rosterEventsCache.fetchedAt = 0;
+  rosterEventsCache.url = null;
+  renderRosterStatus();
+  renderLayover();
 });
 
 els.refreshBtn.addEventListener("click", loadFlights);

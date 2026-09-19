@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=23" />
+<link rel="stylesheet" href="assets/style.css?v=24" />
 </head>
 <body>
 
@@ -71,6 +71,28 @@
     <p id="crewPdfStatus" class="muted small" hidden></p>
     <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
     <div id="crewPdfResult" class="pdf-text" hidden></div>
+  </section>
+
+  <!-- MyTime-Roster-Link (optional, nur in den Settings): liefert die
+       Pickup-Zeit im Layover. -->
+  <section id="rosterCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>MyTime-Roster</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Zeigt im Layover die Pickup-Zeit an. Der Link enthält deinen
+      persönlichen MyTime-Schlüssel und wird nur lokal auf diesem Gerät
+      gespeichert und bei jeder Anfrage direkt an
+      <code>api.lufthansa.com</code> gesendet. Er verlässt dieses Gerät
+      sonst nicht.
+    </p>
+    <label for="rosterUrlInput">Roster-Link (aus MyTime "Teilen")</label>
+    <input id="rosterUrlInput" type="password" inputmode="url" autocomplete="off"
+           spellcheck="false" placeholder="https://api.lufthansa.com/mytime/..." />
+    <button id="saveRosterBtn" class="btn secondary">Speichern</button>
+    <p id="rosterStatus" class="muted small" hidden></p>
+    <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
   </section>
 
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
@@ -208,6 +230,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=56"></script>
+<script src="assets/app.js?v=57"></script>
 </body>
 </html>

@@ -629,6 +629,22 @@ function renderFlightNav() {
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";
 }
 
+// Shared by the timer pill (off-block delay) and the flight number's
+// callsign suffix - both want the same AeroDataBox lookup for this
+// pilot's own current flight (its own flight number + date), so this is
+// the one place that checks the cache and triggers a fetch if it's
+// stale, rather than each caller doing that separately.
+function getOwnFlightAeroDataBoxLeg(f) {
+  const dateKey = f.raw && f.raw.date;
+  if (!getAeroDataBoxKey() || !f.flightNumber || !dateKey) return null;
+  const cacheKey = `${f.flightNumber}|${dateKey}`;
+  const cached = flightByNumberCache.get(cacheKey);
+  if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+    ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+  }
+  return cached ? cached.leg : null;
+}
+
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
 // Once AeroDataBox confirms this exact flight has actually gone off-block
@@ -648,20 +664,12 @@ function renderTimerPill(f) {
     return;
   }
 
-  const dateKey = f.raw && f.raw.date;
-  if (getAeroDataBoxKey() && f.flightNumber && dateKey) {
-    const cacheKey = `${f.flightNumber}|${dateKey}`;
-    const cached = flightByNumberCache.get(cacheKey);
-    if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
-      ensureFlightByNumberLoaded(f.flightNumber, dateKey);
-    }
-    const leg = cached && cached.leg;
-    if (leg && leg.depRunwayDate) {
-      const offBlockDiffMin = Math.round((leg.depRunwayDate.getTime() - f.depSchedDate.getTime()) / 60000);
-      els.flightStatus.textContent = offBlockDiffMin > 0 ? `Off Block +${offBlockDiffMin} min` : `Off Block ${offBlockDiffMin} min`;
-      els.flightStatus.className = offBlockDiffMin > 0 ? "status-pill timer-after" : "status-pill timer-before";
-      return;
-    }
+  const leg = getOwnFlightAeroDataBoxLeg(f);
+  if (leg && leg.depRunwayDate) {
+    const offBlockDiffMin = Math.round((leg.depRunwayDate.getTime() - f.depSchedDate.getTime()) / 60000);
+    els.flightStatus.textContent = offBlockDiffMin > 0 ? `Off Block +${offBlockDiffMin} min` : `Off Block ${offBlockDiffMin} min`;
+    els.flightStatus.className = offBlockDiffMin > 0 ? "status-pill timer-after" : "status-pill timer-before";
+    return;
   }
 
   const diffMin = Math.round((f.depSchedDate.getTime() - Date.now()) / 60000);
@@ -803,7 +811,11 @@ function renderFlight() {
   }
   els.dutyStatusCard.hidden = true;
 
-  els.flightNumber.textContent = f.flightNumber;
+  // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
+  // main flight card, not in the crew list's inbound/outbound labels or
+  // the transit line, which are about other flights, not this one.
+  const ownLeg = getOwnFlightAeroDataBoxLeg(f);
+  els.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
   renderTimerPill(f);
 
   els.depCode.textContent = f.depCode;
@@ -2572,6 +2584,7 @@ function normalizeAircraftLeg(leg) {
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
+    callSign: leg.callSign || null,
   };
 }
 

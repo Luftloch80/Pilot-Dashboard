@@ -793,13 +793,11 @@ function scrollTrackToIndex(index) {
 // often tomorrow's. Used wherever a layover is shown - the last flight's
 // own transit line, and the separate Layover card once that takes over -
 // whenever there's no MyTime roster pickup to show instead.
-function computeLayoverPickup(flight) {
-  const onward = adjacentFlight(flight, 1);
-  const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
-  if (!onwardDep || !flight.arrSchedDate) return null;
-  const restStart = new Date(flight.arrSchedDate.getTime() + 30 * 60000);
-  const pickupUtc = new Date(onwardDep.getTime() - 60 * 60000);
-  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
+function findRosterPickupForFlight(flight) {
+  if (!getRosterUrl() || !rosterEventsCache.events) return null;
+  const arr = flight.arrActualDate || flight.arrSchedDate;
+  if (!arr) return null;
+  return findRosterPickup(rosterEventsCache.events, flight.arrCode, arr);
 }
 
 // Transit to the next own flight and, on a Flugzeugwechsel (its
@@ -810,35 +808,31 @@ function computeLayoverPickup(flight) {
 // its own transit line (about its own next flight), but only the active
 // one is allowed to trigger AeroDataBox lookups - scrolling past several
 // cards shouldn't fire off a lookup for each.
-function renderFlightCardTransit(i, isActive, cardEls, ownLeg) {
+function renderFlightCardTransit(i, isActive, cardEls) {
   const f = state.flights[i];
   const nextFlight = state.flights[i + 1];
 
   // Last flight of the day: no more flights today to transit into, but if
-  // this landing isn't back at home base, it's a layover - show its
-  // rest window instead of leaving the line blank. Rest starts 30 min
-  // after scheduled arrival (post-flight duties) and ends at pickup, 60
-  // min before the next flight's scheduled departure (checked across the
-  // whole loaded rotation, not just today - the next flight is often
-  // tomorrow's).
+  // this landing isn't back at home base, it's a layover - show that
+  // instead of leaving the line blank. Pickup/rest time only ever comes
+  // from the MyTime roster (see findRosterPickupForFlight()) - a
+  // computed guess from the next flight's schedule was tried and
+  // confirmed wrong, so it's shown only when the roster actually has it.
   if (!nextFlight) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
       cardEls.transitInfo.textContent = "";
       return;
     }
-    const fallback = computeLayoverPickup(f);
-    if (!fallback) {
-      cardEls.transitInfo.hidden = true;
-      cardEls.transitInfo.textContent = "";
-      return;
-    }
     const city = cityForIcao(f.arrCode) || f.arrCode;
-    const pickupLabel = fmtTimeAtOffset(fallback.pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(fallback.pickupUtc);
-
     let text = `Layover ${city}`;
-    if (fallback.restLabel) text += ` · Ruhezeit ${fallback.restLabel}`;
-    text += ` · Pickup ${pickupLabel}`;
+    const pickup = findRosterPickupForFlight(f);
+    if (pickup) {
+      const arr = f.arrActualDate || f.arrSchedDate;
+      const restLabel = arr ? fmtDurationHM(pickup.dtstart.getTime() - (arr.getTime() + 30 * 60000)) : null;
+      if (restLabel) text += ` · Ruhezeit ${restLabel}`;
+      text += ` · Pickup ${pickup.time} LT`;
+    }
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = text;
     return;
@@ -909,7 +903,7 @@ function renderFlightCardContent(i, isActive) {
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;
 
-  renderFlightCardTransit(i, isActive, cardEls, ownLeg);
+  renderFlightCardTransit(i, isActive, cardEls);
 }
 
 // Identifies today's flight list by flight number + date only (not
@@ -2648,8 +2642,12 @@ async function ensureRosterLoaded(force) {
     rosterEventsCache.url = url;
 
     const legs = parseRosterFlightLegs(events);
-    const changed = applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
-    if (changed) renderFlight();
+    applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
+    // Always, not just if applyRosterMasterOverrides() changed a flight
+    // time - the last flight's transit line also depends on roster data
+    // (its pickup time, see findRosterPickupForFlight()) and needs a
+    // chance to pick that up once it arrives, even when no time changed.
+    renderFlight();
     renderLayover();
   } catch {
     /* stays stale, retried on next call */
@@ -2675,27 +2673,6 @@ async function ensureRosterLoaded(force) {
 function parseAeroDataBoxUtc(s) {
   const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})Z$/.exec(s || "");
   return m ? new Date(`${m[1]}T${m[2]}:00Z`) : null;
-}
-
-// AeroDataBox's "local" time fields (e.g. "2026-09-19 15:30+01:00") carry
-// the airport's actual UTC offset for that date - a more reliable source
-// for "what's the wall-clock time at this station" than a static
-// ICAO/timezone table would be (no DST bookkeeping needed on our side).
-function parseAeroDataBoxOffsetMinutes(s) {
-  const m = /([+-])(\d{2}):(\d{2})$/.exec(s || "");
-  if (!m) return null;
-  const sign = m[1] === "-" ? -1 : 1;
-  return sign * (parseInt(m[2], 10) * 60 + parseInt(m[3], 10));
-}
-
-// Renders a UTC instant as the wall-clock time at a station offsetMinutes
-// away from UTC - "LT" (local time) rather than fmtTime()'s "Z"/UTC.
-function fmtTimeAtOffset(utcDate, offsetMinutes) {
-  if (!utcDate || offsetMinutes == null) return null;
-  const shifted = new Date(utcDate.getTime() + offsetMinutes * 60000);
-  const hh = String(shifted.getUTCHours()).padStart(2, "0");
-  const mm = String(shifted.getUTCMinutes()).padStart(2, "0");
-  return `${hh}:${mm} LT`;
 }
 
 function dedupeAircraftLegs(raw) {
@@ -2742,10 +2719,6 @@ function normalizeAircraftLeg(leg) {
     // live/updated time, e.g. the "outbound" label's departure.
     depSchedDate: parseAeroDataBoxUtc(dep.scheduledTime && dep.scheduledTime.utc),
     arrSchedDate: parseAeroDataBoxUtc(arr.scheduledTime && arr.scheduledTime.utc),
-    // Arrival station's UTC offset (see parseAeroDataBoxOffsetMinutes()) -
-    // used to show the layover pickup time in local time on the last
-    // flight of the day's transit line.
-    arrUtcOffsetMin: parseAeroDataBoxOffsetMinutes(arr.scheduledTime && arr.scheduledTime.local),
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
     registration: (leg.aircraft && leg.aircraft.reg) || null,
@@ -3039,31 +3012,15 @@ function renderLayover() {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
-  let rosterPickup = null;
-  if (getRosterUrl()) {
-    ensureRosterLoaded();
-    rosterPickup = rosterEventsCache.events
-      ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
-      : null;
-  }
-  if (rosterPickup) {
-    els.layoverPickup.hidden = false;
-    els.layoverPickup.textContent = `Pickup: ${rosterPickup.time} LT`;
-  } else {
-    // No roster configured, or none of its events matched this leg -
-    // same computed fallback as the last flight's own transit line
-    // (see computeLayoverPickup()), so a pickup time still shows here
-    // rather than nothing at all.
-    const fallback = layover.flight ? computeLayoverPickup(layover.flight) : null;
-    if (fallback) {
-      const ownLeg = getOwnFlightAeroDataBoxLeg(layover.flight, { peekOnly: false });
-      const pickupLabel = fmtTimeAtOffset(fallback.pickupUtc, ownLeg && ownLeg.arrUtcOffsetMin) || fmtTime(fallback.pickupUtc);
-      els.layoverPickup.hidden = false;
-      els.layoverPickup.textContent = `Pickup: ${pickupLabel}`;
-    } else {
-      els.layoverPickup.hidden = true;
-    }
-  }
+  // Pickup only ever comes from the MyTime roster - a computed guess
+  // from the next flight's schedule was tried and confirmed wrong, so
+  // there's no fallback here: nothing shown beats a wrong time.
+  if (getRosterUrl()) ensureRosterLoaded();
+  const rosterPickup = getRosterUrl() && rosterEventsCache.events
+    ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
+    : null;
+  els.layoverPickup.hidden = !rosterPickup;
+  els.layoverPickup.textContent = rosterPickup ? `Pickup: ${rosterPickup.time} LT` : "";
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;

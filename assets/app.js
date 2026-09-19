@@ -552,11 +552,14 @@ function pickInitialIndex(flights) {
 function renderFlightNav() {
   const n = state.flights.length;
   els.flightNav.hidden = n === 0;
-  // Nothing to scroll to in that direction - hide the arrow entirely
-  // instead of just disabling it (covers both the single-flight day and
-  // the first/last flight of a day with several).
-  els.prevFlightBtn.hidden = state.index <= 0;
-  els.nextFlightBtn.hidden = state.index >= n - 1;
+  // Nothing to scroll to in that direction - made invisible rather than
+  // hidden (covers both the single-flight day and the first/last flight
+  // of a day with several): "hidden" removes it from layout, which threw
+  // the space-between flex off-center and made the title shift sideways
+  // whenever only one arrow was showing. visibility:hidden keeps its
+  // layout space, so the title stays centered either way.
+  els.prevFlightBtn.classList.toggle("invisible", state.index <= 0);
+  els.nextFlightBtn.classList.toggle("invisible", state.index >= n - 1);
   els.prevFlightBtn.disabled = state.index <= 0;
   els.nextFlightBtn.disabled = state.index >= n - 1;
   els.flightNavTitle.textContent = n ? `Flug ${state.index + 1} von ${n}` : "–";

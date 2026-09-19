@@ -711,13 +711,23 @@ function renderFlight() {
 
   // Transit = time between this flight's scheduled landing and the next
   // flight's scheduled departure - only meaningful when another flight
-  // follows today, so it's left off after the day's last flight.
+  // follows today, so it's left off after the day's last flight. On a
+  // Flugzeugwechsel (the next flight's registration differs from this
+  // one's - identified via the next flight's own flight number, already
+  // in state.flights), also show that flight's scheduled landing and its
+  // registration, so the new aircraft is visible without paging forward.
   const nextFlight = state.flights[state.index + 1];
   const transitLabel = nextFlight
     ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
     : null;
   els.transitInfo.hidden = !transitLabel;
-  els.transitInfo.textContent = transitLabel ? `Transit: ${transitLabel}` : "";
+  let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
+  const aircraftChange = transitLabel && nextFlight.registration && f.registration &&
+    nextFlight.registration !== "–" && nextFlight.registration !== f.registration;
+  if (aircraftChange) {
+    transitText += ` · Landung ${fmtTime(nextFlight.arrSchedDate)} · ${nextFlight.registration}`;
+  }
+  els.transitInfo.textContent = transitText;
 
   renderCrew(f);
   ensureCrewLoaded(f);

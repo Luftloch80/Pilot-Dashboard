@@ -1613,10 +1613,17 @@ async function renderLayoverCurrency(arrCode) {
   els.currencyNote.textContent = live ? "" : "Ungefährer Kurs (keine Live-Kursdaten verfügbar, ggf. veraltet).";
 }
 
+// The layover view gives way to flight prep 2h before the next departure -
+// not just once that flight has actually left, which would be too late to
+// be useful (checkout, transport to the airport etc. all happen before
+// then).
+const LAYOVER_END_LEAD_MS = 2 * 60 * 60 * 1000;
+
 // Primary layover detection: OpenAirLog flight data, not the PDF. The most
 // recent completed arrival that hasn't been followed by a later departure
-// means we're still there - "if the day before ended in RMO, that's an
-// overnight stay there."
+// (or one about to happen - see LAYOVER_END_LEAD_MS above) means we're
+// still there - "if the day before ended in RMO, that's an overnight stay
+// there."
 function findApiLayover(allFlights) {
   const now = new Date();
   let current = null;
@@ -1631,11 +1638,11 @@ function findApiLayover(allFlights) {
   // the most recent arrival being EDDF (e.g. right before a vacation or
   // Ortstag) would otherwise show a nonsensical "layover" card for home.
   if (current.arrCode === HOME_BASE) return null;
-  const alreadyDeparted = allFlights.some((f) => {
+  const nextDepartureSoon = allFlights.some((f) => {
     const dep = f.depActualDate || f.depSchedDate;
-    return dep && dep > currentArr && dep <= now;
+    return dep && dep > currentArr && dep - now <= LAYOVER_END_LEAD_MS;
   });
-  return alreadyDeparted ? null : { arrCode: current.arrCode, arrTime: currentArr, flight: current };
+  return nextDepartureSoon ? null : { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }
 
 // The PDF is only used to enrich this with a hotel name, if a matching leg

@@ -89,6 +89,7 @@ const els = {
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
   layoverPlace: document.getElementById("layoverPlace"),
+  layoverWeather: document.getElementById("layoverWeather"),
   layoverHotel: document.getElementById("layoverHotel"),
   roomDetails: document.getElementById("roomDetails"),
   roomNumberInput: document.getElementById("roomNumberInput"),
@@ -1974,6 +1975,39 @@ async function fetchDailyWeather(lat, lon, dateKey) {
   }
 }
 
+// Current conditions (not a forecast) at the layover's city, shown right
+// next to the place name - distinct from the route-chain forecast above,
+// which is a future-dated daily outlook for planning, not "right now".
+const currentWeatherCache = new Map(); // icao -> { temp, code, fetchedAt } | { fetchedAt } on failure
+const CURRENT_WEATHER_CACHE_MS = 30 * 60 * 1000;
+
+async function fetchCurrentWeather(lat, lon) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+  try {
+    const res = await fetchWithTimeout(url, {});
+    if (!res.ok) return null;
+    const json = await res.json();
+    const cw = json && json.current_weather;
+    if (!cw || typeof cw.temperature !== "number") return null;
+    return { temp: cw.temperature, code: cw.weathercode };
+  } catch {
+    return null;
+  }
+}
+
+// Fire-and-forget, same pattern as the other ensure*Loaded() helpers -
+// caches (including failures, so a geocoding miss doesn't get retried on
+// every render) and re-renders the layover card once resolved.
+async function ensureCurrentWeatherLoaded(icao, cityLabel) {
+  const cached = currentWeatherCache.get(icao);
+  if (cached && Date.now() - cached.fetchedAt < CURRENT_WEATHER_CACHE_MS) return;
+
+  const coords = await geocodeCity(cityLabel);
+  const weather = coords ? await fetchCurrentWeather(coords.lat, coords.lon) : null;
+  currentWeatherCache.set(icao, { ...(weather || {}), fetchedAt: Date.now() });
+  renderLayover();
+}
+
 let currentRouteStops = null;   // [{icao, dateKey}] for the route currently shown, or null
 let routeWeatherLoaded = false; // avoid re-fetching every time the panel is toggled open again
 
@@ -2152,6 +2186,15 @@ function renderLayover() {
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
+
+  const cachedWeather = currentWeatherCache.get(layover.arrCode);
+  if (cachedWeather === undefined) ensureCurrentWeatherLoaded(layover.arrCode, city || threeLetterCode(layover.arrCode));
+  els.layoverWeather.hidden = !cachedWeather || typeof cachedWeather.temp !== "number";
+  if (cachedWeather && typeof cachedWeather.temp === "number") {
+    const info = weatherInfoForCode(cachedWeather.code);
+    els.layoverWeather.textContent = `${info.icon} ${Math.round(cachedWeather.temp)}°C`;
+  }
+
   els.layoverHotel.hidden = !hotel;
   els.layoverHotel.textContent = hotel || "";
   els.roomNumberInput.value = getRoomNumber(currentLayoverKey);

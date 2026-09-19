@@ -447,6 +447,18 @@ body {
 }
 .layover-hotel { font-size: 0.95rem; margin-top: 8px; margin-bottom: 4px; }
 
+.layover-place-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.layover-weather {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .layover-card label {
   display: block;
   font-size: 0.85rem;

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=22" />
+<link rel="stylesheet" href="assets/style.css?v=23" />
 </head>
 <body>
 
@@ -166,7 +166,10 @@
   <!-- Layover: aus OpenAirLog erkannt -->
   <section id="layoverCard" class="card layover-card" hidden>
     <h2 id="layoverTitle">Layover</h2>
-    <div class="layover-place" id="layoverPlace">---</div>
+    <div class="layover-place-row">
+      <div class="layover-place" id="layoverPlace">---</div>
+      <span class="layover-weather" id="layoverWeather" hidden></span>
+    </div>
     <div class="layover-hotel" id="layoverHotel" hidden></div>
     <p id="layoverPickup" class="muted small" hidden></p>
 
@@ -205,6 +208,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=55"></script>
+<script src="assets/app.js?v=56"></script>
 </body>
 </html>

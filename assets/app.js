@@ -304,7 +304,13 @@ function normalizeCrewMember(m) {
     [pick(m, ["first_name", "firstName"]), pick(m, ["last_name", "lastName"])].filter(Boolean).join(" ") ||
     "Unbekannt";
   const role = pick(m, ["role", "function", "position", "rank", "duty"]) || "";
-  return { name: displayName(String(name)), role: String(role) };
+  // Same DH markers checked for the pilot's own flight (see
+  // normalizeFlight()'s isDeadhead) - a colleague can individually be
+  // deadheading on this flight even when it isn't a deadhead for the
+  // pilot themselves.
+  const isDeadhead = ["crew_position", "duty_code", "remarks", "role", "function", "position", "rank", "duty"]
+    .some((key) => String(m[key] || "").toUpperCase() === "DH");
+  return { name: displayName(String(name)), role: String(role), isDeadhead };
 }
 
 const FLIGHT_NUMBER_KEYS = ["flight_number", "flightNumber", "flight_no", "flightNo", "number", "callsign"];
@@ -926,15 +932,19 @@ function renderFlight() {
   // see findApiLayover()/LAYOVER_END_LEAD_MS), the layover card is the
   // whole story; showing today's flight card hours in advance would just
   // be premature "Fluginfo" on top of it.
-  const inLayover = !!(effectiveDutyType() ? null : findApiLayover(state.allFlights));
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !inLayover;
+  const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !layover;
 
   els.flightCardTrack.hidden = !showFlightCard;
   els.crewCard.hidden = !showFlightCard;
 
   if (!showFlightCard) {
     els.flightCardDots.hidden = true;
-    renderAirlineBadge(null);
+    // A genuine layover still has a flight (the one that led into it) to
+    // show the airline badge for - renderDutyStatus() below only sets its
+    // own badge for vacation/Ortstag and leaves this alone otherwise, so
+    // it doesn't get overwritten.
+    renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
     renderDutyStatus();
     return;
   }
@@ -995,6 +1005,10 @@ function renderCrewMembers(listEl, crew, opts = {}) {
   } = opts;
   listEl.innerHTML = "";
   for (const member of crew) {
+    // Deadheading colleagues aren't working this flight - covers both
+    // OpenAirLog crew (see normalizeCrewMember()'s isDeadhead) and a PDF
+    // crew list, which marks the same thing directly in the role text.
+    if (member.isDeadhead || String(member.role || "").toUpperCase() === "DH") continue;
     const key = crewKey(member.role, member.name);
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -3423,11 +3437,39 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+// Startup (including a plain page reload or relaunching from the
+// home-screen icon) never fetches anything live anymore - only applies
+// whatever was cached from the last manual ↻ (see saveFlightsCache()).
+// The roster works the same way: nothing persisted for it across
+// sessions, so it only reappears once ↻ has actually run again. ↻
+// (refreshAll()) is the only remaining path that talks to any API.
+function loadInitial() {
+  const key = getApiKey();
+  if (!key) {
+    setSettingsOpen(true);
+    els.refreshBtn.hidden = true;
+    els.resetKeyBtn.hidden = true;
+    return;
+  }
+  setSettingsOpen(false);
+  els.refreshBtn.hidden = false;
+  els.resetKeyBtn.hidden = false;
+
+  const cached = loadFlightsCache();
+  if (!cached) {
+    showBanner("Tippe oben auf ↻, um Flugdaten zu laden.", "");
+    return;
+  }
+  applyLoadedFlights(cached.allRaw);
+  lastUpdateAt = new Date(cached.fetchedAt);
+  isOffline = false;
+  renderDataStamp();
+}
+
 renderBrandName();
 loadStoredPdfCrew();
 renderLayover();
-loadFlights();
-ensureRosterLoaded();
+loadInitial();
 
 // Keep the T-minus/T-plus countdown and the layover state current without
 // a full data refresh.

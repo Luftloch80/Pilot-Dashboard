@@ -735,16 +735,34 @@ function renderFlight() {
   const transitLabel = nextFlight
     ? fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate)
     : null;
-  const aircraftChange = transitLabel && nextFlight.registration && f.registration &&
-    nextFlight.registration !== "–" && nextFlight.registration !== f.registration;
+
+  // OpenAirLog's registration is missing on some future-dated entries -
+  // when that happens for the next flight, fall back to looking it up by
+  // its own flight number via AeroDataBox instead (see
+  // ensureFlightByNumberLoaded()), which also backfills the registration
+  // itself, so everything below works the same either way.
+  let nextRegistration = nextFlight && nextFlight.registration !== "–" ? nextFlight.registration : null;
+  if (transitLabel && !nextRegistration && getAeroDataBoxKey() && nextFlight.flightNumber) {
+    const dateKey = nextFlight.raw && nextFlight.raw.date;
+    const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
+    const cachedByNumber = flightByNumberCache.get(cacheKey);
+    if (!cachedByNumber || Date.now() - cachedByNumber.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
+      ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
+    } else if (cachedByNumber.leg) {
+      nextRegistration = cachedByNumber.leg.registration || null;
+    }
+  }
+
+  const aircraftChange = transitLabel && nextRegistration && f.registration &&
+    f.registration !== "–" && nextRegistration !== f.registration;
 
   let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
   if (aircraftChange) {
-    transitText += ` · next A/C ${nextFlight.registration}`;
+    transitText += ` · next A/C ${nextRegistration}`;
     if (getAeroDataBoxKey()) {
-      const cached = aircraftScheduleCache.get(nextFlight.registration);
+      const cached = aircraftScheduleCache.get(nextRegistration);
       if (!cached || Date.now() - cached.fetchedAt >= AIRCRAFT_SCHEDULE_CACHE_MS) {
-        ensureAircraftScheduleLoaded(nextFlight.registration);
+        ensureAircraftScheduleLoaded(nextRegistration);
       } else {
         const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
         if (priorLeg && priorLeg.arrDate) transitText += ` ${priorLeg.flightNumber} ${fmtTime(priorLeg.arrDate)}`;
@@ -2340,6 +2358,7 @@ function normalizeAircraftLeg(leg) {
     depDate, arrDate,
     flightNumber: String(leg.number || "").replace(/\s+/g, ""),
     status: leg.status || "",
+    registration: (leg.aircraft && leg.aircraft.reg) || null,
   };
 }
 
@@ -2362,6 +2381,43 @@ async function fetchAircraftSchedule(registration) {
   } catch {
     return null;
   }
+}
+
+// When OpenAirLog doesn't give a registration for a flight (seen on some
+// future-dated entries), fall back to looking that one flight up by its
+// own number/date instead - confirmed real endpoint and response shape:
+// GET {AERODATABOX_BASE}/flights/Number/{number}/{date} returns a single
+// flight object (not an array, unlike /flights/Reg/{reg}), including
+// aircraft.reg - so this also backfills the missing registration, which
+// is what lets the existing Reg-based schedule lookup and "next A/C"
+// line work exactly as before from here on.
+async function fetchFlightByNumber(flightNumber, dateKey) {
+  const key = getAeroDataBoxKey();
+  if (!key || !flightNumber || !dateKey) return null;
+  const url = `${AERODATABOX_BASE}/flights/Number/${encodeURIComponent(flightNumber)}/${encodeURIComponent(dateKey)}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { accept: "application/json", "x-api-market-key": key } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || Array.isArray(json)) return null;
+    return normalizeAircraftLeg(json);
+  } catch {
+    return null;
+  }
+}
+
+const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
+
+// Fire-and-forget, same pattern as ensureAircraftScheduleLoaded() - once
+// this resolves a registration, also kicks off the normal Reg-based
+// schedule lookup for it so findPriorLegArrival() has something to work
+// with on the next render.
+async function ensureFlightByNumberLoaded(flightNumber, dateKey) {
+  const cacheKey = `${flightNumber}|${dateKey}`;
+  const leg = await fetchFlightByNumber(flightNumber, dateKey);
+  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now() });
+  if (leg && leg.registration) ensureAircraftScheduleLoaded(leg.registration);
+  else renderFlight();
 }
 
 // Within that aircraft's day schedule, the leg landing at the given

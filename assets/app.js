@@ -1664,7 +1664,10 @@ function findApiLayover(allFlights) {
   let currentArr = null;
   for (const f of allFlights) {
     const arr = f.arrActualDate || f.arrSchedDate;
-    if (!arr || arr > now) continue;
+    // Same POST_LANDING_SWITCH_MS buffer as the post-landing home-base
+    // switch, so the flight card doesn't disappear the instant wheels
+    // touch down - the layover view only takes over 30 minutes later.
+    if (!arr || now - arr < POST_LANDING_SWITCH_MS) continue;
     if (!current || arr > currentArr) { current = f; currentArr = arr; }
   }
   if (!current) return null;
@@ -2141,10 +2144,9 @@ function renderLayover() {
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
-  // Just the place, not a separate "Layover" label above it - and no
-  // pickup line: only place, hotel, room numbers and (for a non-euro
-  // country) the currency converter belong on this card.
-  els.layoverTitle.hidden = true;
+  // No pickup line: only "Layover" + place, hotel, room numbers and
+  // (for a non-euro country) the currency converter belong on this card.
+  els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
   els.layoverPickup.hidden = true;
 

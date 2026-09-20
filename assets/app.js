@@ -1193,6 +1193,10 @@ function renderActiveFlightExtras() {
   }
   const f = state.flights[state.index];
   if (!f) return;
+  // Coming back from the preview page above, which hides it - otherwise
+  // renderCrew() below fills #crewList right back in, but the card
+  // itself stays hidden, making the crew look like it vanished.
+  els.crewCard.hidden = false;
   renderFlightCardContent(state.flights, state.cardNodes, state.index, true);
   renderAirlineBadge(f.flightNumber);
   renderCrew(f);

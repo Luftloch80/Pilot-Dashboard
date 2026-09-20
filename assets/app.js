@@ -960,7 +960,14 @@ function computeLegalRestReference(flight) {
   // that minimum (the report-time-based case above), since it says which
   // rule this rest is being checked against, not just which one it
   // happened to equal.
-  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - minRest.restStart), source: minRest.source };
+  const restMinutes = (pickupUtc - minRest.restStart) / 60000;
+  return {
+    pickupUtc,
+    restLabel: fmtDurationHM(pickupUtc - minRest.restStart),
+    source: minRest.source,
+    restMinutes,
+    minMinutes: minRest.minMinutes,
+  };
 }
 
 // Single pickup resolution for a layover - roster event first (see
@@ -1022,19 +1029,23 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
       cardEls.transitInfo.textContent = "";
       return;
     }
-    let pickupLabel = null;
-    let isBackup = false;
     // "RZ" is the legal rest DURATION (report time for the next duty,
     // floored by MTV/EASA's own minimum, minus the end of the arriving
     // duty) - regardless of whether a MyTime roster Pickup event also
-    // exists. See computeLegalRestReference()'s own comment. "Fahrzeit"
-    // is only the gap between the roster's real Pickup and that report
-    // time (the transfer time to the hotel) - shown when a roster pickup
-    // is known and happens before report time.
+    // exists. See computeLegalRestReference()'s own comment. Colored
+    // orange once it's within RZ_TIGHT_MARGIN_MIN of that minimum, red if
+    // it's ever actually below it (shouldn't happen given
+    // computeLegalRestReference()'s own flooring, but the display still
+    // guards against it). "Fahrzeit" is only the gap between the
+    // roster's real Pickup and that report time (the transfer time to
+    // the hotel) - shown when a roster pickup is known and happens
+    // before report time.
     const restRef = computeLegalRestReference(f);
-    const rzLabel = restRef && restRef.restLabel ? `RZ ${restRef.restLabel} (${restRef.source})` : null;
-    let travelLabel = null;
     const pickup = findRosterPickupForFlight(f);
+
+    let pickupLabel = null;
+    let isBackup = false;
+    let travelLabel = null;
     if (pickup) {
       pickupLabel = `Pickup: ${pickup.time} LT`;
       if (restRef && pickup.dtstart < restRef.pickupUtc) {
@@ -1044,15 +1055,29 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
       pickupLabel = `Pickup: ${fmtLocalTimeAtIcao(restRef.pickupUtc, f.arrCode) || fmtTime(restRef.pickupUtc)}`;
       isBackup = true;
     }
-    const prefix = [rzLabel, travelLabel].filter(Boolean).join(" · ");
+
     cardEls.transitInfo.hidden = false;
-    cardEls.transitInfo.textContent = pickupLabel ? `${prefix} · ` : prefix;
+    cardEls.transitInfo.textContent = "";
+    const segments = [];
+    if (restRef && restRef.restLabel) {
+      const margin = restRef.restMinutes - restRef.minMinutes;
+      const rzClass = margin < 0 ? "rz-illegal" : margin <= RZ_TIGHT_MARGIN_MIN ? "rz-tight" : null;
+      const rzSpan = document.createElement("span");
+      if (rzClass) rzSpan.className = rzClass;
+      rzSpan.textContent = `RZ ${restRef.restLabel} (${restRef.source})`;
+      segments.push(rzSpan);
+    }
+    if (travelLabel) segments.push(document.createTextNode(travelLabel));
     if (pickupLabel) {
       const pickupSpan = document.createElement("span");
       pickupSpan.className = isBackup ? "is-backup" : "is-roster";
       pickupSpan.textContent = pickupLabel;
-      cardEls.transitInfo.appendChild(pickupSpan);
+      segments.push(pickupSpan);
     }
+    segments.forEach((node, idx) => {
+      if (idx > 0) cardEls.transitInfo.appendChild(document.createTextNode(" · "));
+      cardEls.transitInfo.appendChild(node);
+    });
     return;
   }
 
@@ -1418,6 +1443,13 @@ const MTV_MIN_REST_TZ_BANDS = [
 // only.
 const EASA_MIN_REST_BASE_MIN = 10 * 60;
 
+// How close the actual (report-time-based) rest is allowed to get to the
+// legal minimum before the displayed "RZ" duration turns orange as a
+// warning - red if it's ever actually below the minimum (shouldn't happen
+// given computeLegalRestReference()'s own flooring, but the display still
+// guards against it). See renderFlightCardTransit()'s RZ span.
+const RZ_TIGHT_MARGIN_MIN = 30;
+
 // Whole-hour UTC offset difference between two ICAO stations at a given
 // instant (DST-aware, via each station's own IANA zone) - null when
 // either station isn't on TIMEZONE_BY_ICAO, so the caller just skips the
@@ -1469,6 +1501,7 @@ function computeMinRestAfterDuty(flight) {
     earliestPickupUtc: new Date(restStart.getTime() + strictest.min * 60000),
     restStart,
     source: strictest.source,
+    minMinutes: strictest.min,
   };
 }
 

@@ -537,6 +537,12 @@ body {
 .is-roster { color: var(--ok); }
 .is-backup { color: var(--warn); }
 
+/* Transit line's own "RZ" duration: orange once it's within
+   RZ_TIGHT_MARGIN_MIN of the legal MTV/EASA minimum, red if it's ever
+   actually below it. See renderFlightCardTransit(). */
+.rz-tight { color: var(--warn); }
+.rz-illegal { color: var(--danger); }
+
 .layover-place {
   font-size: 1.6rem;
   font-weight: 800;

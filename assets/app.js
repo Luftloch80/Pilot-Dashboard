@@ -1311,7 +1311,11 @@ function sectorsForDutyDay(flight) {
 // sector count - whichever actually binds in practice, not both shown
 // side by side. A simplified estimate either way (see
 // localMinuteOfDayBerlin()'s comment) - not a substitute for the
-// airline's own FTL system, and shown for information only.
+// airline's own FTL system, and shown for information only. Always uses
+// depSchedDate straight from OpenAirLog - never anything the MyTime
+// roster feed might otherwise suggest instead (see ensureRosterLoaded()'s
+// comment on why an earlier version of this app tried that and got it
+// wrong), so this can't silently shift once a roster fetch resolves.
 function computeMaxLegalOnBlock(flight) {
   const dutyDay = sectorsForDutyDay(flight);
   const first = dutyDay[0];
@@ -1911,13 +1915,6 @@ function applyLoadedFlights(allRaw) {
   state.allFlights = allFlights;
   state.allDuties = allDuties;
   HOME_BASE = detectHomeBase(allFlights) || HOME_BASE;
-  // Freshly loaded OpenAirLog data has its own new updated_at values, so
-  // re-check against whatever roster data is already cached - a flight
-  // that used to lose the freshness comparison might win it now, or the
-  // other way round.
-  if (rosterEventsCache.events) {
-    applyRosterMasterOverrides(allFlights, parseRosterFlightLegs(rosterEventsCache.events), rosterEventsCache.dtstamp);
-  }
   // Set before renderLayover(): it (indirectly, via effectiveDutyType())
   // reads state.index to check whether the post-landing switch applies,
   // which needs it to already reflect today's freshly loaded flights.
@@ -3010,65 +3007,6 @@ function findRosterPickup(events, stationIcao, afterDate) {
   return best;
 }
 
-// Flight-leg SUMMARY, e.g. "LH 1172: FRA-LIS" or a deadhead's
-// "DH LH 895: VNO-FRA" - used to compare the roster's own scheduled
-// times against OpenAirLog's, see applyRosterMasterOverrides().
-const ROSTER_FLIGHT_SUMMARY_RE = /^(?:DH\s+)?([A-Z0-9]{2})\s*(\d{2,5}):\s*([A-Z]{3})-([A-Z]{3})$/i;
-
-function parseRosterFlightLegs(events) {
-  const legs = [];
-  for (const ev of events) {
-    if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
-    const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
-    if (!m) continue;
-    legs.push({
-      flightNumber: `${m[1].toUpperCase()}${m[2]}`,
-      depIata: m[3].toUpperCase(),
-      arrIata: m[4].toUpperCase(),
-      depDate: ev.dtstart,
-      arrDate: ev.dtend,
-    });
-  }
-  return legs;
-}
-
-// OpenAirLog has no field telling us which of two disagreeing sources is
-// current, so freshness is compared directly: the roster feed's own
-// DTSTAMP (when Lufthansa generated this export) against the matching
-// OpenAirLog flight's own updated_at. Whichever is newer for that one
-// flight wins - this can go either way per flight, not a global choice.
-const ROSTER_MATCH_TOLERANCE_MS = 24 * 60 * 60 * 1000;
-
-function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
-  if (!rosterDtstamp || !legs.length) return false;
-  let changed = false;
-  for (const leg of legs) {
-    let match = null;
-    let bestDiff = Infinity;
-    for (const f of allFlights) {
-      if (f.flightNumber !== leg.flightNumber || !f.depSchedDate) continue;
-      const diff = Math.abs(f.depSchedDate.getTime() - leg.depDate.getTime());
-      if (diff < bestDiff && diff <= ROSTER_MATCH_TOLERANCE_MS) { match = f; bestDiff = diff; }
-    }
-    if (!match || !match.updatedAt || rosterDtstamp <= match.updatedAt) continue;
-
-    // Same safety spirit as ensureFlightRouteLoaded()'s check on a
-    // flight-number search result - only trust the match once the route
-    // itself actually agrees, not just a coincidentally close time.
-    if (threeLetterCode(match.depCode) !== leg.depIata || threeLetterCode(match.arrCode) !== leg.arrIata) continue;
-
-    if (Math.abs(match.depSchedDate.getTime() - leg.depDate.getTime()) >= 60000) {
-      match.depSchedDate = leg.depDate;
-      changed = true;
-    }
-    if (leg.arrDate && (!match.arrSchedDate || Math.abs(match.arrSchedDate.getTime() - leg.arrDate.getTime()) >= 60000)) {
-      match.arrSchedDate = leg.arrDate;
-      changed = true;
-    }
-  }
-  return changed;
-}
-
 const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null, viaProxy: null };
 
 // By the time this runs, the direct fetch AND every proxy in
@@ -3164,8 +3102,8 @@ async function fetchRosterIcsText(url) {
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
 // once per URL and never again on its own (no automatic refresh - see
-// refreshAll()) - applies whichever of the two sources' flight times is
-// fresher (see applyRosterMasterOverrides()), then re-renders. force
+// refreshAll()), then re-renders so anything reading rosterEventsCache
+// (pickup times, see findRosterPickupForFlight()) picks it up. force
 // bypasses the "already fetched this URL" check, used by refreshAll()
 // to actually pull a new copy on ↻ instead of reusing the cached one.
 // A fetch already in flight, joined instead of starting another one -
@@ -3197,12 +3135,16 @@ async function ensureRosterLoaded(force) {
       rosterEventsCache.lastError = null;
       renderRosterStatus();
 
-      const legs = parseRosterFlightLegs(events);
-      applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
-      // Always, not just if applyRosterMasterOverrides() changed a flight
-      // time - the last flight's transit line also depends on roster data
-      // (its pickup time, see findRosterPickupForFlight()) and needs a
-      // chance to pick that up once it arrives, even when no time changed.
+      // The last flight's transit line (and the Layover card) depend on
+      // roster data too (its pickup time, see findRosterPickupForFlight()) -
+      // re-render now that it's arrived. Scheduled flight times themselves
+      // (depSchedDate/arrSchedDate) are never touched by roster data - see
+      // computeMaxLegalOnBlock()'s comment: an earlier "trust whichever
+      // source is fresher" override here shifted a flight's own scheduled
+      // time away from OpenAirLog's, which in turn silently changed the
+      // legal FDP limit already shown - confirmed wrong against a real eFF
+      // screen, since FDP is computed against the officially planned
+      // report time, not whatever a re-fetch happens to disagree on.
       renderFlight();
       renderLayover();
     } catch (e) {

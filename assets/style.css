@@ -242,6 +242,8 @@ body {
   margin-top: 12px;
 }
 
+.error-inline { color: var(--danger); }
+
 .setup-card #resetKeyBtn {
   margin-top: 16px;
 }

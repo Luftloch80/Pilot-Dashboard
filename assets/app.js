@@ -402,11 +402,28 @@ function clearRosterUrl() {
   try { localStorage.removeItem(ROSTER_URL_STORAGE_KEY); } catch { /* ignore */ }
 }
 
+// Surfaces ensureRosterLoaded()'s actual outcome (see rosterEventsCache's
+// lastError/fetchedAt) instead of a static "link saved" message - a
+// silently failing fetch (network, CORS, a bad link) previously looked
+// identical to "no matching pickup event", with no way to tell them
+// apart from the Layover card alone.
 function renderRosterStatus() {
   const url = getRosterUrl();
   els.rosterStatus.hidden = !url;
-  els.rosterStatus.textContent = url ? "Roster-Link hinterlegt." : "";
   els.resetRosterBtn.hidden = !url;
+  if (!url) {
+    els.rosterStatus.textContent = "";
+    return;
+  }
+  if (rosterEventsCache.lastError) {
+    els.rosterStatus.textContent = `Fehler beim Abrufen: ${rosterEventsCache.lastError}`;
+    els.rosterStatus.classList.add("error-inline");
+    return;
+  }
+  els.rosterStatus.classList.remove("error-inline");
+  els.rosterStatus.textContent = rosterEventsCache.fetchedAt
+    ? `Zuletzt erfolgreich abgerufen: ${fmtLocalTime(new Date(rosterEventsCache.fetchedAt))}`
+    : "Roster-Link hinterlegt, noch nicht abgerufen.";
 }
 
 // ---------- AeroDataBox API key storage ----------
@@ -2904,7 +2921,20 @@ function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
   return changed;
 }
 
-const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null };
+const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null };
+
+// A plain "TypeError: Failed to fetch" is what a browser throws for a
+// blocked cross-origin request - a bad/expired link, a network drop, AND
+// a CORS rejection (api.lufthansa.com not allowing this origin) all look
+// identical from here, so this can only report is as "network/CORS",
+// not tell those apart - genuinely not distinguishable from inside the
+// page itself. See renderRosterStatus(), which surfaces this instead of
+// silently leaving the pilot looking at an unexplained backup pickup.
+function describeRosterFetchError(e) {
+  if (e && e.name === "AbortError") return "Zeitüberschreitung beim Abrufen.";
+  if (e instanceof TypeError) return "Netzwerk- oder CORS-Fehler - Server nicht erreichbar oder blockiert den direkten Zugriff aus dem Browser.";
+  return `Unerwarteter Fehler (${e && e.message ? e.message : e}).`;
+}
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
 // once per URL and never again on its own (no automatic refresh - see
@@ -2922,13 +2952,19 @@ async function ensureRosterLoaded(force) {
     // real "refresh did nothing" bug this app has no way to detect,
     // since force just skips OUR cache, not the browser's underneath it.
     const res = await fetchWithTimeout(url, { cache: "no-store" });
-    if (!res.ok) return;
+    if (!res.ok) {
+      rosterEventsCache.lastError = `HTTP ${res.status}`;
+      renderRosterStatus();
+      return;
+    }
     const text = await res.text();
     const events = parseIcsEvents(text);
     rosterEventsCache.events = events;
     rosterEventsCache.dtstamp = events.find((ev) => ev.dtstamp)?.dtstamp || null;
     rosterEventsCache.fetchedAt = Date.now();
     rosterEventsCache.url = url;
+    rosterEventsCache.lastError = null;
+    renderRosterStatus();
 
     const legs = parseRosterFlightLegs(events);
     applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
@@ -2938,8 +2974,11 @@ async function ensureRosterLoaded(force) {
     // chance to pick that up once it arrives, even when no time changed.
     renderFlight();
     renderLayover();
-  } catch {
-    /* stays stale, retried on next call */
+  } catch (e) {
+    // Stays stale, retried on next call - but now at least visible in
+    // Settings (see renderRosterStatus()) instead of a silent no-op.
+    rosterEventsCache.lastError = describeRosterFetchError(e);
+    renderRosterStatus();
   }
 }
 
@@ -3615,6 +3654,7 @@ els.saveRosterBtn.addEventListener("click", () => {
   rosterEventsCache.events = null;
   rosterEventsCache.fetchedAt = 0;
   rosterEventsCache.url = null;
+  rosterEventsCache.lastError = null;
   renderRosterStatus();
   renderLayover();
 });
@@ -3625,6 +3665,7 @@ els.resetRosterBtn.addEventListener("click", () => {
   rosterEventsCache.events = null;
   rosterEventsCache.fetchedAt = 0;
   rosterEventsCache.url = null;
+  rosterEventsCache.lastError = null;
   renderRosterStatus();
   renderLayover();
 });

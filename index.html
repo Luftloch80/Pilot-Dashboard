@@ -86,9 +86,10 @@
       persönlichen MyTime-Schlüssel und wird lokal auf diesem Gerät
       gespeichert. <code>api.lufthansa.com</code> blockiert direkte
       Zugriffe aus dem Browser (CORS); der Abruf läuft deshalb über
-      den öffentlichen CORS-Proxy <code>allorigins.win</code> - der
-      Link wird also auch an diesen Drittanbieter übertragen, nicht
-      nur an Lufthansa.
+      einen öffentlichen CORS-Proxy (<code>corsproxy.io</code> mit
+      Schlüssel unten, sonst <code>allorigins.win</code>) - der Link
+      wird also auch an diesen Drittanbieter übertragen, nicht nur an
+      Lufthansa.
     </p>
     <label for="rosterUrlInput">Roster-Link (aus MyTime "Teilen")</label>
     <input id="rosterUrlInput" type="password" inputmode="url" autocomplete="off"
@@ -96,6 +97,13 @@
     <button id="saveRosterBtn" class="btn secondary">Speichern</button>
     <p id="rosterStatus" class="muted small" hidden></p>
     <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
+
+    <label for="corsProxyKeyInput">corsproxy.io API-Schlüssel (optional, für einen zuverlässigeren Abruf)</label>
+    <input id="corsProxyKeyInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein corsproxy.io API-Schlüssel" />
+    <button id="saveCorsProxyKeyBtn" class="btn secondary">Speichern</button>
+    <p id="corsProxyKeyStatus" class="muted small" hidden></p>
+    <button id="resetCorsProxyKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
   <!-- AeroDataBox (optional, nur in den Settings): bei einem
@@ -261,6 +269,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=100"></script>
+<script src="assets/app.js?v=101"></script>
 </body>
 </html>

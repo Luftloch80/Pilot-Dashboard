@@ -111,6 +111,10 @@ const els = {
   saveRosterBtn: document.getElementById("saveRosterBtn"),
   rosterStatus: document.getElementById("rosterStatus"),
   resetRosterBtn: document.getElementById("resetRosterBtn"),
+  corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
+  saveCorsProxyKeyBtn: document.getElementById("saveCorsProxyKeyBtn"),
+  corsProxyKeyStatus: document.getElementById("corsProxyKeyStatus"),
+  resetCorsProxyKeyBtn: document.getElementById("resetCorsProxyKeyBtn"),
 
   aeroDataBoxCard: document.getElementById("aeroDataBoxCard"),
   aeroDataBoxKeyInput: document.getElementById("aeroDataBoxKeyInput"),
@@ -419,6 +423,26 @@ function clearRosterUrl() {
   try { localStorage.removeItem(ROSTER_URL_STORAGE_KEY); } catch { /* ignore */ }
 }
 
+// ---------- corsproxy.io API key storage (see rosterCorsProxyBuilders()) ----------
+
+const CORSPROXY_KEY_STORAGE_KEY = "oal_corsproxy_key";
+function getCorsProxyKey() {
+  try { return localStorage.getItem(CORSPROXY_KEY_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setCorsProxyKey(key) {
+  try { localStorage.setItem(CORSPROXY_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
+}
+function clearCorsProxyKey() {
+  try { localStorage.removeItem(CORSPROXY_KEY_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function renderCorsProxyKeyStatus() {
+  const key = getCorsProxyKey();
+  els.corsProxyKeyStatus.hidden = !key;
+  els.corsProxyKeyStatus.textContent = key ? "corsproxy.io-Schlüssel hinterlegt." : "";
+  els.resetCorsProxyKeyBtn.hidden = !key;
+}
+
 // Surfaces ensureRosterLoaded()'s actual outcome (see rosterEventsCache's
 // lastError/fetchedAt) instead of a static "link saved" message - a
 // silently failing fetch (network, CORS, a bad link) previously looked
@@ -581,6 +605,7 @@ function setSettingsOpen(open) {
   els.aeroDataBoxCard.hidden = !open;
   if (open) {
     renderRosterStatus();
+    renderCorsProxyKeyStatus();
     renderAeroDataBoxStatus();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
@@ -2971,11 +2996,18 @@ function describeRosterFetchError(e) {
 // transient outage, or Lufthansa's server itself rejecting a request
 // that arrives from a known proxy's IP/user-agent - not distinguishable
 // from here). If one is down or blocked, the next gets a chance instead
-// of the whole feature failing.
-const ROSTER_CORS_PROXIES = [
-  (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
-  (url) => "https://corsproxy.io/?url=" + encodeURIComponent(url),
-];
+// of the whole feature failing. corsproxy.io now requires an API key
+// (confirmed: HTTP 401 without one) - see CORSPROXY_KEY_STORAGE_KEY;
+// when the pilot has one, it's tried FIRST (an authenticated request is
+// more likely to succeed than a free anonymous one), otherwise it's
+// skipped entirely rather than wasting a round trip on a guaranteed 401.
+function rosterCorsProxyBuilders() {
+  const key = getCorsProxyKey();
+  const allorigins = (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+  const corsproxyIo = (url) =>
+    "https://corsproxy.io/?url=" + encodeURIComponent(url) + (key ? "&key=" + encodeURIComponent(key) : "");
+  return key ? [corsproxyIo, allorigins] : [allorigins];
+}
 
 // One fetch attempt against `url`; throws with as much detail as the
 // response actually gives (status + a short body snippet, since a proxy
@@ -2994,18 +3026,18 @@ async function fetchTextOrThrow(url) {
 
 // Tries the roster URL directly first (kept in case api.lufthansa.com
 // ever adds CORS support, or a future roster source doesn't need a
-// proxy at all), then each of ROSTER_CORS_PROXIES in turn once that
-// fails - so a direct success never touches any third party. Returns
-// {text, viaProxy} (viaProxy is null for a direct success, else the
-// proxy's hostname) or throws the LAST attempt's error, since that one
-// reflects the roster's own reachability most closely (the proxy chain
-// is exhausted by then).
+// proxy at all), then each of rosterCorsProxyBuilders() in turn once
+// that fails - so a direct success never touches any third party.
+// Returns {text, viaProxy} (viaProxy is null for a direct success, else
+// the proxy's hostname) or throws the LAST attempt's error, since that
+// one reflects the roster's own reachability most closely (the proxy
+// chain is exhausted by then).
 async function fetchRosterIcsText(url) {
   try {
     return { text: await fetchTextOrThrow(url), viaProxy: null };
   } catch (directErr) {
     let lastErr = directErr;
-    for (const buildProxyUrl of ROSTER_CORS_PROXIES) {
+    for (const buildProxyUrl of rosterCorsProxyBuilders()) {
       const proxied = buildProxyUrl(url);
       try {
         const text = await fetchTextOrThrow(proxied);
@@ -3742,6 +3774,27 @@ els.resetRosterBtn.addEventListener("click", () => {
   rosterEventsCache.lastError = null;
   renderRosterStatus();
   renderLayover();
+});
+
+els.saveCorsProxyKeyBtn.addEventListener("click", () => {
+  const val = els.corsProxyKeyInput.value.trim();
+  if (!val) return;
+  setCorsProxyKey(val);
+  els.corsProxyKeyInput.value = "";
+  renderCorsProxyKeyStatus();
+  // A previous failure may only have been the missing key - retry now
+  // rather than making the pilot tap ↻ separately.
+  rosterEventsCache.events = null;
+  rosterEventsCache.fetchedAt = 0;
+  rosterEventsCache.url = null;
+  rosterEventsCache.lastError = null;
+  ensureRosterLoaded(true);
+});
+
+els.resetCorsProxyKeyBtn.addEventListener("click", () => {
+  if (!confirm("corsproxy.io API-Schlüssel auf diesem Gerät entfernen?")) return;
+  clearCorsProxyKey();
+  renderCorsProxyKeyStatus();
 });
 
 els.saveAeroDataBoxBtn.addEventListener("click", () => {

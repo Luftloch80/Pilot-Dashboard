@@ -425,7 +425,7 @@ function renderRosterStatus() {
     els.rosterStatus.textContent = "Roster-Link hinterlegt, noch nicht abgerufen.";
     return;
   }
-  const via = rosterEventsCache.viaProxy ? " (über CORS-Proxy)" : "";
+  const via = rosterEventsCache.viaProxy ? ` (über ${rosterEventsCache.viaProxy})` : "";
   els.rosterStatus.textContent = `Zuletzt erfolgreich abgerufen: ${fmtLocalTime(new Date(rosterEventsCache.fetchedAt))}${via}`;
 }
 
@@ -2924,20 +2924,16 @@ function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
   return changed;
 }
 
-const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null, viaProxy: false };
+const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null, viaProxy: null };
 
-// By the time this runs (see fetchRosterIcsText()), BOTH the direct
-// fetch and the CORS-proxy fallback have already failed - a plain
-// "TypeError: Failed to fetch" from the proxy attempt could still mean a
-// bad/expired roster link, a dropped connection, or the proxy itself
-// being down, not tellable apart from here. An HTTP-status failure (ours
-// or the proxy's) instead carries its own message (e.g. "HTTP 404 (über
-// CORS-Proxy)"), shown as-is. See renderRosterStatus(), which surfaces
-// this instead of silently leaving the pilot looking at an unexplained
-// backup pickup.
+// By the time this runs, the direct fetch AND every proxy in
+// ROSTER_CORS_PROXIES have already failed - fetchRosterIcsText() throws
+// whichever proxy's own error was last, already prefixed with that
+// proxy's hostname (e.g. "corsproxy.io: HTTP 400 – ..."), which is more
+// useful shown as-is than collapsed into one generic message. See
+// renderRosterStatus(), which surfaces this instead of silently leaving
+// the pilot looking at an unexplained backup pickup.
 function describeRosterFetchError(e) {
-  if (e && e.name === "AbortError") return "Zeitüberschreitung beim Abrufen.";
-  if (e instanceof TypeError) return "Netzwerk-Fehler - weder direkt noch über den CORS-Proxy erreichbar.";
   return (e && e.message) || "Unbekannter Fehler beim Abrufen.";
 }
 
@@ -2951,29 +2947,58 @@ function describeRosterFetchError(e) {
 // own permissive CORS headers - meaning the roster link (with its
 // embedded MyTime key) is sent to this third party too, not just
 // Lufthansa; disclosed in the Settings copy above the roster input.
-const ROSTER_CORS_PROXY_PREFIX = "https://api.allorigins.win/raw?url=";
+//
+// More than one, tried in order: a single public proxy is unreliable on
+// its own (confirmed against the pilot's real link - allorigins.win came
+// back with a bare "HTTP 400", which could be its own rate-limiting, a
+// transient outage, or Lufthansa's server itself rejecting a request
+// that arrives from a known proxy's IP/user-agent - not distinguishable
+// from here). If one is down or blocked, the next gets a chance instead
+// of the whole feature failing.
+const ROSTER_CORS_PROXIES = [
+  (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url),
+  (url) => "https://corsproxy.io/?url=" + encodeURIComponent(url),
+];
+
+// One fetch attempt against `url`; throws with as much detail as the
+// response actually gives (status + a short body snippet, since a proxy
+// failure's body often explains why - e.g. an upstream rejection - far
+// better than the bare status code alone).
+async function fetchTextOrThrow(url) {
+  // no-store: this URL never changes, so without it the browser's own
+  // HTTP cache can silently keep answering from an old snapshot - a
+  // real "refresh did nothing" bug this app has no way to detect, since
+  // force just skips OUR cache, not the browser's underneath it.
+  const res = await fetchWithTimeout(url, { cache: "no-store" });
+  if (res.ok) return res.text();
+  const snippet = await res.text().catch(() => "");
+  throw new Error(`HTTP ${res.status}${snippet ? ` – ${snippet.trim().slice(0, 150)}` : ""}`);
+}
 
 // Tries the roster URL directly first (kept in case api.lufthansa.com
 // ever adds CORS support, or a future roster source doesn't need a
-// proxy at all), falling back to ROSTER_CORS_PROXY_PREFIX only once that
-// fails - so a direct success never touches the third party. Returns
-// {text, viaProxy} or throws whichever attempt's error is more useful
-// (the proxy's, since that's the one actually reflecting whether the
-// roster is reachable at all).
+// proxy at all), then each of ROSTER_CORS_PROXIES in turn once that
+// fails - so a direct success never touches any third party. Returns
+// {text, viaProxy} (viaProxy is null for a direct success, else the
+// proxy's hostname) or throws the LAST attempt's error, since that one
+// reflects the roster's own reachability most closely (the proxy chain
+// is exhausted by then).
 async function fetchRosterIcsText(url) {
   try {
-    // no-store: this URL never changes, so without it the browser's own
-    // HTTP cache can silently keep answering from an old snapshot - a
-    // real "refresh did nothing" bug this app has no way to detect,
-    // since force just skips OUR cache, not the browser's underneath it.
-    const res = await fetchWithTimeout(url, { cache: "no-store" });
-    if (res.ok) return { text: await res.text(), viaProxy: false };
-    throw new Error(`HTTP ${res.status}`);
-  } catch {
-    const proxied = ROSTER_CORS_PROXY_PREFIX + encodeURIComponent(url);
-    const res = await fetchWithTimeout(proxied, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status} (über CORS-Proxy)`);
-    return { text: await res.text(), viaProxy: true };
+    return { text: await fetchTextOrThrow(url), viaProxy: null };
+  } catch (directErr) {
+    let lastErr = directErr;
+    for (const buildProxyUrl of ROSTER_CORS_PROXIES) {
+      const proxied = buildProxyUrl(url);
+      try {
+        const text = await fetchTextOrThrow(proxied);
+        return { text, viaProxy: new URL(proxied).hostname };
+      } catch (e) {
+        const reason = e && e.name === "AbortError" ? "Zeitüberschreitung" : e.message;
+        lastErr = new Error(`${new URL(proxied).hostname}: ${reason}`);
+      }
+    }
+    throw lastErr;
   }
 }
 

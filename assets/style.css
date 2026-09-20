@@ -290,6 +290,13 @@ body {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Without this, a swipe that isn't perfectly horizontal (near-unavoidable
+     with a finger) also drags the whole page up/down at the same time,
+     making the card feel like it's floating vertically mid-swipe - this
+     restricts the browser's own gesture handling on the track to the
+     horizontal axis only, so the page stays put while paging between
+     cards. */
+  touch-action: pan-x;
   /* Height is pinned in JS to just the active page (see updateTrackHeight()
      in app.js) - the flex row would otherwise always default to its
      tallest page's height regardless of align-items, leaving a gap below

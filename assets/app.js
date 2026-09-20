@@ -957,12 +957,15 @@ function resolveLayoverPickup(layover) {
 
 // Once the crew's actually been picked up, the Layover page has done its
 // job - dropped from the flight-card carousel (see renderFlight()) 5
-// minutes after the resolved pickup time, rather than lingering until
-// findApiLayover() itself stops calling it a layover (up to
-// LAYOVER_END_LEAD_MS, 2h before the next departure - far too late).
-// With no pickup time known at all (neither roster nor backup), there's
-// nothing to count down from, so the page just isn't force-dropped this
-// way and keeps showing until findApiLayover() itself lets go of it.
+// minutes after the resolved pickup time. This is the only rule for when
+// the Layover page goes away (an earlier fixed "2h before the next
+// departure" cutoff in findApiLayover() was removed as redundant/wrong -
+// pickup is what actually ends the layover, not a fixed lead time before
+// departure). With no pickup time known at all (neither roster nor
+// backup), there's nothing to count down from, so the page just isn't
+// force-dropped this way and keeps showing until findApiLayover() itself
+// lets go of it (e.g. once a next flight's own data no longer looks like
+// a layover at all).
 const LAYOVER_PAGE_DROP_AFTER_PICKUP_MS = 5 * 60 * 1000;
 function layoverPickupCutoffPassed(layover) {
   const pickup = resolveLayoverPickup(layover);
@@ -1123,10 +1126,10 @@ function renderFlight() {
   const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). And
-  // while still genuinely in a layover (more than 2h before the next
-  // departure - see findApiLayover()/LAYOVER_END_LEAD_MS - and less than
-  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup), the layover isn't
+  // completed flight card - see shouldShowPostLandingHomeView(). And while
+  // still genuinely in a layover (findApiLayover()) and less than
+  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup - the only rule for when
+  // the layover ends, see layoverPickupCutoffPassed() - the layover isn't
   // mixed into today's own flight-card carousel (state.flights, which
   // can span an unrelated multi-day rotation) - instead it gets its own
   // carousel, leading with the Layover card itself and followed by the
@@ -2575,12 +2578,6 @@ async function renderLayoverCurrency(arrCode) {
 // midnight). Below that, it's just a connection.
 const LAYOVER_MIN_GAP_MS = 10 * 60 * 60 * 1000;
 
-// The layover view then gives way to flight prep 2h before that next
-// departure - not just once the flight has actually left, which would be
-// too late to be useful (checkout, transport to the airport etc. all
-// happen before then).
-const LAYOVER_END_LEAD_MS = 2 * 60 * 60 * 1000;
-
 // Primary layover detection: OpenAirLog flight data, not the PDF. The most
 // recent completed arrival, still more than LAYOVER_MIN_GAP_MS before
 // whatever flight comes next (or with no next flight loaded at all) -
@@ -2608,10 +2605,7 @@ function findApiLayover(allFlights) {
     const dep = f.depActualDate || f.depSchedDate;
     if (dep && dep > currentArr && (!nextDep || dep < nextDep)) nextDep = dep;
   }
-  if (nextDep) {
-    if (nextDep - currentArr <= LAYOVER_MIN_GAP_MS) return null; // just a connection
-    if (nextDep - now <= LAYOVER_END_LEAD_MS) return null; // give way to flight prep
-  }
+  if (nextDep && nextDep - currentArr <= LAYOVER_MIN_GAP_MS) return null; // just a connection
 
   return { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }

@@ -278,6 +278,13 @@ body {
    instead of the old prev/next buttons + "Flug X von Y" text. */
 .flight-card-track {
   display: flex;
+  /* Without this, flex's default align-items:stretch makes every card
+     match the tallest one's height - harmless while all pages were
+     flight cards of similar height, but the Layover card (room number,
+     crew list, currency conversion) is now a page here too (see
+     renderLayoverCarousel()) and is much taller, leaving a large blank
+     area under a plain flight card's own, much shorter content. */
+  align-items: flex-start;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;

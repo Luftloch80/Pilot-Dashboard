@@ -1577,9 +1577,15 @@ function ownAdjacentFlightLiveLabel(flight) {
 
 // "outbound" (leaving, OpenAirLog-fallback case) only needs the flight
 // number and its departure time - already known locally (this is our own
-// adjacent flight from OpenAirLog, not a lookup).
-function nextFlightRefLabel(flight) {
-  if (!flight) return null;
+// adjacent flight from OpenAirLog, not a lookup). Only shown when that
+// flight actually departs the same day as the one being viewed - a
+// colleague leaving the operating crew today but still appearing as our
+// own next loaded flight (e.g. a DH placement tomorrow) shouldn't be
+// captioned with a flight a full day away, which read as if they were
+// still on today's own connection.
+function nextFlightRefLabel(currentFlight, flight) {
+  if (!flight || !currentFlight || !flight.depSchedDate) return null;
+  if (localDateKey(flight.depSchedDate) !== localDateKey(currentFlight.depSchedDate)) return null;
   return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
 }
 
@@ -1977,7 +1983,7 @@ function renderCrew(f) {
     // says is real.
     renderCrewMembers(els.crewList, merged, {
       leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
-      leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
+      leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
       pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
       ownName, legalOnBlockLabel,
     });
@@ -2009,7 +2015,7 @@ function renderCrew(f) {
 
   renderCrewMembers(els.crewList, apiCrew, {
     leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
-    leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
+    leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
     pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
     ownName, legalOnBlockLabel,
   });

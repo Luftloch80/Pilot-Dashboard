@@ -1022,25 +1022,30 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
       cardEls.transitInfo.textContent = "";
       return;
     }
-    const city = cityForIcao(f.arrCode) || f.arrCode;
-    let prefix = `Layover ${city}`;
     let pickupLabel = null;
     let isBackup = false;
-    // "Ruhezeit" always comes from the legal rest reference (report time
-    // for the next duty, floored by MTV/EASA's own minimum) regardless of
-    // whether a MyTime roster Pickup event also exists - pickup itself is
-    // a separate, purely logistical time (usually somewhat before report,
-    // for the hotel/airport transfer), never the boundary rest is
-    // measured against. See computeLegalRestReference()'s own comment.
+    // "RZ" is the legal rest reference (report time for the next duty,
+    // floored by MTV/EASA's own minimum) shown as the absolute UTC clock
+    // time rest legally ends - regardless of whether a MyTime roster
+    // Pickup event also exists, same convention as legalOnBlockLabel. See
+    // computeLegalRestReference()'s own comment. "Fahrzeit" is only the
+    // gap between the roster's real Pickup and that report time (the
+    // transfer time to the hotel) - shown when a roster pickup is known
+    // and happens before RZ.
     const restRef = computeLegalRestReference(f);
-    if (restRef && restRef.restLabel) prefix += ` · Ruhezeit ${restRef.restLabel} (${restRef.source})`;
+    const rzLabel = restRef ? `RZ ${fmtTime(restRef.pickupUtc).replace("Z", " UTC")} (${restRef.source})` : null;
+    let travelLabel = null;
     const pickup = findRosterPickupForFlight(f);
     if (pickup) {
-      pickupLabel = `Pickup ${pickup.time} LT`;
+      pickupLabel = `Pickup: ${pickup.time} LT`;
+      if (restRef && pickup.dtstart < restRef.pickupUtc) {
+        travelLabel = `Fahrzeit: ${fmtDurationHM(restRef.pickupUtc - pickup.dtstart)}`;
+      }
     } else if (restRef) {
-      pickupLabel = `Pickup ${fmtLocalTimeAtIcao(restRef.pickupUtc, f.arrCode) || fmtTime(restRef.pickupUtc)}`;
+      pickupLabel = `Pickup: ${fmtLocalTimeAtIcao(restRef.pickupUtc, f.arrCode) || fmtTime(restRef.pickupUtc)}`;
       isBackup = true;
     }
+    const prefix = [rzLabel, travelLabel].filter(Boolean).join(" · ");
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = pickupLabel ? `${prefix} · ` : prefix;
     if (pickupLabel) {

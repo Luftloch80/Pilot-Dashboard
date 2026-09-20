@@ -392,8 +392,25 @@ function clearApiKey() {
 
 // ---------- MyTime roster URL storage ----------
 
+// MyTime's own "Teilen" (share) link uses the calendar-subscription
+// "webcal://" scheme - a signal telling a calendar app "subscribe to
+// this", always actually served over plain http(s) underneath (that's
+// the whole point of the scheme: a client that understands it swaps in
+// https:// itself before fetching, exactly like the iPhone Calendar app
+// does). fetch() has no concept of "webcal:" at all, and even the CORS
+// proxy explicitly rejects it ("Protocol webcal: not allowed", confirmed
+// against the pilot's own link) - swapped for the "https://" it was
+// always going to resolve to. Applied on every read, not just at save
+// time, so an already-stored webcal:// link self-heals without the
+// pilot having to paste it in again.
+function normalizeRosterUrl(raw) {
+  const trimmed = (raw || "").trim();
+  const m = /^webcals?:\/\//i.exec(trimmed);
+  return m ? `https://${trimmed.slice(m[0].length)}` : trimmed;
+}
+
 function getRosterUrl() {
-  try { return localStorage.getItem(ROSTER_URL_STORAGE_KEY) || ""; } catch { return ""; }
+  try { return normalizeRosterUrl(localStorage.getItem(ROSTER_URL_STORAGE_KEY) || ""); } catch { return ""; }
 }
 function setRosterUrl(url) {
   try { localStorage.setItem(ROSTER_URL_STORAGE_KEY, url); } catch { /* private mode etc. */ }

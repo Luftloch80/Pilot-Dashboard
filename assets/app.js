@@ -2969,12 +2969,12 @@ function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
 const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null, viaProxy: null };
 
 // By the time this runs, the direct fetch AND every proxy in
-// ROSTER_CORS_PROXIES have already failed - fetchRosterIcsText() throws
-// whichever proxy's own error was last, already prefixed with that
-// proxy's hostname (e.g. "corsproxy.io: HTTP 400 – ..."), which is more
-// useful shown as-is than collapsed into one generic message. See
-// renderRosterStatus(), which surfaces this instead of silently leaving
-// the pilot looking at an unexplained backup pickup.
+// rosterCorsProxyBuilders() have already failed - fetchRosterIcsText()
+// throws with all of their outcomes joined together (e.g. "direkt:
+// Failed to fetch | corsproxy.io: HTTP 401 – ... | api.allorigins.win:
+// Load failed"), shown as-is rather than collapsed into one generic
+// message. See renderRosterStatus(), which surfaces this instead of
+// silently leaving the pilot looking at an unexplained backup pickup.
 function describeRosterFetchError(e) {
   return (e && e.message) || "Unbekannter Fehler beim Abrufen.";
 }
@@ -3024,31 +3024,39 @@ async function fetchTextOrThrow(url) {
   throw new Error(`HTTP ${res.status}${snippet ? ` – ${snippet.trim().slice(0, 150)}` : ""}`);
 }
 
+function briefErrorReason(e) {
+  return e && e.name === "AbortError" ? "Zeitüberschreitung" : (e && e.message) || String(e);
+}
+
 // Tries the roster URL directly first (kept in case api.lufthansa.com
 // ever adds CORS support, or a future roster source doesn't need a
 // proxy at all), then each of rosterCorsProxyBuilders() in turn once
 // that fails - so a direct success never touches any third party.
 // Returns {text, viaProxy} (viaProxy is null for a direct success, else
-// the proxy's hostname) or throws the LAST attempt's error, since that
-// one reflects the roster's own reachability most closely (the proxy
-// chain is exhausted by then).
+// the proxy's hostname) on the first one that works, or - if all of them
+// fail - throws with EVERY attempt's own outcome joined together, not
+// just the last one. Losing the earlier ones made a chained failure
+// undiagnosable from the outside: with a corsproxy.io key configured, a
+// bare "api.allorigins.win: Load failed" said nothing about whether
+// corsproxy.io itself had even been tried, or why it failed first.
 async function fetchRosterIcsText(url) {
+  const attempts = [];
   try {
     return { text: await fetchTextOrThrow(url), viaProxy: null };
-  } catch (directErr) {
-    let lastErr = directErr;
-    for (const buildProxyUrl of rosterCorsProxyBuilders()) {
-      const proxied = buildProxyUrl(url);
-      try {
-        const text = await fetchTextOrThrow(proxied);
-        return { text, viaProxy: new URL(proxied).hostname };
-      } catch (e) {
-        const reason = e && e.name === "AbortError" ? "Zeitüberschreitung" : e.message;
-        lastErr = new Error(`${new URL(proxied).hostname}: ${reason}`);
-      }
-    }
-    throw lastErr;
+  } catch (e) {
+    attempts.push(`direkt: ${briefErrorReason(e)}`);
   }
+  for (const buildProxyUrl of rosterCorsProxyBuilders()) {
+    const proxied = buildProxyUrl(url);
+    const hostname = new URL(proxied).hostname;
+    try {
+      const text = await fetchTextOrThrow(proxied);
+      return { text, viaProxy: hostname };
+    } catch (e) {
+      attempts.push(`${hostname}: ${briefErrorReason(e)}`);
+    }
+  }
+  throw new Error(attempts.join(" | "));
 }
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches

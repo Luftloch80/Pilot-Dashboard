@@ -133,11 +133,15 @@ const els = {
 const state = {
   flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api",
   pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [],
-  // "flights" (the ordinary carousel, state.flights/state.index/state.cardNodes)
-  // or "layover" (renderLayoverCarousel()'s own, state.layoverFlights/
-  // state.layoverPageIndex/state.layoverCardNodes) - #flightCardTrack and
-  // #flightCardDots are shared DOM between the two, never shown at once.
-  mode: "flights",
+  // "flights" (the ordinary carousel, state.flights/state.index/state.cardNodes -
+  // once today's own last flight has departed into a layover,
+  // previewLayoverFlight() attaches els.layoverCard as one more page at
+  // index state.flights.length, tracked here in state.previewLayover) or
+  // "layover" (renderLayoverCarousel()'s own, state.layoverFlights/
+  // state.layoverPageIndex/state.layoverCardNodes, once 30 min past actual
+  // arrival) - #flightCardTrack and #flightCardDots are shared DOM between
+  // the two, never shown at once.
+  mode: "flights", previewLayover: null,
   layoverFlights: [], layoverPageIndex: 0, layoverCardNodes: [],
 };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
@@ -841,8 +845,16 @@ function getCardEls(node) {
 // track, plus a matching dot per card - only needed when the actual set
 // of flights changes (see the signature check in renderFlight()), not on
 // every re-render, so an AeroDataBox lookup resolving mid-scroll doesn't
-// wipe the user's scroll position.
-function buildFlightCards() {
+// wipe the user's scroll position. When previewLayover is given (see
+// previewLayoverFlight()), the real els.layoverCard is appended as one
+// more trailing page + dot, moving it into this track exactly like
+// buildLayoverCarousel() does for its own leading page - otherwise it's
+// handed back to its native spot right after #crewCard (see
+// renderLayover()), same place it sits on an ordinary day with no
+// layover at all. Doing this move here, in the same pass that actually
+// rebuilds the track, avoids a stray frame where the card would sit
+// detached from both places while the DOM still catches up.
+function buildFlightCards(previewLayover) {
   els.flightCardTrack.innerHTML = "";
   els.flightCardDots.innerHTML = "";
   state.cardNodes = state.flights.map(() => {
@@ -853,6 +865,14 @@ function buildFlightCards() {
     els.flightCardDots.appendChild(dot);
     return node;
   });
+  if (previewLayover) {
+    els.flightCardTrack.appendChild(els.layoverCard);
+    const layoverDot = document.createElement("span");
+    layoverDot.className = "dot";
+    els.flightCardDots.appendChild(layoverDot);
+  } else if (els.layoverCard.previousElementSibling !== els.crewCard) {
+    els.crewCard.after(els.layoverCard);
+  }
 }
 
 function scrollTrackToIndex(index) {
@@ -887,7 +907,7 @@ function updateTrackHeight() {
   if (track.hidden) return;
   const node = state.mode === "layover"
     ? (state.layoverPageIndex === 0 ? els.layoverCard : state.layoverCardNodes[state.layoverPageIndex - 1])
-    : state.cardNodes[state.index];
+    : (state.index === state.flights.length ? els.layoverCard : state.cardNodes[state.index]);
   if (node !== observedTrackNode) {
     if (observedTrackNode) trackHeightObserver.unobserve(observedTrackNode);
     if (node) trackHeightObserver.observe(node);
@@ -1169,6 +1189,17 @@ let lastCardSignature = null;
 function renderActiveFlightExtras() {
   renderFlightDots();
   updateTrackHeight();
+  // The attached Layover preview page (see previewLayoverFlight()) sits
+  // one index past the real flights - its own content is already kept
+  // current every render pass by fillLayoverCardContent() regardless of
+  // which page is scrolled into view (same as the dedicated Layover
+  // carousel), so scrolling onto it only needs the crew card/badge to
+  // follow, same as landing on the Layover carousel's own page 0.
+  if (state.index === state.flights.length && state.previewLayover) {
+    els.crewCard.hidden = true;
+    renderAirlineBadge(state.previewLayover.flight ? state.previewLayover.flight.flightNumber : null);
+    return;
+  }
   const f = state.flights[state.index];
   if (!f) return;
   renderFlightCardContent(state.flights, state.cardNodes, state.index, true);
@@ -1178,7 +1209,6 @@ function renderActiveFlightExtras() {
 }
 
 function renderFlight() {
-  const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
   // completed flight card - see shouldShowPostLandingHomeView(). And while
@@ -1201,14 +1231,16 @@ function renderFlight() {
     return;
   }
 
-  // Not (or no longer) in a layover - make sure the Layover card itself
-  // is marked hidden and back at its native spot in the document (see
-  // renderLayover()), then fall through to the ordinary exclusive
-  // flight-card/Ortstag logic exactly as before this feature existed.
+  // Not (or no longer) officially in a layover - make sure the Layover
+  // card itself is marked hidden and back at its native spot in the
+  // document (see renderLayover()), then fall through to the ordinary
+  // flight-card/Ortstag logic. previewLayoverFlight() below may still
+  // re-show and re-attach it as a look-ahead page once today's last
+  // flight has departed, ahead of the official switch-over above.
   renderLayover();
   state.mode = "flights";
 
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView();
+  const showFlightCard = !!state.flights.length && !shouldShowPostLandingHomeView();
   els.flightCardTrack.hidden = !showFlightCard;
   els.crewCard.hidden = !showFlightCard;
 
@@ -1220,19 +1252,39 @@ function renderFlight() {
   }
   els.dutyStatusCard.hidden = true;
 
-  const signature = flightsSignature(state.flights);
+  const previewLayover = previewLayoverFlight();
+  state.previewLayover = previewLayover;
+  // Safety clamp for the rare case the attached preview page itself goes
+  // away without the flight set changing (e.g. an onward flight loads in
+  // and turns out to make this a same-day connection after all, not a
+  // real layover) while the carousel happened to be scrolled onto it -
+  // same idea as the tick's own state.index reset when the flight set
+  // itself changes (see the setInterval() below).
+  const maxIndex = state.flights.length - 1 + (previewLayover ? 1 : 0);
+  if (state.index > maxIndex) state.index = maxIndex;
+  const signature = flightsSignature(state.flights) + (previewLayover ? "|LAYOVER" : "");
   const rebuilt = signature !== lastCardSignature;
   if (rebuilt) {
-    buildFlightCards();
+    buildFlightCards(previewLayover);
     lastCardSignature = signature;
   }
 
   state.flights.forEach((flight, i) => renderFlightCardContent(state.flights, state.cardNodes, i, i === state.index));
+  // renderLayover() above already filled/unhid els.layoverCard when
+  // previewLayover applies - just needs moving into the track here (see
+  // buildFlightCards()) once the page structure itself changes.
   if (rebuilt) scrollTrackToIndex(state.index);
-  els.flightCardDots.hidden = state.flights.length <= 1;
+  els.flightCardDots.hidden = state.flights.length + (previewLayover ? 1 : 0) <= 1;
   renderFlightDots();
   updateTrackHeight();
 
+  if (state.index === state.flights.length && previewLayover) {
+    els.crewCard.hidden = true;
+    renderAirlineBadge(previewLayover.flight ? previewLayover.flight.flightNumber : null);
+    return;
+  }
+  const f = state.flights[state.index];
+  if (!f) return;
   renderAirlineBadge(f.flightNumber);
   renderCrew(f);
   ensureCrewLoaded(f);
@@ -2733,6 +2785,30 @@ function findApiLayover(allFlights) {
   return { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }
 
+// Once today's own last flight (state.flights, see computeTodayFlights())
+// has actually departed - not merely still scheduled to - the pilot wants
+// a look ahead at the layover it's flying into, attached as one more
+// swipeable page right after that flight's own card in the ordinary
+// flight-card carousel (see buildFlightCards()/renderFlight()), well
+// before findApiLayover()'s own POST_LANDING_SWITCH_MS gate flips the
+// whole app over into the dedicated Layover carousel. Same non-home-base/
+// same-day-connection exclusions as findApiLayover() - this is genuinely
+// a preview of the SAME layover that eventually takes over there, not a
+// separate concept, and stays scoped to state.flights so it starts over
+// with whatever today's own list is once midnight rolls the date over,
+// same as the rest of the app (see computeTodayFlights()).
+function previewLayoverFlight() {
+  const last = state.flights[state.flights.length - 1];
+  if (!last || last.arrCode === HOME_BASE) return null;
+  const dep = last.depActualDate || last.depSchedDate;
+  if (!dep || Date.now() < dep.getTime()) return null;
+  const arr = last.arrActualDate || last.arrSchedDate;
+  const onward = adjacentFlight(last, 1);
+  const onwardDep = onward && (onward.depActualDate || onward.depSchedDate);
+  if (onwardDep && arr && onwardDep - arr <= LAYOVER_MIN_GAP_MS) return null; // just a connection
+  return { arrCode: last.arrCode, arrTime: arr, flight: last };
+}
+
 // The PDF is only used to enrich this with a hotel name, if a matching leg
 // happens to have one - not to decide whether there's a layover in the
 // first place. Matched by flight number rather than arrival airport: the
@@ -3632,20 +3708,39 @@ function renderLayover() {
   // and shows the ordinary flight-card carousel again.
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   const active = !!layover && !layoverPickupCutoffPassed(layover);
-  els.layoverCard.hidden = !active;
+  // Once today's last flight has departed but the official gate above
+  // hasn't fired yet, previewLayoverFlight() is the look-ahead page
+  // attached to the ordinary flight-card carousel (see buildFlightCards()/
+  // renderFlight()) - checked here too, not just from renderFlight()
+  // itself, so a standalone renderLayover() call from an unrelated async
+  // callback (e.g. ensureCurrentWeatherLoaded() below, once its fetch
+  // resolves) doesn't wrongly hide/detach the card out from under that
+  // preview between renderFlight() passes.
+  const preview = !active && !effectiveDutyType() ? previewLayoverFlight() : null;
+  const effective = active ? layover : preview;
+  els.layoverCard.hidden = !effective;
   currentLayoverKey = null;
-  if (!active) {
+  if (!effective) {
     // Not part of renderLayoverCarousel()'s own carousel (its cards are
     // rebuilt from scratch there) - back at its native spot in index.html
     // (right after #crewCard), so buildFlightCards()'s innerHTML="" wipe
     // of the ordinary #flightCardTrack can't silently orphan it if it
     // was still sitting in there from a layover that just ended.
-    if (els.layoverCard.previousElementSibling !== els.crewCard) {
+    if (els.layoverCard.parentElement !== els.flightCardTrack && els.layoverCard.previousElementSibling !== els.crewCard) {
       els.crewCard.after(els.layoverCard);
     }
     return;
   }
 
+  fillLayoverCardContent(effective);
+}
+
+// The Layover card's own content, shared between the officially active
+// (30+ min post-arrival, see findApiLayover()) case above and the earlier
+// look-ahead preview attached to the ordinary flight-card carousel (see
+// previewLayoverFlight()/renderFlight()) - both just fill the same real
+// els.layoverCard, wherever it currently lives in the DOM.
+function fillLayoverCardContent(layover) {
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
 
@@ -4149,7 +4244,13 @@ els.flightCardTrack.addEventListener("scroll", () => {
     }
 
     if (!state.flights.length) return;
-    const clamped = Math.max(0, Math.min(state.flights.length - 1, newIndex));
+    // +1 page once previewLayoverFlight() has attached the Layover card
+    // right after today's last flight (see buildFlightCards()) - that
+    // extra page lives at index state.flights.length, one past the real
+    // flights, same "one more slot past the array" pattern the Layover
+    // carousel's own totalPages uses above.
+    const totalPages = state.flights.length + (state.previewLayover ? 1 : 0);
+    const clamped = Math.max(0, Math.min(totalPages - 1, newIndex));
     if (clamped === state.index) return;
     state.index = clamped;
     renderActiveFlightExtras();

@@ -1281,9 +1281,14 @@ function mtvMaxFdpMinutes(reportLocalMin, sectorCount) {
 
 // Standard report time before the first sector's scheduled departure -
 // OpenAirLog has no explicit report-time field, so this assumes the
-// pilot's own narrowbody (A320-family) standard briefing time; wrong for
-// a different aircraft type or a rotation with a non-standard report time.
-const STANDARD_REPORT_BEFORE_DEP_MIN = 45;
+// pilot's own narrowbody (A320-family) standard briefing time. Confirmed
+// against a real eFF FDP screen (rotation 225280, LH839 dep. 12:45Z): both
+// the FDP MTV and FDP LAW tables' own COC and 1PU+2FB rows back-solve to
+// the exact same 11:45Z start - i.e. 60 minutes before departure, not 45.
+// Still wrong for a different aircraft type or a rotation with a
+// non-standard report time - this is the pilot's own fleet default, not a
+// universal constant.
+const STANDARD_REPORT_BEFORE_DEP_MIN = 60;
 
 // All of a flight's own duty-day sectors - grouped by OpenAirLog's own
 // "date" field (the report/duty day it assigns each leg to), not a

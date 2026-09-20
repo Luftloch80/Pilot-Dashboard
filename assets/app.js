@@ -990,11 +990,16 @@ function computeLegalRestReference(flight) {
   };
 }
 
-// Single pickup resolution for a layover - roster event first (see
-// findRosterPickupForFlight()), the reference-sheet backup estimate (see
-// computeLegalRestReference()) only once that has nothing. Shared by the
-// Layover card's own pickup line and layoverPickupCutoffPassed() below,
-// so both agree on exactly the same value.
+// Roster event first (see findRosterPickupForFlight()), the
+// reference-sheet backup estimate (see computeLegalRestReference()) only
+// once that has nothing - but only for layoverPickupCutoffPassed()'s own
+// internal bookkeeping below (when to structurally drop the Layover page
+// even without a real roster pickup ever showing up), never for display:
+// the Layover card's own pickup line (see fillLayoverCardContent()) and
+// the transit line (see renderFlightCardTransit()) both show a Pickup
+// time only when the roster genuinely has one - a guessed clock time
+// isn't something the pilot can actually rely on, so it's left blank
+// instead rather than shown as if it were real.
 function resolveLayoverPickup(layover) {
   if (!layover || !layover.flight) return null;
   const pickup = findRosterPickupForFlight(layover.flight);
@@ -1036,13 +1041,12 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
 
   // Last flight of the day: no more flights today to transit into, but if
   // this landing isn't back at home base, it's a layover - show that
-  // instead of leaving the line blank. The MyTime roster is the
-  // authoritative pickup source (see findRosterPickupForFlight()); only
-  // when it has no match does the reference-sheet backup estimate (see
-  // computeLegalRestReference()) fill in - always local time (LT, see
-  // fmtLocalTimeAtIcao()). Same green/orange color convention as the
-  // Layover card's own #layoverPickup (see renderLayover()) marks which
-  // one this is, instead of a separate disclaimer note next to it.
+  // instead of leaving the line blank. Pickup is shown only when the
+  // MyTime roster actually has a matching event (see
+  // findRosterPickupForFlight()) - no more reference-sheet estimate as a
+  // fallback (that used to fill in a guessed clock time, which the pilot
+  // couldn't actually rely on); with no roster match, Pickup is simply
+  // left out rather than showing a number that isn't real.
   if (!nextFlight) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
@@ -1063,18 +1067,10 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
     const restRef = computeLegalRestReference(f);
     const pickup = findRosterPickupForFlight(f);
 
-    let pickupLabel = null;
-    let isBackup = false;
-    let travelLabel = null;
-    if (pickup) {
-      pickupLabel = `Pickup: ${pickup.time} LT`;
-      if (restRef && pickup.dtstart < restRef.pickupUtc) {
-        travelLabel = `Fahrzeit: ${fmtDurationHM(restRef.pickupUtc - pickup.dtstart)}`;
-      }
-    } else if (restRef) {
-      pickupLabel = `Pickup: ${fmtLocalTimeAtIcao(restRef.pickupUtc, f.arrCode) || fmtTime(restRef.pickupUtc)}`;
-      isBackup = true;
-    }
+    const pickupLabel = pickup ? `Pickup: ${pickup.time} LT` : null;
+    const travelLabel = pickup && restRef && pickup.dtstart < restRef.pickupUtc
+      ? `Fahrzeit: ${fmtDurationHM(restRef.pickupUtc - pickup.dtstart)}`
+      : null;
 
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = "";
@@ -1088,12 +1084,7 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
       segments.push(rzSpan);
     }
     if (travelLabel) segments.push(document.createTextNode(travelLabel));
-    if (pickupLabel) {
-      const pickupSpan = document.createElement("span");
-      pickupSpan.className = isBackup ? "is-backup" : "is-roster";
-      pickupSpan.textContent = pickupLabel;
-      segments.push(pickupSpan);
-    }
+    if (pickupLabel) segments.push(document.createTextNode(pickupLabel));
     segments.forEach((node, idx) => {
       if (idx > 0) cardEls.transitInfo.appendChild(document.createTextNode(" · "));
       cardEls.transitInfo.appendChild(node);
@@ -1588,6 +1579,17 @@ function nextFlightRefLabel(flight) {
   return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
 }
 
+// Deadheading covers both OpenAirLog crew (see normalizeCrewMember()'s
+// isDeadhead) and a PDF crew list, which marks the same thing directly in
+// the role text. Someone deadheading isn't actually working that flight,
+// so they don't count as "still there" for findLeavingCrew()/
+// findJoiningCrew() either - a colleague who leaves the operating crew
+// today but only rides along DH tomorrow has genuinely left, not stayed
+// on, even though their name still appears on tomorrow's crew list.
+function isOperatingCrewMember(member) {
+  return !member.isDeadhead && String(member.role || "").toUpperCase() !== "DH";
+}
+
 function renderCrewMembers(listEl, crew, opts = {}) {
   const {
     leaving = new Set(), joining = new Set(),
@@ -1597,10 +1599,9 @@ function renderCrewMembers(listEl, crew, opts = {}) {
   } = opts;
   listEl.innerHTML = "";
   for (const member of crew) {
-    // Deadheading colleagues aren't working this flight - covers both
-    // OpenAirLog crew (see normalizeCrewMember()'s isDeadhead) and a PDF
-    // crew list, which marks the same thing directly in the role text.
-    if (member.isDeadhead || String(member.role || "").toUpperCase() === "DH") continue;
+    // Deadheading colleagues aren't working this flight - see
+    // isOperatingCrewMember().
+    if (!isOperatingCrewMember(member)) continue;
     const key = crewKey(member.role, member.name);
     const li = document.createElement("li");
     const name = document.createElement("span");
@@ -1696,9 +1697,10 @@ function adjacentFlightCrew(flight, offset) {
 function findLeavingCrew(flight, crew) {
   const next = adjacentFlightCrew(flight, 1);
   if (!next) return new Set();
+  const nextOperating = next.filter(isOperatingCrewMember);
   const leaving = new Set();
   for (const member of crew) {
-    const staysOn = next.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
+    const staysOn = nextOperating.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
     if (!staysOn) leaving.add(crewKey(member.role, member.name));
   }
   return leaving;
@@ -1724,9 +1726,10 @@ function findJoiningCrew(flight, crew) {
   if (startsNewTour(flight)) return new Set();
   const previous = adjacentFlightCrew(flight, -1);
   if (!previous) return new Set();
+  const previousOperating = previous.filter(isOperatingCrewMember);
   const joining = new Set();
   for (const member of crew) {
-    const wasThereBefore = previous.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
+    const wasThereBefore = previousOperating.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
     if (!wasThereBefore) joining.add(crewKey(member.role, member.name));
   }
   return joining;
@@ -3747,14 +3750,15 @@ function fillLayoverCardContent(layover) {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
-  // Color alone now says whether this is a confirmed MyTime roster pickup
-  // (green) or just the reference-sheet backup estimate (orange) - the
-  // separate disclaimer note this used to need next to it is gone.
-  const pickup = resolveLayoverPickup(layover);
-  els.layoverPickup.hidden = !pickup;
-  els.layoverPickup.textContent = pickup ? `Pickup: ${pickup.label}` : "";
-  els.layoverPickup.classList.toggle("is-roster", !!pickup && !pickup.isBackup);
-  els.layoverPickup.classList.toggle("is-backup", !!pickup && pickup.isBackup);
+  // Only ever shown when the MyTime roster actually has a matching
+  // event (see findRosterPickupForFlight()) - no more reference-sheet
+  // estimate as a fallback, and so no more green/orange source coloring
+  // either (resolveLayoverPickup(), with that estimate, is still used
+  // separately but only internally by layoverPickupCutoffPassed() below).
+  const rosterPickup = layover.flight ? findRosterPickupForFlight(layover.flight) : null;
+  els.layoverPickup.hidden = !rosterPickup;
+  els.layoverPickup.textContent = rosterPickup ? `Pickup: ${rosterPickup.time} LT` : "";
+  els.layoverPickup.classList.remove("is-roster", "is-backup");
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;

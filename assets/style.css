@@ -285,7 +285,13 @@ body {
   -ms-overflow-style: none;
 }
 .flight-card-track::-webkit-scrollbar { display: none; }
-.flight-card-track .flight-card {
+/* .layover-card is moved into this track as its leading page while a
+   layover is active (see renderLayoverCarousel()/buildLayoverCarousel()
+   in app.js) - same sizing/snap rule as a real flight card, otherwise it
+   sizes to its own content instead of a full page and throws off every
+   later page's scroll-snap position. */
+.flight-card-track .flight-card,
+.flight-card-track .layover-card {
   flex: 0 0 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;

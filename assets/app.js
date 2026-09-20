@@ -131,7 +131,16 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [] };
+const state = {
+  flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api",
+  pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [],
+  // "flights" (the ordinary carousel, state.flights/state.index/state.cardNodes)
+  // or "layover" (renderLayoverCarousel()'s own, state.layoverFlights/
+  // state.layoverPageIndex/state.layoverCardNodes) - #flightCardTrack and
+  // #flightCardDots are shared DOM between the two, never shown at once.
+  mode: "flights",
+  layoverFlights: [], layoverPageIndex: 0, layoverCardNodes: [],
+};
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -660,8 +669,12 @@ function pickInitialIndex(flights) {
 // scroll horizontally - just marks count/position, no text.
 function renderFlightDots() {
   const dots = els.flightCardDots.children;
+  // #flightCardTrack/#flightCardDots are shared between the ordinary
+  // flight-card carousel and the Layover card's own attached one (see
+  // renderLayoverCarousel()) - state.mode says which index applies.
+  const activeIndex = state.mode === "layover" ? state.layoverPageIndex : state.index;
   for (let i = 0; i < dots.length; i++) {
-    dots[i].classList.toggle("active", i === state.index);
+    dots[i].classList.toggle("active", i === activeIndex);
   }
 }
 
@@ -929,9 +942,9 @@ function layoverPickupCutoffPassed(layover) {
 // its own transit line (about its own next flight), but only the active
 // one is allowed to trigger AeroDataBox lookups - scrolling past several
 // cards shouldn't fire off a lookup for each.
-function renderFlightCardTransit(i, isActive, cardEls) {
-  const f = state.flights[i];
-  const nextFlight = state.flights[i + 1];
+function renderFlightCardTransit(flights, i, isActive, cardEls) {
+  const f = flights[i];
+  const nextFlight = flights[i + 1];
 
   // Last flight of the day: no more flights today to transit into, but if
   // this landing isn't back at home base, it's a layover - show that
@@ -1018,10 +1031,14 @@ function renderFlightCardTransit(i, isActive, cardEls) {
 // is allowed to trigger AeroDataBox lookups (getOwnFlightAeroDataBoxLeg's
 // peekOnly) - the others show whatever's already cached from an earlier
 // visit, so simply having several cards in the DOM doesn't multiply the
-// API quota this uses.
-function renderFlightCardContent(i, isActive) {
-  const f = state.flights[i];
-  const cardEls = getCardEls(state.cardNodes[i]);
+// API quota this uses. Takes an explicit flights/cardNodes array pair
+// rather than always reading state.flights/state.cardNodes, so the same
+// rendering logic serves both the ordinary flight-card carousel and the
+// Layover card's own attached carousel (see renderLayoverCarousel()),
+// which draws its cards from a different day's sectors entirely.
+function renderFlightCardContent(flights, cardNodes, i, isActive) {
+  const f = flights[i];
+  const cardEls = getCardEls(cardNodes[i]);
 
   // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
   // main flight card, not in the crew list's inbound/outbound labels or
@@ -1040,7 +1057,7 @@ function renderFlightCardContent(i, isActive) {
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;
 
-  renderFlightCardTransit(i, isActive, cardEls);
+  renderFlightCardTransit(flights, i, isActive, cardEls);
 }
 
 // Identifies today's flight list by flight number + date only (not
@@ -1060,7 +1077,7 @@ function renderActiveFlightExtras() {
   renderFlightDots();
   const f = state.flights[state.index];
   if (!f) return;
-  renderFlightCardContent(state.index, true);
+  renderFlightCardContent(state.flights, state.cardNodes, state.index, true);
   renderAirlineBadge(f.flightNumber);
   renderCrew(f);
   ensureCrewLoaded(f);
@@ -1070,35 +1087,44 @@ function renderFlight() {
   const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). And while
-  // still genuinely in a layover (more than 2h before the next departure -
-  // see findApiLayover()/LAYOVER_END_LEAD_MS - and less than
-  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup), the layover card is
-  // the whole story on its own screen; showing today's flight cards at
-  // the same time just confused which card was which (a multi-day
-  // rotation's own flights ended up sharing one swipe strip with an
-  // unrelated layover from days ago) - back to one replacing the other,
-  // with the pickup cutoff as the only change from before this reverted.
+  // completed flight card - see shouldShowPostLandingHomeView(). And
+  // while still genuinely in a layover (more than 2h before the next
+  // departure - see findApiLayover()/LAYOVER_END_LEAD_MS - and less than
+  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup), the layover isn't
+  // mixed into today's own flight-card carousel (state.flights, which
+  // can span an unrelated multi-day rotation) - instead it gets its own
+  // carousel, leading with the Layover card itself and followed by the
+  // checkout day's own sectors (see renderLayoverCarousel()).
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   const layoverActive = !!layover && !layoverPickupCutoffPassed(layover);
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !layoverActive;
 
+  if (layoverActive) {
+    state.mode = "layover";
+    els.crewCard.hidden = true; // renderLayoverCarousel() below shows/hides it itself once it knows which page is active
+    els.dutyStatusCard.hidden = true;
+    renderAirlineBadge(layover.flight ? layover.flight.flightNumber : null);
+    renderLayoverCarousel(layover);
+    return;
+  }
+
+  // Not (or no longer) in a layover - make sure the Layover card itself
+  // is marked hidden and back at its native spot in the document (see
+  // renderLayover()), then fall through to the ordinary exclusive
+  // flight-card/Ortstag logic exactly as before this feature existed.
+  renderLayover();
+  state.mode = "flights";
+
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView();
   els.flightCardTrack.hidden = !showFlightCard;
   els.crewCard.hidden = !showFlightCard;
 
   if (!showFlightCard) {
     els.flightCardDots.hidden = true;
-    // A genuine layover still has a flight (the one that led into it) to
-    // show the airline badge for - renderDutyStatus() below only sets its
-    // own badge for vacation/Ortstag and leaves this alone otherwise, so
-    // it doesn't get overwritten.
-    renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
+    renderAirlineBadge(null);
     renderDutyStatus();
-    renderLayover(); // keeps the Layover card's own hidden state current even here
     return;
   }
   els.dutyStatusCard.hidden = true;
-  renderLayover(); // hides it once a real flight is being shown instead
 
   const signature = flightsSignature(state.flights);
   const rebuilt = signature !== lastCardSignature;
@@ -1107,7 +1133,7 @@ function renderFlight() {
     lastCardSignature = signature;
   }
 
-  state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
+  state.flights.forEach((flight, i) => renderFlightCardContent(state.flights, state.cardNodes, i, i === state.index));
   if (rebuilt) scrollTrackToIndex(state.index);
   els.flightCardDots.hidden = state.flights.length <= 1;
   renderFlightDots();
@@ -3505,7 +3531,17 @@ function renderLayover() {
   const active = !!layover && !layoverPickupCutoffPassed(layover);
   els.layoverCard.hidden = !active;
   currentLayoverKey = null;
-  if (!active) return;
+  if (!active) {
+    // Not part of renderLayoverCarousel()'s own carousel (its cards are
+    // rebuilt from scratch there) - back at its native spot in index.html
+    // (right after #crewCard), so buildFlightCards()'s innerHTML="" wipe
+    // of the ordinary #flightCardTrack can't silently orphan it if it
+    // was still sitting in there from a layover that just ended.
+    if (els.layoverCard.previousElementSibling !== els.crewCard) {
+      els.crewCard.after(els.layoverCard);
+    }
+    return;
+  }
 
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
@@ -3538,6 +3574,96 @@ function renderLayover() {
 
   els.roomDetails.hidden = false;
   renderLayoverCrew(layover.arrCode, hotel, layover.flight);
+}
+
+// Rebuilds #flightCardTrack/#flightCardDots for the Layover carousel:
+// the real #layoverCard element as page 0 (moved in, not cloned - see
+// renderLayover(), the only place that ever moves it back out), then one
+// cloned flight-card template per checkout-day sector. Only called from
+// renderLayoverCarousel() when that day's sector set has actually
+// changed - same signature-gated rebuild pattern as buildFlightCards().
+function buildLayoverCarousel(extraFlights) {
+  els.flightCardTrack.innerHTML = "";
+  els.flightCardDots.innerHTML = "";
+  els.flightCardTrack.appendChild(els.layoverCard);
+  const layoverDot = document.createElement("span");
+  layoverDot.className = "dot";
+  els.flightCardDots.appendChild(layoverDot);
+  state.layoverCardNodes = extraFlights.map(() => {
+    const node = els.flightCardTemplate.content.firstElementChild.cloneNode(true);
+    els.flightCardTrack.appendChild(node);
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    els.flightCardDots.appendChild(dot);
+    return node;
+  });
+}
+
+let lastLayoverCarouselSignature = null;
+
+// The Layover card's own carousel: itself as the leading page, followed
+// by the checkout day's own sectors (the flights departing from this
+// layover, e.g. "Layover Billund - LH839 - LH146 - LH147 - ..."), for
+// scrolling - requested after the flight-card carousel's own attempt at
+// merging the two (with the layover appended LAST, and drawing from
+// today's own state.flights, which could be a completely unrelated day
+// of a multi-day rotation) turned out confusing in practice. This one
+// only ever draws from the checkout day's own sectors (sectorsForDutyDay()
+// on whatever flight comes right after the layover in the loaded
+// rotation), and always leads with the Layover card, never trails it.
+function renderLayoverCarousel(layover) {
+  const onward = adjacentFlight(layover.flight, 1);
+  const extraFlights = onward ? sectorsForDutyDay(onward) : [];
+  state.layoverFlights = extraFlights;
+
+  const signature = `${layover.arrCode}@${layover.arrTime ? layover.arrTime.getTime() : ""}|${flightsSignature(extraFlights)}`;
+  const rebuilt = signature !== lastLayoverCarouselSignature;
+  if (rebuilt) {
+    buildLayoverCarousel(extraFlights);
+    lastLayoverCarouselSignature = signature;
+    state.layoverPageIndex = 0; // always lands on the Layover page itself first
+  }
+
+  els.flightCardTrack.hidden = false;
+  els.flightCardDots.hidden = 1 + extraFlights.length <= 1;
+
+  renderLayover(); // fills page 0's own content
+  extraFlights.forEach((flight, i) => {
+    renderFlightCardContent(extraFlights, state.layoverCardNodes, i, i === state.layoverPageIndex - 1);
+  });
+  if (rebuilt) scrollTrackToIndex(state.layoverPageIndex);
+  renderFlightDots();
+
+  if (state.layoverPageIndex === 0) {
+    els.crewCard.hidden = true;
+    return;
+  }
+  const f = extraFlights[state.layoverPageIndex - 1];
+  els.crewCard.hidden = !f;
+  if (f) {
+    renderAirlineBadge(f.flightNumber);
+    renderCrew(f);
+    ensureCrewLoaded(f);
+  }
+}
+
+// Mirror of renderActiveFlightExtras(), for whichever page of the Layover
+// carousel (see renderLayoverCarousel()) is currently scrolled to.
+function renderActiveLayoverExtras() {
+  renderFlightDots();
+  const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
+  if (state.layoverPageIndex === 0 || !layover) {
+    els.crewCard.hidden = true;
+    renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
+    return;
+  }
+  const f = state.layoverFlights[state.layoverPageIndex - 1];
+  if (!f) return;
+  renderFlightCardContent(state.layoverFlights, state.layoverCardNodes, state.layoverPageIndex - 1, true);
+  els.crewCard.hidden = false;
+  renderAirlineBadge(f.flightNumber);
+  renderCrew(f);
+  ensureCrewLoaded(f);
 }
 
 // First name only: OpenAirLog partly anonymizes crew (colleagues show as
@@ -3898,8 +4024,23 @@ els.flightCardTrack.addEventListener("scroll", () => {
   clearTimeout(cardScrollDebounce);
   cardScrollDebounce = setTimeout(() => {
     const track = els.flightCardTrack;
-    if (!track.clientWidth || !state.flights.length) return;
+    if (!track.clientWidth) return;
     const newIndex = Math.round(track.scrollLeft / track.clientWidth);
+
+    // Shared between the ordinary flight-card carousel and the Layover
+    // card's own attached one (see renderLayoverCarousel()) - state.mode
+    // (set by renderFlight()) says which page count/index applies.
+    if (state.mode === "layover") {
+      const totalPages = 1 + state.layoverFlights.length;
+      if (!totalPages) return;
+      const clamped = Math.max(0, Math.min(totalPages - 1, newIndex));
+      if (clamped === state.layoverPageIndex) return;
+      state.layoverPageIndex = clamped;
+      renderActiveLayoverExtras();
+      return;
+    }
+
+    if (!state.flights.length) return;
     const clamped = Math.max(0, Math.min(state.flights.length - 1, newIndex));
     if (clamped === state.index) return;
     state.index = clamped;

@@ -912,18 +912,34 @@ function findRosterPickupForFlight(flight) {
 
 // Backup pickup estimate for when the MyTime roster has no matching event
 // (not loaded, no URL configured, or this leg just isn't in it yet) -
-// used only as a fallback, never in place of a roster match. This is the
-// legal minimum rest and nothing else (see computeMinRestAfterDuty(),
-// itself always the stricter/longer of MTV and EASA) - an earlier version
-// instead guessed from the next flight's own departure time and a hotel-
-// transfer estimate, which wasn't grounded in rest law at all and could
-// (with a next flight scheduled soon enough) even propose an illegally
-// early pickup. Returns null (no backup shown, not a wrong one) only when
-// today's own duty day can't be determined at all.
+// used only as a fallback, never in place of a roster match. Pickup is set
+// for report time on the next known duty (its own departure minus
+// STANDARD_REPORT_BEFORE_DEP_MIN) once that flight is loaded, always
+// floored by the legal minimum rest (see computeMinRestAfterDuty(),
+// itself always the stricter/longer of MTV and EASA) so it can never
+// propose an illegally early pickup - and is that legal minimum outright
+// whenever the next flight isn't known yet at all. Returns null (no
+// backup shown, not a wrong one) only when today's own duty day can't be
+// determined at all.
 function computeBackupPickup(flight) {
   const minRest = computeMinRestAfterDuty(flight);
   if (!minRest) return null;
-  return { pickupUtc: minRest.earliestPickupUtc, restLabel: fmtDurationHM(minRest.earliestPickupUtc - minRest.restStart) };
+
+  // Rest doesn't end at pickup itself - it runs up to report time for the
+  // next duty (STANDARD_REPORT_BEFORE_DEP_MIN before that flight's own
+  // departure, same convention computeMaxLegalOnBlock() uses on the FDP
+  // side), and pickup is set to land exactly there once the next flight is
+  // actually known. Never earlier than the legal minimum rest above,
+  // though (MTV/EASA, whichever's stricter) - and when no onward flight
+  // is loaded yet at all, that legal minimum is all there is to go on.
+  const onward = adjacentFlight(flight, 1);
+  const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
+  let pickupUtc = onwardDep
+    ? new Date(onwardDep.getTime() - STANDARD_REPORT_BEFORE_DEP_MIN * 60000)
+    : minRest.earliestPickupUtc;
+  if (minRest.earliestPickupUtc > pickupUtc) pickupUtc = minRest.earliestPickupUtc;
+
+  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - minRest.restStart) };
 }
 
 // Single pickup resolution for a layover - roster event first (see

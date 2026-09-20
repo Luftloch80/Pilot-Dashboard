@@ -371,20 +371,32 @@ body {
 .route-point { text-align: center; flex: 1; }
 .route-code { font-size: 2rem; font-weight: 800; letter-spacing: 0.02em; }
 .route-label { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+/* Scheduled + actual time sit side by side now, not stacked - the actual
+   time reads naturally toward the route-line/plane between them: to the
+   right of the (left-hand) departure time, to the left of the (right-hand)
+   arrival time (see .arr-actual-time's order below). */
+.route-times {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
 .route-time {
   font-size: 1rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  margin-top: 6px;
 }
 .route-actual-time {
   font-size: 0.82rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  margin-top: 2px;
 }
 .route-actual-time.early { color: var(--ok); }
 .route-actual-time.late { color: var(--danger); }
+/* Only the arrival side's actual time moves before its scheduled time -
+   the departure side keeps DOM order (scheduled, then actual). */
+.arr-actual-time { order: -1; }
 .route-line {
   flex: 1.4;
   height: 1px;

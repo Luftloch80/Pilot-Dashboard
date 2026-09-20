@@ -939,7 +939,14 @@ function computeBackupPickup(flight) {
     : minRest.earliestPickupUtc;
   if (minRest.earliestPickupUtc > pickupUtc) pickupUtc = minRest.earliestPickupUtc;
 
-  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - minRest.restStart) };
+  // minRest.source is which regulation's own minimum is the stricter one
+  // for this duty (shown alongside the rest duration itself, same
+  // "(MTV)"/"(EASA)" convention as the crew list's own legalOnBlockLabel) -
+  // still meaningful even when the actual rest above ends up longer than
+  // that minimum (the report-time-based case above), since it says which
+  // rule this rest is being checked against, not just which one it
+  // happened to equal.
+  return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - minRest.restStart), source: minRest.source };
 }
 
 // Single pickup resolution for a layover - roster event first (see
@@ -1015,7 +1022,7 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
     } else {
       const backup = computeBackupPickup(f);
       if (backup) {
-        if (backup.restLabel) prefix += ` · Ruhezeit ${backup.restLabel}`;
+        if (backup.restLabel) prefix += ` · Ruhezeit ${backup.restLabel} (${backup.source})`;
         pickupLabel = `Pickup ${fmtLocalTimeAtIcao(backup.pickupUtc, f.arrCode) || fmtTime(backup.pickupUtc)}`;
         isBackup = true;
       }

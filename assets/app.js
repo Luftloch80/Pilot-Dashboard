@@ -1024,16 +1024,15 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
     }
     let pickupLabel = null;
     let isBackup = false;
-    // "RZ" is the legal rest reference (report time for the next duty,
-    // floored by MTV/EASA's own minimum) shown as the absolute UTC clock
-    // time rest legally ends - regardless of whether a MyTime roster
-    // Pickup event also exists, same convention as legalOnBlockLabel. See
-    // computeLegalRestReference()'s own comment. "Fahrzeit" is only the
-    // gap between the roster's real Pickup and that report time (the
-    // transfer time to the hotel) - shown when a roster pickup is known
-    // and happens before RZ.
+    // "RZ" is the legal rest DURATION (report time for the next duty,
+    // floored by MTV/EASA's own minimum, minus the end of the arriving
+    // duty) - regardless of whether a MyTime roster Pickup event also
+    // exists. See computeLegalRestReference()'s own comment. "Fahrzeit"
+    // is only the gap between the roster's real Pickup and that report
+    // time (the transfer time to the hotel) - shown when a roster pickup
+    // is known and happens before report time.
     const restRef = computeLegalRestReference(f);
-    const rzLabel = restRef ? `RZ ${fmtTime(restRef.pickupUtc).replace("Z", " UTC")} (${restRef.source})` : null;
+    const rzLabel = restRef && restRef.restLabel ? `RZ ${restRef.restLabel} (${restRef.source})` : null;
     let travelLabel = null;
     const pickup = findRosterPickupForFlight(f);
     if (pickup) {

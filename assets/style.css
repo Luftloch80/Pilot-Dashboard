@@ -432,7 +432,6 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-.transit-note { text-align: center; margin-top: 4px; }
 .registration { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; }
 
 /* Duty status (Urlaub / Ortstag) */
@@ -517,11 +516,14 @@ body {
 }
 .layover-header h2 { margin: 0; }
 .layover-pickup { white-space: nowrap; }
-/* Color alone says the source now, instead of a separate disclaimer note:
-   a confirmed MyTime roster pickup is green, the reference-sheet backup
-   estimate (computeBackupPickup()) is orange. */
-.layover-pickup.is-roster { color: var(--ok); }
-.layover-pickup.is-backup { color: var(--warn); }
+/* Color alone says a pickup time's source, instead of a separate
+   disclaimer note next to it: a confirmed MyTime roster pickup is green,
+   the reference-sheet backup estimate (computeBackupPickup()) is orange.
+   Shared between the Layover card's own #layoverPickup and the last
+   flight card's transit-line pickup (see renderFlightCardTransit()), so
+   both read the same way. */
+.is-roster { color: var(--ok); }
+.is-backup { color: var(--warn); }
 
 .layover-place {
   font-size: 1.6rem;

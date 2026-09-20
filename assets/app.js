@@ -834,7 +834,6 @@ function getCardEls(node) {
     aircraft: node.querySelector(".aircraft"),
     registration: node.querySelector(".registration"),
     transitInfo: node.querySelector(".transit-info"),
-    transitNote: node.querySelector(".transit-note"),
   };
 }
 
@@ -933,11 +932,6 @@ function computeBackupPickup(flight) {
   return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
 }
 
-// Shown under the pickup time whenever it's computeBackupPickup()'s
-// estimate rather than a confirmed MyTime roster event - so it doesn't
-// silently look as authoritative as a real roster entry.
-const BACKUP_PICKUP_NOTE = "Geschätzt (Standardfahrzeit) – nicht aus dem MyTime-Roster bestätigt";
-
 // Single pickup resolution for a layover - roster event first (see
 // findRosterPickupForFlight()), the reference-sheet backup estimate (see
 // computeBackupPickup()) only once that has nothing. Shared by the
@@ -989,37 +983,41 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
   // authoritative pickup source (see findRosterPickupForFlight()); only
   // when it has no match does the reference-sheet backup estimate (see
   // computeBackupPickup()) fill in - always local time (LT, see
-  // fmtLocalTimeAtIcao()), with the note below (BACKUP_PICKUP_NOTE)
-  // marking it as an estimate rather than a "Z" vs "LT" switch.
+  // fmtLocalTimeAtIcao()). Same green/orange color convention as the
+  // Layover card's own #layoverPickup (see renderLayover()) marks which
+  // one this is, instead of a separate disclaimer note next to it.
   if (!nextFlight) {
     if (f.arrCode === HOME_BASE) {
       cardEls.transitInfo.hidden = true;
       cardEls.transitInfo.textContent = "";
-      cardEls.transitNote.hidden = true;
-      cardEls.transitNote.textContent = "";
       return;
     }
     const city = cityForIcao(f.arrCode) || f.arrCode;
-    let text = `Layover ${city}`;
-    let usedBackup = false;
+    let prefix = `Layover ${city}`;
+    let pickupLabel = null;
+    let isBackup = false;
     const pickup = findRosterPickupForFlight(f);
     if (pickup) {
       const arr = f.arrActualDate || f.arrSchedDate;
       const restLabel = arr ? fmtDurationHM(pickup.dtstart.getTime() - (arr.getTime() + 30 * 60000)) : null;
-      if (restLabel) text += ` · Ruhezeit ${restLabel}`;
-      text += ` · Pickup ${pickup.time} LT`;
+      if (restLabel) prefix += ` · Ruhezeit ${restLabel}`;
+      pickupLabel = `Pickup ${pickup.time} LT`;
     } else {
       const backup = computeBackupPickup(f);
       if (backup) {
-        if (backup.restLabel) text += ` · Ruhezeit ${backup.restLabel}`;
-        text += ` · Pickup ${fmtLocalTimeAtIcao(backup.pickupUtc, f.arrCode) || fmtTime(backup.pickupUtc)}`;
-        usedBackup = true;
+        if (backup.restLabel) prefix += ` · Ruhezeit ${backup.restLabel}`;
+        pickupLabel = `Pickup ${fmtLocalTimeAtIcao(backup.pickupUtc, f.arrCode) || fmtTime(backup.pickupUtc)}`;
+        isBackup = true;
       }
     }
     cardEls.transitInfo.hidden = false;
-    cardEls.transitInfo.textContent = text;
-    cardEls.transitNote.hidden = !usedBackup;
-    cardEls.transitNote.textContent = usedBackup ? BACKUP_PICKUP_NOTE : "";
+    cardEls.transitInfo.textContent = pickupLabel ? `${prefix} · ` : prefix;
+    if (pickupLabel) {
+      const pickupSpan = document.createElement("span");
+      pickupSpan.className = isBackup ? "is-backup" : "is-roster";
+      pickupSpan.textContent = pickupLabel;
+      cardEls.transitInfo.appendChild(pickupSpan);
+    }
     return;
   }
 
@@ -1060,8 +1058,6 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
   }
   cardEls.transitInfo.hidden = !transitText;
   cardEls.transitInfo.textContent = transitText;
-  cardEls.transitNote.hidden = true;
-  cardEls.transitNote.textContent = "";
 }
 
 // Fills one card's content. Only the active (currently scrolled-to) card
@@ -1332,27 +1328,32 @@ function computeMaxLegalOnBlock(flight) {
   };
 }
 
-// Flight number, citypair and date of the flight the join/leave arrow
-// refers to (i.e. the neighboring flight the comparison was made against)
-// - shown next to the arrow so it's clear which flight the split actually
-// happens on, not just that one happens. Same "FLIGHTNUMBER (DEP–ARR) am
-// DD.MM." schema as formatPdfFlightRef()'s "inbound"/"outbound" labels,
-// so both read consistently regardless of which source the reference
-// came from.
-function flightRefLabel(flight) {
+// "inbound" (joining, OpenAirLog-fallback case): the pilot's own previous
+// flight, formatted the exact same "LHxxx <time>" way as a colleague's own
+// PDF Ex reference does (see buildPdfRefMap()/formatExRefLabelLive()) - the
+// live AeroDataBox onblock time when a key is configured, since that
+// reflects this exact occurrence's actual/revised arrival rather than
+// whatever OpenAirLog itself last recorded, falling back to OpenAirLog's
+// own arrival time only when no AeroDataBox key is set. Used identically
+// regardless of which crew source (OpenAirLog vs PDF) is currently
+// displayed - see renderCrew() - so a joining colleague's info reads the
+// same either way whenever they have no more specific PDF ref of their own.
+function ownAdjacentFlightLiveLabel(flight) {
   if (!flight) return null;
   const dateKey = flight.raw && flight.raw.date;
-  const dateLabel = dateKey
-    ? new Date(`${dateKey}T00:00:00Z`).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
-    : null;
-  const routeLabel = ` (${flight.depCode}–${flight.arrCode})`;
-  return dateLabel ? `${flight.flightNumber}${routeLabel} am ${dateLabel}` : `${flight.flightNumber}${routeLabel}`;
+  if (getAeroDataBoxKey() && dateKey) {
+    const cacheKey = `${flight.flightNumber}|${dateKey}`;
+    const cached = flightByNumberCache.get(cacheKey);
+    if (!cached) ensureFlightByNumberLoaded(flight.flightNumber, dateKey);
+    if (cached && cached.leg) return formatExRefLabelLive(flight.flightNumber, cached.leg);
+  }
+  const arr = flight.arrActualDate || flight.arrSchedDate;
+  return arr ? `${flight.flightNumber} ${fmtTime(arr)}` : flight.flightNumber;
 }
 
 // "outbound" (leaving, OpenAirLog-fallback case) only needs the flight
 // number and its departure time - already known locally (this is our own
-// adjacent flight from OpenAirLog, not a lookup), unlike flightRefLabel()'s
-// citypair/date schema still used for the "inbound" fallback.
+// adjacent flight from OpenAirLog, not a lookup).
 function nextFlightRefLabel(flight) {
   if (!flight) return null;
   return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
@@ -1740,7 +1741,7 @@ function renderCrew(f) {
     // says is real.
     renderCrewMembers(els.crewList, merged, {
       leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
-      leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+      leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
       pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
       ownName, legalOnBlockLabel,
     });
@@ -1772,7 +1773,7 @@ function renderCrew(f) {
 
   renderCrewMembers(els.crewList, apiCrew, {
     leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
-    leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: flightRefLabel(adjacentFlight(f, -1)),
+    leavingInfo: nextFlightRefLabel(adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
     pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
     ownName, legalOnBlockLabel,
   });

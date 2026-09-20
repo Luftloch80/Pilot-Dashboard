@@ -83,10 +83,12 @@
     </div>
     <p class="muted small">
       Zeigt im Layover die Pickup-Zeit an. Der Link enthält deinen
-      persönlichen MyTime-Schlüssel und wird nur lokal auf diesem Gerät
-      gespeichert und bei jeder Anfrage direkt an
-      <code>api.lufthansa.com</code> gesendet. Er verlässt dieses Gerät
-      sonst nicht.
+      persönlichen MyTime-Schlüssel und wird lokal auf diesem Gerät
+      gespeichert. <code>api.lufthansa.com</code> blockiert direkte
+      Zugriffe aus dem Browser (CORS); der Abruf läuft deshalb über
+      den öffentlichen CORS-Proxy <code>allorigins.win</code> - der
+      Link wird also auch an diesen Drittanbieter übertragen, nicht
+      nur an Lufthansa.
     </p>
     <label for="rosterUrlInput">Roster-Link (aus MyTime "Teilen")</label>
     <input id="rosterUrlInput" type="password" inputmode="url" autocomplete="off"
@@ -259,6 +261,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=97"></script>
+<script src="assets/app.js?v=98"></script>
 </body>
 </html>

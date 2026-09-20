@@ -421,9 +421,12 @@ function renderRosterStatus() {
     return;
   }
   els.rosterStatus.classList.remove("error-inline");
-  els.rosterStatus.textContent = rosterEventsCache.fetchedAt
-    ? `Zuletzt erfolgreich abgerufen: ${fmtLocalTime(new Date(rosterEventsCache.fetchedAt))}`
-    : "Roster-Link hinterlegt, noch nicht abgerufen.";
+  if (!rosterEventsCache.fetchedAt) {
+    els.rosterStatus.textContent = "Roster-Link hinterlegt, noch nicht abgerufen.";
+    return;
+  }
+  const via = rosterEventsCache.viaProxy ? " (über CORS-Proxy)" : "";
+  els.rosterStatus.textContent = `Zuletzt erfolgreich abgerufen: ${fmtLocalTime(new Date(rosterEventsCache.fetchedAt))}${via}`;
 }
 
 // ---------- AeroDataBox API key storage ----------
@@ -2921,19 +2924,57 @@ function applyRosterMasterOverrides(allFlights, legs, rosterDtstamp) {
   return changed;
 }
 
-const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null };
+const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null, lastError: null, viaProxy: false };
 
-// A plain "TypeError: Failed to fetch" is what a browser throws for a
-// blocked cross-origin request - a bad/expired link, a network drop, AND
-// a CORS rejection (api.lufthansa.com not allowing this origin) all look
-// identical from here, so this can only report is as "network/CORS",
-// not tell those apart - genuinely not distinguishable from inside the
-// page itself. See renderRosterStatus(), which surfaces this instead of
-// silently leaving the pilot looking at an unexplained backup pickup.
+// By the time this runs (see fetchRosterIcsText()), BOTH the direct
+// fetch and the CORS-proxy fallback have already failed - a plain
+// "TypeError: Failed to fetch" from the proxy attempt could still mean a
+// bad/expired roster link, a dropped connection, or the proxy itself
+// being down, not tellable apart from here. An HTTP-status failure (ours
+// or the proxy's) instead carries its own message (e.g. "HTTP 404 (über
+// CORS-Proxy)"), shown as-is. See renderRosterStatus(), which surfaces
+// this instead of silently leaving the pilot looking at an unexplained
+// backup pickup.
 function describeRosterFetchError(e) {
   if (e && e.name === "AbortError") return "Zeitüberschreitung beim Abrufen.";
-  if (e instanceof TypeError) return "Netzwerk- oder CORS-Fehler - Server nicht erreichbar oder blockiert den direkten Zugriff aus dem Browser.";
-  return `Unerwarteter Fehler (${e && e.message ? e.message : e}).`;
+  if (e instanceof TypeError) return "Netzwerk-Fehler - weder direkt noch über den CORS-Proxy erreichbar.";
+  return (e && e.message) || "Unbekannter Fehler beim Abrufen.";
+}
+
+// Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
+// api.lufthansa.com doesn't send CORS headers for this endpoint (it's
+// built for calendar apps subscribing over webcal://, not a browser page's
+// own JavaScript - confirmed against the pilot's real device: the direct
+// fetch below always fails with a network/CORS-shaped error, even though
+// the same URL works fine for a native calendar client). A public CORS
+// proxy fetches it server-side instead and relays the bytes back with its
+// own permissive CORS headers - meaning the roster link (with its
+// embedded MyTime key) is sent to this third party too, not just
+// Lufthansa; disclosed in the Settings copy above the roster input.
+const ROSTER_CORS_PROXY_PREFIX = "https://api.allorigins.win/raw?url=";
+
+// Tries the roster URL directly first (kept in case api.lufthansa.com
+// ever adds CORS support, or a future roster source doesn't need a
+// proxy at all), falling back to ROSTER_CORS_PROXY_PREFIX only once that
+// fails - so a direct success never touches the third party. Returns
+// {text, viaProxy} or throws whichever attempt's error is more useful
+// (the proxy's, since that's the one actually reflecting whether the
+// roster is reachable at all).
+async function fetchRosterIcsText(url) {
+  try {
+    // no-store: this URL never changes, so without it the browser's own
+    // HTTP cache can silently keep answering from an old snapshot - a
+    // real "refresh did nothing" bug this app has no way to detect,
+    // since force just skips OUR cache, not the browser's underneath it.
+    const res = await fetchWithTimeout(url, { cache: "no-store" });
+    if (res.ok) return { text: await res.text(), viaProxy: false };
+    throw new Error(`HTTP ${res.status}`);
+  } catch {
+    const proxied = ROSTER_CORS_PROXY_PREFIX + encodeURIComponent(url);
+    const res = await fetchWithTimeout(proxied, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} (über CORS-Proxy)`);
+    return { text: await res.text(), viaProxy: true };
+  }
 }
 
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
@@ -2947,22 +2988,13 @@ async function ensureRosterLoaded(force) {
   if (!url) return;
   if (!force && rosterEventsCache.url === url && rosterEventsCache.events) return;
   try {
-    // no-store: this URL never changes, so without it the browser's own
-    // HTTP cache can silently keep answering from an old snapshot - a
-    // real "refresh did nothing" bug this app has no way to detect,
-    // since force just skips OUR cache, not the browser's underneath it.
-    const res = await fetchWithTimeout(url, { cache: "no-store" });
-    if (!res.ok) {
-      rosterEventsCache.lastError = `HTTP ${res.status}`;
-      renderRosterStatus();
-      return;
-    }
-    const text = await res.text();
+    const { text, viaProxy } = await fetchRosterIcsText(url);
     const events = parseIcsEvents(text);
     rosterEventsCache.events = events;
     rosterEventsCache.dtstamp = events.find((ev) => ev.dtstamp)?.dtstamp || null;
     rosterEventsCache.fetchedAt = Date.now();
     rosterEventsCache.url = url;
+    rosterEventsCache.viaProxy = viaProxy;
     rosterEventsCache.lastError = null;
     renderRosterStatus();
 

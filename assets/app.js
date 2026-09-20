@@ -904,7 +904,17 @@ function updateTrackHeight() {
 // own transit line, and the separate Layover card once that takes over -
 // whenever there's no MyTime roster pickup to show instead.
 function findRosterPickupForFlight(flight) {
-  if (!getRosterUrl() || !rosterEventsCache.events) return null;
+  if (!getRosterUrl()) return null;
+  // Fires the fetch itself (ensureRosterLoaded() dedupes against an
+  // already-cached URL or an in-flight request, so calling this on every
+  // render pass costs nothing once loaded) - without this, a layover
+  // shown ahead of time on the last flight card's own transit line (not
+  // yet the CURRENTLY active one, which is what triggers the roster load
+  // via resolveLayoverPickup()/renderLayover() instead) never got the
+  // roster fetched at all until the pilot happened to tap refresh, stuck
+  // showing computeBackupPickup()'s estimate indefinitely until then.
+  if (!rosterEventsCache.events) ensureRosterLoaded();
+  if (!rosterEventsCache.events) return null;
   const arr = flight.arrActualDate || flight.arrSchedDate;
   if (!arr) return null;
   return findRosterPickup(rosterEventsCache.events, flight.arrCode, arr);
@@ -956,7 +966,6 @@ function computeBackupPickup(flight) {
 // so both agree on exactly the same value.
 function resolveLayoverPickup(layover) {
   if (!layover || !layover.flight) return null;
-  if (getRosterUrl()) ensureRosterLoaded();
   const pickup = findRosterPickupForFlight(layover.flight);
   if (pickup) return { utc: pickup.dtstart, label: `${pickup.time} LT`, isBackup: false };
   const backup = computeBackupPickup(layover.flight);

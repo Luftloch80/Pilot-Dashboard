@@ -285,11 +285,7 @@ body {
   -ms-overflow-style: none;
 }
 .flight-card-track::-webkit-scrollbar { display: none; }
-/* .layover-card is moved into this track as its last page while a
-   layover is active (see attachLayoverCardToTrack() in app.js) - same
-   sizing/snap rule as a real flight card so it swipes identically. */
-.flight-card-track .flight-card,
-.flight-card-track .layover-card {
+.flight-card-track .flight-card {
   flex: 0 0 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;

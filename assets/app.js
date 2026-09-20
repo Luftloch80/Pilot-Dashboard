@@ -131,7 +131,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [], viewingLayoverPage: false };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [] };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -655,15 +655,13 @@ function pickInitialIndex(flights) {
   return flights.length ? flights.length - 1 : -1; // all of today's flights are done
 }
 
-// Small dots below the flight-card track, one per flight of the day
-// (plus one more for an appended Layover page, see attachLayoverCardToTrack())
+// Small dots below the flight-card track, one per flight of the day,
 // standing in for the removed "Flug X von Y" text now that the cards
 // scroll horizontally - just marks count/position, no text.
 function renderFlightDots() {
   const dots = els.flightCardDots.children;
-  const activeIndex = state.viewingLayoverPage ? dots.length - 1 : state.index;
   for (let i = 0; i < dots.length; i++) {
-    dots[i].classList.toggle("active", i === activeIndex);
+    dots[i].classList.toggle("active", i === state.index);
   }
 }
 
@@ -833,7 +831,7 @@ function getCardEls(node) {
 // of flights changes (see the signature check in renderFlight()), not on
 // every re-render, so an AeroDataBox lookup resolving mid-scroll doesn't
 // wipe the user's scroll position.
-function buildFlightCards(includeLayoverDot) {
+function buildFlightCards() {
   els.flightCardTrack.innerHTML = "";
   els.flightCardDots.innerHTML = "";
   state.cardNodes = state.flights.map(() => {
@@ -844,42 +842,6 @@ function buildFlightCards(includeLayoverDot) {
     els.flightCardDots.appendChild(dot);
     return node;
   });
-  // The Layover card itself gets (re-)appended by renderLayover() (its
-  // one owner for this) right after this runs - innerHTML="" above would
-  // otherwise just have thrown it away unnoticed. Its dot lives here
-  // instead, since renderLayover() doesn't know about dots at all.
-  if (includeLayoverDot) {
-    const dot = document.createElement("span");
-    dot.className = "dot";
-    els.flightCardDots.appendChild(dot);
-  }
-}
-
-// The real #layoverCard element (not a clone - it carries its own ids
-// that renderLayover() and friends already reference directly) becomes
-// the flight-card-track's last swipeable page for as long as a layover
-// is active (see renderLayover()) - appendChild/removeChild MOVE an
-// existing node, they don't clone or destroy it, so this is safe to call
-// every render pass and after every buildFlightCards() wipe.
-function attachLayoverCardToTrack() {
-  if (els.layoverCard.parentElement !== els.flightCardTrack) {
-    els.flightCardTrack.appendChild(els.layoverCard);
-  }
-}
-function detachLayoverCardFromTrack() {
-  // Checks its actual position, not just "is it in the track" - when
-  // buildFlightCards() wipes the track via innerHTML="" (see renderFlight(),
-  // called right before this in the same pass), the layover card is
-  // orphaned (parentElement already null) rather than still sitting in
-  // the track, so that check alone would silently miss it here.
-  if (els.layoverCard.previousElementSibling !== els.crewCard) {
-    // Back to its native spot in index.html (right after #crewCard),
-    // not removed from the document outright - every other optional
-    // card in this app stays put and just toggles [hidden], and fully
-    // removing it would make it unfindable by id for as long as no
-    // layover is active (broke a getElementById-based check in testing).
-    els.crewCard.after(els.layoverCard);
-  }
 }
 
 function scrollTrackToIndex(index) {
@@ -1089,7 +1051,6 @@ function flightsSignature(flights) {
   return flights.map((f) => `${f.flightNumber}@${(f.raw && f.raw.date) || ""}`).join("|");
 }
 let lastCardSignature = null;
-let lastLayoverPageShown = null;
 
 // Whichever flight the carousel is currently scrolled to - re-renders its
 // content (promoting it to "active", so its own AeroDataBox lookups are
@@ -1109,23 +1070,21 @@ function renderFlight() {
   const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). A
-  // genuine layover (more than 2h before the next departure - see
-  // findApiLayover()/LAYOVER_END_LEAD_MS, and less than
-  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup) is no longer its own
-  // exclusive screen - it's an extra page appended after today's flights
-  // in the same swipeable carousel (see attachLayoverCardToTrack()), so
-  // both are reachable by scrolling instead of one replacing the other.
+  // completed flight card - see shouldShowPostLandingHomeView(). And while
+  // still genuinely in a layover (more than 2h before the next departure -
+  // see findApiLayover()/LAYOVER_END_LEAD_MS - and less than
+  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup), the layover card is
+  // the whole story on its own screen; showing today's flight cards at
+  // the same time just confused which card was which (a multi-day
+  // rotation's own flights ended up sharing one swipe strip with an
+  // unrelated layover from days ago) - back to one replacing the other,
+  // with the pickup cutoff as the only change from before this reverted.
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   const layoverActive = !!layover && !layoverPickupCutoffPassed(layover);
-  const showFlightCard = (!!f || layoverActive) && !shouldShowPostLandingHomeView();
+  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !layoverActive;
 
   els.flightCardTrack.hidden = !showFlightCard;
-  // The layover's own crew list lives inside the Layover page itself
-  // (renderLayoverCrew()) - #crewCard is only ever about today's current
-  // flight, so it stays tied to whether one exists, regardless of
-  // whether the pilot has swiped over to view the layover page.
-  els.crewCard.hidden = !f;
+  els.crewCard.hidden = !showFlightCard;
 
   if (!showFlightCard) {
     els.flightCardDots.hidden = true;
@@ -1135,42 +1094,27 @@ function renderFlight() {
     // it doesn't get overwritten.
     renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
     renderDutyStatus();
-    renderLayover(); // keeps the Layover card's own hidden state/attachment current even here
+    renderLayover(); // keeps the Layover card's own hidden state current even here
     return;
   }
   els.dutyStatusCard.hidden = true;
+  renderLayover(); // hides it once a real flight is being shown instead
 
   const signature = flightsSignature(state.flights);
-  const rebuilt = signature !== lastCardSignature || layoverActive !== lastLayoverPageShown;
+  const rebuilt = signature !== lastCardSignature;
   if (rebuilt) {
-    buildFlightCards(layoverActive);
+    buildFlightCards();
     lastCardSignature = signature;
-    lastLayoverPageShown = layoverActive;
-    // Lands on the layover page only when there's nothing else to show
-    // today - otherwise starts on the current/relevant flight, same as
-    // always, with the layover just one swipe further along.
-    state.viewingLayoverPage = !f;
   }
 
-  // Re-attaches the Layover card after any buildFlightCards() wipe above
-  // (innerHTML="" doesn't know it was ever there) and keeps its own
-  // content/hidden state current regardless of whether this pass rebuilt
-  // anything.
-  renderLayover();
-
-  if (f) state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
-  if (rebuilt) scrollTrackToIndex(state.viewingLayoverPage ? state.flights.length : state.index);
-  const totalPages = state.flights.length + (layoverActive ? 1 : 0);
-  els.flightCardDots.hidden = totalPages <= 1;
+  state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
+  if (rebuilt) scrollTrackToIndex(state.index);
+  els.flightCardDots.hidden = state.flights.length <= 1;
   renderFlightDots();
 
-  if (f) {
-    renderAirlineBadge(f.flightNumber);
-    renderCrew(f);
-    ensureCrewLoaded(f);
-  } else {
-    renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
-  }
+  renderAirlineBadge(f.flightNumber);
+  renderCrew(f);
+  ensureCrewLoaded(f);
 }
 
 function crewKey(role, name) {
@@ -3555,18 +3499,13 @@ function renderLayover() {
   // no layover card (and thus no room-number field) while on vacation or
   // an Ortstag - there's nowhere to have a hotel room on either. Also
   // drops off (see layoverPickupCutoffPassed()) once the pilot's actually
-  // been picked up - see attachLayoverCardToTrack()/detachLayoverCardFromTrack(),
-  // which make this the flight-card carousel's last page rather than its
-  // own separate exclusive screen (see renderFlight()).
+  // been picked up, 5 minutes later - renderFlight() then takes back over
+  // and shows the ordinary flight-card carousel again.
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   const active = !!layover && !layoverPickupCutoffPassed(layover);
   els.layoverCard.hidden = !active;
   currentLayoverKey = null;
-  if (!active) {
-    detachLayoverCardFromTrack();
-    return;
-  }
-  attachLayoverCardToTrack();
+  if (!active) return;
 
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
@@ -3959,19 +3898,10 @@ els.flightCardTrack.addEventListener("scroll", () => {
   clearTimeout(cardScrollDebounce);
   cardScrollDebounce = setTimeout(() => {
     const track = els.flightCardTrack;
-    const totalPages = track.children.length;
-    if (!track.clientWidth || !totalPages) return;
+    if (!track.clientWidth || !state.flights.length) return;
     const newIndex = Math.round(track.scrollLeft / track.clientWidth);
-    const clamped = Math.max(0, Math.min(totalPages - 1, newIndex));
-    // The appended Layover page (see attachLayoverCardToTrack()) sits
-    // past every real flight - state.index only ever tracks flights, so
-    // landing on it just updates which dot is lit, nothing flight-specific.
-    const onLayoverPage = clamped >= state.flights.length;
-    if (onLayoverPage !== state.viewingLayoverPage) {
-      state.viewingLayoverPage = onLayoverPage;
-      renderFlightDots();
-    }
-    if (onLayoverPage || clamped === state.index) return;
+    const clamped = Math.max(0, Math.min(state.flights.length - 1, newIndex));
+    if (clamped === state.index) return;
     state.index = clamped;
     renderActiveFlightExtras();
   }, 120);
@@ -4066,10 +3996,10 @@ setInterval(() => {
   // Called every tick, not just when the flight set actually changed -
   // it also re-evaluates the layover pickup cutoff (see
   // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS), which is just as time-based and
-  // needs to drop the Layover page while the app just sits open, too.
-  // renderFlight()'s own signature check (now covering both the flight
-  // set AND the layover's active/dropped state) rebuilds the cards only
-  // when something actually changed, so this stays a no-op most ticks.
+  // needs to drop the Layover card (back to the ordinary flight-card
+  // view) while the app just sits open, too. renderFlight()'s own
+  // signature check rebuilds the flight cards only when that set
+  // actually changed, so this stays cheap most ticks.
   renderFlight();
 
   // Ticks every card's countdown pill (cheap, pure date math) - only the

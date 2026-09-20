@@ -912,7 +912,7 @@ function findRosterPickupForFlight(flight) {
   // yet the CURRENTLY active one, which is what triggers the roster load
   // via resolveLayoverPickup()/renderLayover() instead) never got the
   // roster fetched at all until the pilot happened to tap refresh, stuck
-  // showing computeBackupPickup()'s estimate indefinitely until then.
+  // showing computeLegalRestReference()'s estimate indefinitely until then.
   if (!rosterEventsCache.events) ensureRosterLoaded();
   if (!rosterEventsCache.events) return null;
   const arr = flight.arrActualDate || flight.arrSchedDate;
@@ -920,18 +920,22 @@ function findRosterPickupForFlight(flight) {
   return findRosterPickup(rosterEventsCache.events, flight.arrCode, arr);
 }
 
-// Backup pickup estimate for when the MyTime roster has no matching event
-// (not loaded, no URL configured, or this leg just isn't in it yet) -
-// used only as a fallback, never in place of a roster match. Pickup is set
-// for report time on the next known duty (its own departure minus
-// STANDARD_REPORT_BEFORE_DEP_MIN) once that flight is loaded, always
-// floored by the legal minimum rest (see computeMinRestAfterDuty(),
-// itself always the stricter/longer of MTV and EASA) so it can never
-// propose an illegally early pickup - and is that legal minimum outright
-// whenever the next flight isn't known yet at all. Returns null (no
-// backup shown, not a wrong one) only when today's own duty day can't be
-// determined at all.
-function computeBackupPickup(flight) {
+// The "Ruhezeit" (rest) duration always shown next to a layover is always
+// this - even once a real MyTime roster Pickup event also exists (see
+// findRosterPickupForFlight()) - because rest itself doesn't end at
+// pickup: it ends at report time for the next known duty (that flight's
+// own departure minus STANDARD_REPORT_BEFORE_DEP_MIN), same convention
+// computeMaxLegalOnBlock() uses on the FDP side. Pickup usually happens
+// somewhat before report (to allow for hotel/airport transfer), so it's
+// a separate, purely logistical fact - the roster's own real Pickup time
+// is shown for that (see renderFlightCardTransit()/renderLayover()), but
+// never substituted in here. Always floored by the legal minimum rest
+// (see computeMinRestAfterDuty(), itself always the stricter/longer of
+// MTV and EASA) so it can never show less rest than the law actually
+// requires - and is that legal minimum outright whenever the next flight
+// isn't known yet at all. Returns null only when today's own duty day
+// can't be determined at all.
+function computeLegalRestReference(flight) {
   const minRest = computeMinRestAfterDuty(flight);
   if (!minRest) return null;
 
@@ -961,14 +965,14 @@ function computeBackupPickup(flight) {
 
 // Single pickup resolution for a layover - roster event first (see
 // findRosterPickupForFlight()), the reference-sheet backup estimate (see
-// computeBackupPickup()) only once that has nothing. Shared by the
+// computeLegalRestReference()) only once that has nothing. Shared by the
 // Layover card's own pickup line and layoverPickupCutoffPassed() below,
 // so both agree on exactly the same value.
 function resolveLayoverPickup(layover) {
   if (!layover || !layover.flight) return null;
   const pickup = findRosterPickupForFlight(layover.flight);
   if (pickup) return { utc: pickup.dtstart, label: `${pickup.time} LT`, isBackup: false };
-  const backup = computeBackupPickup(layover.flight);
+  const backup = computeLegalRestReference(layover.flight);
   if (!backup) return null;
   const label = fmtLocalTimeAtIcao(backup.pickupUtc, layover.arrCode) || fmtTime(backup.pickupUtc);
   return { utc: backup.pickupUtc, label, isBackup: true };
@@ -1008,7 +1012,7 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
   // instead of leaving the line blank. The MyTime roster is the
   // authoritative pickup source (see findRosterPickupForFlight()); only
   // when it has no match does the reference-sheet backup estimate (see
-  // computeBackupPickup()) fill in - always local time (LT, see
+  // computeLegalRestReference()) fill in - always local time (LT, see
   // fmtLocalTimeAtIcao()). Same green/orange color convention as the
   // Layover card's own #layoverPickup (see renderLayover()) marks which
   // one this is, instead of a separate disclaimer note next to it.
@@ -1022,19 +1026,20 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
     let prefix = `Layover ${city}`;
     let pickupLabel = null;
     let isBackup = false;
+    // "Ruhezeit" always comes from the legal rest reference (report time
+    // for the next duty, floored by MTV/EASA's own minimum) regardless of
+    // whether a MyTime roster Pickup event also exists - pickup itself is
+    // a separate, purely logistical time (usually somewhat before report,
+    // for the hotel/airport transfer), never the boundary rest is
+    // measured against. See computeLegalRestReference()'s own comment.
+    const restRef = computeLegalRestReference(f);
+    if (restRef && restRef.restLabel) prefix += ` · Ruhezeit ${restRef.restLabel} (${restRef.source})`;
     const pickup = findRosterPickupForFlight(f);
     if (pickup) {
-      const arr = f.arrActualDate || f.arrSchedDate;
-      const restLabel = arr ? fmtDurationHM(pickup.dtstart.getTime() - (arr.getTime() + 30 * 60000)) : null;
-      if (restLabel) prefix += ` · Ruhezeit ${restLabel}`;
       pickupLabel = `Pickup ${pickup.time} LT`;
-    } else {
-      const backup = computeBackupPickup(f);
-      if (backup) {
-        if (backup.restLabel) prefix += ` · Ruhezeit ${backup.restLabel} (${backup.source})`;
-        pickupLabel = `Pickup ${fmtLocalTimeAtIcao(backup.pickupUtc, f.arrCode) || fmtTime(backup.pickupUtc)}`;
-        isBackup = true;
-      }
+    } else if (restRef) {
+      pickupLabel = `Pickup ${fmtLocalTimeAtIcao(restRef.pickupUtc, f.arrCode) || fmtTime(restRef.pickupUtc)}`;
+      isBackup = true;
     }
     cardEls.transitInfo.hidden = false;
     cardEls.transitInfo.textContent = pickupLabel ? `${prefix} · ` : prefix;
@@ -1434,7 +1439,7 @@ function utcOffsetDiffHours(icaoA, icaoB, at) {
 // itself never starts before the last sector's own arrival + 30 min
 // Abschlussarbeiten (MTV § 4, 4. Abschnitt Abs. (1) a, referencing § 4, 1.
 // Abschnitt Abs. (1) lit i) - the same 30-minute buffer
-// computeBackupPickup() already uses for its own restLabel. "Planned FDP"
+// computeLegalRestReference() already uses for its own restLabel. "Planned FDP"
 // for both rules is the whole duty day's own report-to-last-onblock span
 // (sectorsForDutyDay()) - confirmed against a real eFF RT screen (MTV
 // 12:00, LAW 10:00, for an 08:35 planned FDP day) matching to the minute.
@@ -2510,7 +2515,7 @@ function threeLetterCode(icao) {
 // internal station codes, an airport's time zone is plain geography, not
 // something that needs confirming per station. Scoped to exactly the
 // codes THREE_LETTER_CODE already covers (extend both together) - that's
-// also every station computeBackupPickup() can ever produce a time for,
+// also every station computeLegalRestReference() can ever produce a time for,
 // so a backup pickup can always be shown in local time, matching a
 // roster pickup's "LT" formatting instead of a bare UTC instant.
 const TIMEZONE_BY_ICAO = {

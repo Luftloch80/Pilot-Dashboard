@@ -1825,7 +1825,7 @@ function renderCrew(f) {
   const ownName = getOwnName();
   const maxDuty = computeMaxLegalOnBlock(f);
   const legalOnBlockLabel = maxDuty
-    ? `Späteste legale Onblock: ${fmtTime(maxDuty.latestOnBlockUtc)} (${maxDuty.source}, ${maxDuty.sectorCount} Sekt.)`
+    ? `latest Onblock: ${fmtTime(maxDuty.latestOnBlockUtc).replace("Z", " UTC")} (${maxDuty.source})`
     : null;
 
   if (useSource === "pdf") {

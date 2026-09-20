@@ -927,8 +927,16 @@ function computeBackupPickup(flight) {
   const onward = adjacentFlight(flight, 1);
   const onwardDep = onward && (onward.depSchedDate || onward.depActualDate);
   if (!onwardDep) return null;
-  const pickupUtc = new Date(onwardDep.getTime() - (60 + transferMin) * 60000);
+  let pickupUtc = new Date(onwardDep.getTime() - (60 + transferMin) * 60000);
   const restStart = new Date(flight.arrSchedDate.getTime() + 30 * 60000);
+  // Never propose a pickup earlier than the legal minimum rest allows
+  // (see computeMinRestAfterDuty()) - the hotel-transfer-based estimate
+  // above only knows about making the next flight, not about rest law, so
+  // a next flight scheduled soon enough could otherwise put this before
+  // it. This is purely a floor: an on-time next flight almost always
+  // leaves plenty of margin above minimum rest anyway.
+  const minRest = computeMinRestAfterDuty(flight);
+  if (minRest && minRest.earliestPickupUtc > pickupUtc) pickupUtc = minRest.earliestPickupUtc;
   return { pickupUtc, restLabel: fmtDurationHM(pickupUtc - restStart) };
 }
 
@@ -1333,6 +1341,105 @@ function computeMaxLegalOnBlock(flight) {
   return {
     latestOnBlockUtc: new Date(reportUtc.getTime() + strictest.min * 60000),
     sectorCount: dutyDay.length,
+    source: strictest.source,
+  };
+}
+
+// ---------- Minimum rest away from the dienstlicher Wohnsitz (a
+// mid-rotation layover) - DLH MTV Nr. 6, § 4, 4. Abschnitt Abs. (2) b)+e),
+// and EASA ORO.FTL.235(b) ----------
+//
+// Confirmed against the real MTV Nr. 6 PDF text (Abs. (2) b): "Die
+// Mindestruhezeiten... werden planmäßig unterwegs auf mindestens 12
+// Stunden festgesetzt. Die Mindestruhezeit beträgt nach einer... geplanten
+// Flugdienstzeit von mehr als 11 Stunden 12 Stunden und von mehr als 12
+// Stunden 14 Stunden." - i.e. a flat 12h floor that only steps up to 14h
+// once the day's own planned FDP itself exceeds 12h (the ">11h" clause
+// restates the same 12h floor, so only the >12h step actually changes
+// anything). This is Abs. (2)'s own "unterwegs" rule specifically - not
+// Abs. (3)'s much larger return-to-home-base rest, which this app doesn't
+// model (the Layover card/transit line are about an outstation overnight
+// mid-rotation, never a return home).
+const MTV_MIN_REST_BASE_MIN = 12 * 60;
+const MTV_MIN_REST_EXTENDED_MIN = 14 * 60;
+const MTV_MIN_REST_EXTENDED_THRESHOLD_MIN = 12 * 60;
+
+// Same section, Abs. (2) e): a time-zone difference between where the
+// preceding duty started and where it ended raises the minimum further,
+// on top of (not instead of) the FDP-based floor above. Approximated as
+// the whole-hour UTC offset difference between the two stations at
+// utcOffsetDiffHours() - exact for any station pair actually on
+// TIMEZONE_BY_ICAO (all within Europe so far, where a station's own
+// standing offset is always a whole hour), though not literally the same
+// thing as counting political time zones for a network this doesn't
+// cover. In practice this pilot's own short/medium-haul European network
+// never reaches the 4-zone threshold, so this rarely if ever changes
+// anything - kept for correctness rather than because it's expected to
+// bind.
+const MTV_MIN_REST_TZ_BANDS = [
+  { minZones: 8, min: 44 * 60 },
+  { minZones: 6, min: 20 * 60 },
+  { minZones: 4, min: 14 * 60 },
+];
+
+// EASA ORO.FTL.235(b): rest away from home base is at least as long as
+// the preceding duty period, or 10 hours, whichever is greater. No fixed
+// EU-wide time-zone extension the way MTV's own table spells out
+// (ORO.FTL.235(c)'s jet-lag/acclimatisation provisions are qualitative
+// guidance material, not a numeric lookup) - so, same spirit as
+// easaMaxFdpMinutes()'s own acclimatisation caveat, this is the base rule
+// only.
+const EASA_MIN_REST_BASE_MIN = 10 * 60;
+
+// Whole-hour UTC offset difference between two ICAO stations at a given
+// instant (DST-aware, via each station's own IANA zone) - null when
+// either station isn't on TIMEZONE_BY_ICAO, so the caller just skips the
+// time-zone extension rather than guessing.
+function utcOffsetDiffHours(icaoA, icaoB, at) {
+  const tzA = TIMEZONE_BY_ICAO[icaoA];
+  const tzB = TIMEZONE_BY_ICAO[icaoB];
+  if (!tzA || !tzB || !at) return null;
+  const offsetOf = (tz) => {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "shortOffset" }).formatToParts(at);
+    const raw = parts.find((p) => p.type === "timeZoneName")?.value || "";
+    const m = /GMT([+-]\d{1,2})/.exec(raw);
+    return m ? Number(m[1]) : null;
+  };
+  const oa = offsetOf(tzA);
+  const ob = offsetOf(tzB);
+  return oa != null && ob != null ? Math.abs(oa - ob) : null;
+}
+
+// Earliest legally permitted pickup after this flight's own duty day ends
+// - the stricter (longer) of MTV's and EASA's own minimum rest, same
+// "whichever actually binds" pattern as computeMaxLegalOnBlock(). Rest
+// itself never starts before the last sector's own arrival + 30 min
+// Abschlussarbeiten (MTV § 4, 4. Abschnitt Abs. (1) a, referencing § 4, 1.
+// Abschnitt Abs. (1) lit i) - the same 30-minute buffer
+// computeBackupPickup() already uses for its own restLabel. "Planned FDP"
+// for both rules is the whole duty day's own report-to-last-onblock span
+// (sectorsForDutyDay()) - confirmed against a real eFF RT screen (MTV
+// 12:00, LAW 10:00, for an 08:35 planned FDP day) matching to the minute.
+function computeMinRestAfterDuty(flight) {
+  const dutyDay = sectorsForDutyDay(flight);
+  const first = dutyDay[0];
+  const last = dutyDay[dutyDay.length - 1];
+  if (!first || !first.depSchedDate || !last || !last.arrSchedDate) return null;
+  const reportUtc = new Date(first.depSchedDate.getTime() - STANDARD_REPORT_BEFORE_DEP_MIN * 60000);
+  const restStart = new Date(last.arrSchedDate.getTime() + 30 * 60000);
+  const plannedFdpMin = (last.arrSchedDate.getTime() - reportUtc.getTime()) / 60000;
+
+  let mtvMin = plannedFdpMin > MTV_MIN_REST_EXTENDED_THRESHOLD_MIN ? MTV_MIN_REST_EXTENDED_MIN : MTV_MIN_REST_BASE_MIN;
+  const zones = utcOffsetDiffHours(first.depCode, last.arrCode, last.arrSchedDate);
+  if (zones != null) {
+    const tzBand = MTV_MIN_REST_TZ_BANDS.find((b) => zones >= b.minZones);
+    if (tzBand) mtvMin = Math.max(mtvMin, tzBand.min);
+  }
+  const easaMin = Math.max(plannedFdpMin, EASA_MIN_REST_BASE_MIN);
+
+  const strictest = mtvMin >= easaMin ? { min: mtvMin, source: "MTV" } : { min: easaMin, source: "EASA" };
+  return {
+    earliestPickupUtc: new Date(restStart.getTime() + strictest.min * 60000),
     source: strictest.source,
   };
 }

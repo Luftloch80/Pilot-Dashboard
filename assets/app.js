@@ -83,7 +83,6 @@ const els = {
   roomDetails: document.getElementById("roomDetails"),
   roomNumberInput: document.getElementById("roomNumberInput"),
   layoverPickup: document.getElementById("layoverPickup"),
-  layoverPickupNote: document.getElementById("layoverPickupNote"),
   layoverCurrency: document.getElementById("layoverCurrency"),
   currencyCode: document.getElementById("currencyCode"),
   currencyLocalInput: document.getElementById("currencyLocalInput"),
@@ -3584,11 +3583,14 @@ function renderLayover() {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
+  // Color alone now says whether this is a confirmed MyTime roster pickup
+  // (green) or just the reference-sheet backup estimate (orange) - the
+  // separate disclaimer note this used to need next to it is gone.
   const pickup = resolveLayoverPickup(layover);
   els.layoverPickup.hidden = !pickup;
   els.layoverPickup.textContent = pickup ? `Pickup: ${pickup.label}` : "";
-  els.layoverPickupNote.hidden = !(pickup && pickup.isBackup);
-  els.layoverPickupNote.textContent = pickup && pickup.isBackup ? BACKUP_PICKUP_NOTE : "";
+  els.layoverPickup.classList.toggle("is-roster", !!pickup && !pickup.isBackup);
+  els.layoverPickup.classList.toggle("is-backup", !!pickup && pickup.isBackup);
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;

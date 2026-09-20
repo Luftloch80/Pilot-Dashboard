@@ -517,7 +517,11 @@ body {
 }
 .layover-header h2 { margin: 0; }
 .layover-pickup { white-space: nowrap; }
-.layover-pickup-note { text-align: right; margin-top: -4px; margin-bottom: 8px; }
+/* Color alone says the source now, instead of a separate disclaimer note:
+   a confirmed MyTime roster pickup is green, the reference-sheet backup
+   estimate (computeBackupPickup()) is orange. */
+.layover-pickup.is-roster { color: var(--ok); }
+.layover-pickup.is-backup { color: var(--warn); }
 
 .layover-place {
   font-size: 1.6rem;

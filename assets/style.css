@@ -290,6 +290,11 @@ body {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Height is pinned in JS to just the active page (see updateTrackHeight()
+     in app.js) - the flex row would otherwise always default to its
+     tallest page's height regardless of align-items, leaving a gap below
+     shorter pages before the dots/crew card. */
+  transition: height 0.2s ease;
 }
 .flight-card-track::-webkit-scrollbar { display: none; }
 /* .layover-card is moved into this track as its leading page while a

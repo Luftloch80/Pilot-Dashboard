@@ -863,6 +863,41 @@ function scrollTrackToIndex(index) {
   track.scrollTo({ left: index * track.clientWidth, behavior: "auto" });
 }
 
+// A flex row's own height defaults to its tallest child no matter how the
+// (shorter) others are cross-aligned - align-items:flex-start (see
+// style.css) stops those shorter pages' content from being stretched, but
+// left the track itself still as tall as the tallest page (e.g. the
+// Layover card), leaving a blank gap below a shorter page's own content
+// before #flightCardDots/#crewCard. Pinning the track's height to just the
+// currently active page closes that gap, so the dots/crew card sit right
+// under whatever page is actually visible. Called after every render pass
+// and every settled scroll (see the two renderActive*Extras() and the
+// flightCardTrack "scroll" listener below).
+//
+// The active page's own content can also still grow after that (e.g. the
+// Layover card's currency/weather sections filling in once their own
+// fetch resolves, well after the page first rendered) without any of
+// those call sites re-running this - so the currently active node is kept
+// under a live ResizeObserver that re-measures on any such change, rather
+// than that being something every present and future async content
+// source would need to remember to trigger itself.
+const trackHeightObserver = new ResizeObserver(() => updateTrackHeight());
+let observedTrackNode = null;
+
+function updateTrackHeight() {
+  const track = els.flightCardTrack;
+  if (track.hidden) return;
+  const node = state.mode === "layover"
+    ? (state.layoverPageIndex === 0 ? els.layoverCard : state.layoverCardNodes[state.layoverPageIndex - 1])
+    : state.cardNodes[state.index];
+  if (node !== observedTrackNode) {
+    if (observedTrackNode) trackHeightObserver.unobserve(observedTrackNode);
+    if (node) trackHeightObserver.observe(node);
+    observedTrackNode = node;
+  }
+  track.style.height = node ? `${node.offsetHeight}px` : "";
+}
+
 // Computed fallback pickup for a layover: rest starts 30 min after
 // scheduled arrival (post-flight duties), pickup is 60 min before the
 // next flight's own departure - checked across the whole loaded
@@ -1075,6 +1110,7 @@ let lastCardSignature = null;
 // flight (crew, airline badge, dots).
 function renderActiveFlightExtras() {
   renderFlightDots();
+  updateTrackHeight();
   const f = state.flights[state.index];
   if (!f) return;
   renderFlightCardContent(state.flights, state.cardNodes, state.index, true);
@@ -1137,6 +1173,7 @@ function renderFlight() {
   if (rebuilt) scrollTrackToIndex(state.index);
   els.flightCardDots.hidden = state.flights.length <= 1;
   renderFlightDots();
+  updateTrackHeight();
 
   renderAirlineBadge(f.flightNumber);
   renderCrew(f);
@@ -3633,6 +3670,7 @@ function renderLayoverCarousel(layover) {
   });
   if (rebuilt) scrollTrackToIndex(state.layoverPageIndex);
   renderFlightDots();
+  updateTrackHeight();
 
   if (state.layoverPageIndex === 0) {
     els.crewCard.hidden = true;
@@ -3651,6 +3689,7 @@ function renderLayoverCarousel(layover) {
 // carousel (see renderLayoverCarousel()) is currently scrolled to.
 function renderActiveLayoverExtras() {
   renderFlightDots();
+  updateTrackHeight();
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
   if (state.layoverPageIndex === 0 || !layover) {
     els.crewCard.hidden = true;

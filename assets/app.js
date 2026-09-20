@@ -131,7 +131,7 @@ const els = {
 };
 
 /** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
-const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [] };
+const state = { flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api", pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [], viewingLayoverPage: false };
 const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
 
 // ---------- helpers ----------
@@ -655,13 +655,15 @@ function pickInitialIndex(flights) {
   return flights.length ? flights.length - 1 : -1; // all of today's flights are done
 }
 
-// Small dots below the flight-card track, one per flight of the day,
+// Small dots below the flight-card track, one per flight of the day
+// (plus one more for an appended Layover page, see attachLayoverCardToTrack())
 // standing in for the removed "Flug X von Y" text now that the cards
 // scroll horizontally - just marks count/position, no text.
 function renderFlightDots() {
   const dots = els.flightCardDots.children;
+  const activeIndex = state.viewingLayoverPage ? dots.length - 1 : state.index;
   for (let i = 0; i < dots.length; i++) {
-    dots[i].classList.toggle("active", i === state.index);
+    dots[i].classList.toggle("active", i === activeIndex);
   }
 }
 
@@ -831,7 +833,7 @@ function getCardEls(node) {
 // of flights changes (see the signature check in renderFlight()), not on
 // every re-render, so an AeroDataBox lookup resolving mid-scroll doesn't
 // wipe the user's scroll position.
-function buildFlightCards() {
+function buildFlightCards(includeLayoverDot) {
   els.flightCardTrack.innerHTML = "";
   els.flightCardDots.innerHTML = "";
   state.cardNodes = state.flights.map(() => {
@@ -842,6 +844,42 @@ function buildFlightCards() {
     els.flightCardDots.appendChild(dot);
     return node;
   });
+  // The Layover card itself gets (re-)appended by renderLayover() (its
+  // one owner for this) right after this runs - innerHTML="" above would
+  // otherwise just have thrown it away unnoticed. Its dot lives here
+  // instead, since renderLayover() doesn't know about dots at all.
+  if (includeLayoverDot) {
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    els.flightCardDots.appendChild(dot);
+  }
+}
+
+// The real #layoverCard element (not a clone - it carries its own ids
+// that renderLayover() and friends already reference directly) becomes
+// the flight-card-track's last swipeable page for as long as a layover
+// is active (see renderLayover()) - appendChild/removeChild MOVE an
+// existing node, they don't clone or destroy it, so this is safe to call
+// every render pass and after every buildFlightCards() wipe.
+function attachLayoverCardToTrack() {
+  if (els.layoverCard.parentElement !== els.flightCardTrack) {
+    els.flightCardTrack.appendChild(els.layoverCard);
+  }
+}
+function detachLayoverCardFromTrack() {
+  // Checks its actual position, not just "is it in the track" - when
+  // buildFlightCards() wipes the track via innerHTML="" (see renderFlight(),
+  // called right before this in the same pass), the layover card is
+  // orphaned (parentElement already null) rather than still sitting in
+  // the track, so that check alone would silently miss it here.
+  if (els.layoverCard.previousElementSibling !== els.crewCard) {
+    // Back to its native spot in index.html (right after #crewCard),
+    // not removed from the document outright - every other optional
+    // card in this app stays put and just toggles [hidden], and fully
+    // removing it would make it unfindable by id for as long as no
+    // layover is active (broke a getElementById-based check in testing).
+    els.crewCard.after(els.layoverCard);
+  }
 }
 
 function scrollTrackToIndex(index) {
@@ -890,6 +928,36 @@ function computeBackupPickup(flight) {
 // estimate rather than a confirmed MyTime roster event - so it doesn't
 // silently look as authoritative as a real roster entry.
 const BACKUP_PICKUP_NOTE = "Geschätzt (Standardfahrzeit) – nicht aus dem MyTime-Roster bestätigt";
+
+// Single pickup resolution for a layover - roster event first (see
+// findRosterPickupForFlight()), the reference-sheet backup estimate (see
+// computeBackupPickup()) only once that has nothing. Shared by the
+// Layover card's own pickup line and layoverPickupCutoffPassed() below,
+// so both agree on exactly the same value.
+function resolveLayoverPickup(layover) {
+  if (!layover || !layover.flight) return null;
+  if (getRosterUrl()) ensureRosterLoaded();
+  const pickup = findRosterPickupForFlight(layover.flight);
+  if (pickup) return { utc: pickup.dtstart, label: `${pickup.time} LT`, isBackup: false };
+  const backup = computeBackupPickup(layover.flight);
+  if (!backup) return null;
+  const label = fmtLocalTimeAtIcao(backup.pickupUtc, layover.arrCode) || fmtTime(backup.pickupUtc);
+  return { utc: backup.pickupUtc, label, isBackup: true };
+}
+
+// Once the crew's actually been picked up, the Layover page has done its
+// job - dropped from the flight-card carousel (see renderFlight()) 5
+// minutes after the resolved pickup time, rather than lingering until
+// findApiLayover() itself stops calling it a layover (up to
+// LAYOVER_END_LEAD_MS, 2h before the next departure - far too late).
+// With no pickup time known at all (neither roster nor backup), there's
+// nothing to count down from, so the page just isn't force-dropped this
+// way and keeps showing until findApiLayover() itself lets go of it.
+const LAYOVER_PAGE_DROP_AFTER_PICKUP_MS = 5 * 60 * 1000;
+function layoverPickupCutoffPassed(layover) {
+  const pickup = resolveLayoverPickup(layover);
+  return !!(pickup && pickup.utc && Date.now() - pickup.utc.getTime() >= LAYOVER_PAGE_DROP_AFTER_PICKUP_MS);
+}
 
 // Transit to the next own flight and, on a Flugzeugwechsel (its
 // registration differs from this one's), which aircraft that is - plus,
@@ -1021,6 +1089,7 @@ function flightsSignature(flights) {
   return flights.map((f) => `${f.flightNumber}@${(f.raw && f.raw.date) || ""}`).join("|");
 }
 let lastCardSignature = null;
+let lastLayoverPageShown = null;
 
 // Whichever flight the carousel is currently scrolled to - re-renders its
 // content (promoting it to "active", so its own AeroDataBox lookups are
@@ -1040,16 +1109,23 @@ function renderFlight() {
   const f = state.flights[state.index];
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
-  // completed flight card - see shouldShowPostLandingHomeView(). And while
-  // still genuinely in a layover (more than 2h before the next departure -
-  // see findApiLayover()/LAYOVER_END_LEAD_MS), the layover card is the
-  // whole story; showing today's flight card hours in advance would just
-  // be premature "Fluginfo" on top of it.
+  // completed flight card - see shouldShowPostLandingHomeView(). A
+  // genuine layover (more than 2h before the next departure - see
+  // findApiLayover()/LAYOVER_END_LEAD_MS, and less than
+  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS past pickup) is no longer its own
+  // exclusive screen - it's an extra page appended after today's flights
+  // in the same swipeable carousel (see attachLayoverCardToTrack()), so
+  // both are reachable by scrolling instead of one replacing the other.
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
-  const showFlightCard = !!f && !shouldShowPostLandingHomeView() && !layover;
+  const layoverActive = !!layover && !layoverPickupCutoffPassed(layover);
+  const showFlightCard = (!!f || layoverActive) && !shouldShowPostLandingHomeView();
 
   els.flightCardTrack.hidden = !showFlightCard;
-  els.crewCard.hidden = !showFlightCard;
+  // The layover's own crew list lives inside the Layover page itself
+  // (renderLayoverCrew()) - #crewCard is only ever about today's current
+  // flight, so it stays tied to whether one exists, regardless of
+  // whether the pilot has swiped over to view the layover page.
+  els.crewCard.hidden = !f;
 
   if (!showFlightCard) {
     els.flightCardDots.hidden = true;
@@ -1059,25 +1135,42 @@ function renderFlight() {
     // it doesn't get overwritten.
     renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
     renderDutyStatus();
+    renderLayover(); // keeps the Layover card's own hidden state/attachment current even here
     return;
   }
   els.dutyStatusCard.hidden = true;
 
   const signature = flightsSignature(state.flights);
-  const rebuilt = signature !== lastCardSignature;
+  const rebuilt = signature !== lastCardSignature || layoverActive !== lastLayoverPageShown;
   if (rebuilt) {
-    buildFlightCards();
+    buildFlightCards(layoverActive);
     lastCardSignature = signature;
+    lastLayoverPageShown = layoverActive;
+    // Lands on the layover page only when there's nothing else to show
+    // today - otherwise starts on the current/relevant flight, same as
+    // always, with the layover just one swipe further along.
+    state.viewingLayoverPage = !f;
   }
 
-  state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
-  if (rebuilt) scrollTrackToIndex(state.index);
-  els.flightCardDots.hidden = state.flights.length <= 1;
+  // Re-attaches the Layover card after any buildFlightCards() wipe above
+  // (innerHTML="" doesn't know it was ever there) and keeps its own
+  // content/hidden state current regardless of whether this pass rebuilt
+  // anything.
+  renderLayover();
+
+  if (f) state.flights.forEach((flight, i) => renderFlightCardContent(i, i === state.index));
+  if (rebuilt) scrollTrackToIndex(state.viewingLayoverPage ? state.flights.length : state.index);
+  const totalPages = state.flights.length + (layoverActive ? 1 : 0);
+  els.flightCardDots.hidden = totalPages <= 1;
   renderFlightDots();
 
-  renderAirlineBadge(f.flightNumber);
-  renderCrew(f);
-  ensureCrewLoaded(f);
+  if (f) {
+    renderAirlineBadge(f.flightNumber);
+    renderCrew(f);
+    ensureCrewLoaded(f);
+  } else {
+    renderAirlineBadge(layover && layover.flight ? layover.flight.flightNumber : null);
+  }
 }
 
 function crewKey(role, name) {
@@ -3065,35 +3158,53 @@ async function fetchRosterIcsText(url) {
 // fresher (see applyRosterMasterOverrides()), then re-renders. force
 // bypasses the "already fetched this URL" check, used by refreshAll()
 // to actually pull a new copy on ↻ instead of reusing the cached one.
+// A fetch already in flight, joined instead of starting another one -
+// resolveLayoverPickup() now calls this from inside renderLayover(),
+// which itself fires on every renderFlight() (every 30s tick, and
+// several times per render pass) instead of from just a few dedicated
+// call sites. Before this guard existed, several of those calls landing
+// while the very first fetch was still pending (rosterEventsCache.events
+// not set yet, so the "already cached" check doesn't help) each kicked
+// off their own real network request - up to 6 concurrent hits for one
+// tap of ↻ in testing. Wasteful in general, and a real cost against a
+// rate-limited or metered CORS proxy (see rosterCorsProxyBuilders()).
+let rosterLoadPromise = null;
+
 async function ensureRosterLoaded(force) {
   const url = getRosterUrl();
   if (!url) return;
   if (!force && rosterEventsCache.url === url && rosterEventsCache.events) return;
-  try {
-    const { text, viaProxy } = await fetchRosterIcsText(url);
-    const events = parseIcsEvents(text);
-    rosterEventsCache.events = events;
-    rosterEventsCache.dtstamp = events.find((ev) => ev.dtstamp)?.dtstamp || null;
-    rosterEventsCache.fetchedAt = Date.now();
-    rosterEventsCache.url = url;
-    rosterEventsCache.viaProxy = viaProxy;
-    rosterEventsCache.lastError = null;
-    renderRosterStatus();
+  if (rosterLoadPromise) return rosterLoadPromise;
+  rosterLoadPromise = (async () => {
+    try {
+      const { text, viaProxy } = await fetchRosterIcsText(url);
+      const events = parseIcsEvents(text);
+      rosterEventsCache.events = events;
+      rosterEventsCache.dtstamp = events.find((ev) => ev.dtstamp)?.dtstamp || null;
+      rosterEventsCache.fetchedAt = Date.now();
+      rosterEventsCache.url = url;
+      rosterEventsCache.viaProxy = viaProxy;
+      rosterEventsCache.lastError = null;
+      renderRosterStatus();
 
-    const legs = parseRosterFlightLegs(events);
-    applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
-    // Always, not just if applyRosterMasterOverrides() changed a flight
-    // time - the last flight's transit line also depends on roster data
-    // (its pickup time, see findRosterPickupForFlight()) and needs a
-    // chance to pick that up once it arrives, even when no time changed.
-    renderFlight();
-    renderLayover();
-  } catch (e) {
-    // Stays stale, retried on next call - but now at least visible in
-    // Settings (see renderRosterStatus()) instead of a silent no-op.
-    rosterEventsCache.lastError = describeRosterFetchError(e);
-    renderRosterStatus();
-  }
+      const legs = parseRosterFlightLegs(events);
+      applyRosterMasterOverrides(state.allFlights, legs, rosterEventsCache.dtstamp);
+      // Always, not just if applyRosterMasterOverrides() changed a flight
+      // time - the last flight's transit line also depends on roster data
+      // (its pickup time, see findRosterPickupForFlight()) and needs a
+      // chance to pick that up once it arrives, even when no time changed.
+      renderFlight();
+      renderLayover();
+    } catch (e) {
+      // Stays stale, retried on next call - but now at least visible in
+      // Settings (see renderRosterStatus()) instead of a silent no-op.
+      rosterEventsCache.lastError = describeRosterFetchError(e);
+      renderRosterStatus();
+    } finally {
+      rosterLoadPromise = null;
+    }
+  })();
+  return rosterLoadPromise;
 }
 
 // ---------- AeroDataBox - aircraft's full day schedule ----------
@@ -3442,11 +3553,20 @@ let currentLayoverKey = null; // roomKeyFor(arrCode, hotel) for the own room-num
 function renderLayover() {
   // Belt-and-suspenders on top of the HOME_BASE check in findApiLayover():
   // no layover card (and thus no room-number field) while on vacation or
-  // an Ortstag - there's nowhere to have a hotel room on either.
+  // an Ortstag - there's nowhere to have a hotel room on either. Also
+  // drops off (see layoverPickupCutoffPassed()) once the pilot's actually
+  // been picked up - see attachLayoverCardToTrack()/detachLayoverCardFromTrack(),
+  // which make this the flight-card carousel's last page rather than its
+  // own separate exclusive screen (see renderFlight()).
   const layover = effectiveDutyType() ? null : findApiLayover(state.allFlights);
-  els.layoverCard.hidden = !layover;
+  const active = !!layover && !layoverPickupCutoffPassed(layover);
+  els.layoverCard.hidden = !active;
   currentLayoverKey = null;
-  if (!layover) return;
+  if (!active) {
+    detachLayoverCardFromTrack();
+    return;
+  }
+  attachLayoverCardToTrack();
 
   const hotel = layover.flight ? findPdfHotelFor(layover.flight.flightNumber, state.pdfLegs) : null;
   currentLayoverKey = roomKeyFor(layover.arrCode, hotel);
@@ -3454,30 +3574,11 @@ function renderLayover() {
   els.layoverTitle.hidden = false;
   els.layoverPlace.hidden = false;
 
-  // MyTime roster is the authoritative pickup source; the reference-sheet
-  // backup (see computeBackupPickup()) only fills in when the roster has
-  // no matching event. Both always shown in local time (LT) - see
-  // fmtLocalTimeAtIcao() - the note below (see BACKUP_PICKUP_NOTE) is
-  // what marks a backup value as an estimate, not a "Z" vs "LT" switch.
-  if (getRosterUrl()) ensureRosterLoaded();
-  const rosterPickup = getRosterUrl() && rosterEventsCache.events
-    ? findRosterPickup(rosterEventsCache.events, layover.arrCode, layover.arrTime)
-    : null;
-  if (rosterPickup) {
-    els.layoverPickup.hidden = false;
-    els.layoverPickup.textContent = `Pickup: ${rosterPickup.time} LT`;
-    els.layoverPickupNote.hidden = true;
-    els.layoverPickupNote.textContent = "";
-  } else {
-    const backup = layover.flight ? computeBackupPickup(layover.flight) : null;
-    const backupLabel = backup
-      ? fmtLocalTimeAtIcao(backup.pickupUtc, layover.arrCode) || fmtTime(backup.pickupUtc)
-      : null;
-    els.layoverPickup.hidden = !backup;
-    els.layoverPickup.textContent = backup ? `Pickup: ${backupLabel}` : "";
-    els.layoverPickupNote.hidden = !backup;
-    els.layoverPickupNote.textContent = backup ? BACKUP_PICKUP_NOTE : "";
-  }
+  const pickup = resolveLayoverPickup(layover);
+  els.layoverPickup.hidden = !pickup;
+  els.layoverPickup.textContent = pickup ? `Pickup: ${pickup.label}` : "";
+  els.layoverPickupNote.hidden = !(pickup && pickup.isBackup);
+  els.layoverPickupNote.textContent = pickup && pickup.isBackup ? BACKUP_PICKUP_NOTE : "";
 
   const city = cityForIcao(layover.arrCode);
   els.layoverPlace.textContent = city || layover.arrCode;
@@ -3858,10 +3959,19 @@ els.flightCardTrack.addEventListener("scroll", () => {
   clearTimeout(cardScrollDebounce);
   cardScrollDebounce = setTimeout(() => {
     const track = els.flightCardTrack;
-    if (!track.clientWidth || !state.flights.length) return;
+    const totalPages = track.children.length;
+    if (!track.clientWidth || !totalPages) return;
     const newIndex = Math.round(track.scrollLeft / track.clientWidth);
-    const clamped = Math.max(0, Math.min(state.flights.length - 1, newIndex));
-    if (clamped === state.index) return;
+    const clamped = Math.max(0, Math.min(totalPages - 1, newIndex));
+    // The appended Layover page (see attachLayoverCardToTrack()) sits
+    // past every real flight - state.index only ever tracks flights, so
+    // landing on it just updates which dot is lit, nothing flight-specific.
+    const onLayoverPage = clamped >= state.flights.length;
+    if (onLayoverPage !== state.viewingLayoverPage) {
+      state.viewingLayoverPage = onLayoverPage;
+      renderFlightDots();
+    }
+    if (onLayoverPage || clamped === state.index) return;
     state.index = clamped;
     renderActiveFlightExtras();
   }, 120);
@@ -3946,16 +4056,21 @@ setInterval(() => {
   // Re-applies the 20-minutes-past-arrival retirement (see
   // computeTodayFlights()) - purely time-based, so a flight can cross
   // that mark while the app just sits open, not only right after a load.
-  // renderFlight()'s own signature check rebuilds the cards only if the
-  // set actually changed, so this is a no-op most ticks.
   if (state.allFlights.length) {
     const refreshed = computeTodayFlights(state.allFlights);
     if (refreshed.length !== state.flights.length || refreshed.some((f, i) => f !== state.flights[i])) {
       state.flights = refreshed;
       state.index = refreshed.length ? Math.min(pickInitialIndex(refreshed), refreshed.length - 1) : 0;
-      renderFlight();
     }
   }
+  // Called every tick, not just when the flight set actually changed -
+  // it also re-evaluates the layover pickup cutoff (see
+  // LAYOVER_PAGE_DROP_AFTER_PICKUP_MS), which is just as time-based and
+  // needs to drop the Layover page while the app just sits open, too.
+  // renderFlight()'s own signature check (now covering both the flight
+  // set AND the layover's active/dropped state) rebuilds the cards only
+  // when something actually changed, so this stays a no-op most ticks.
+  renderFlight();
 
   // Ticks every card's countdown pill (cheap, pure date math) - only the
   // active card's own AeroDataBox lookup is allowed to actually fire.
@@ -3966,7 +4081,6 @@ setInterval(() => {
     const ownLeg = getOwnFlightAeroDataBoxLeg(f, { peekOnly: i !== state.index });
     updateFlightTimerDisplay(f, ownLeg, statusEl);
   });
-  renderLayover();
   tickPostLandingSwitch();
 }, 30000);
 

@@ -157,6 +157,9 @@ const els = {
   loginLufthansaCrewBtn: document.getElementById("loginLufthansaCrewBtn"),
   logoutLufthansaCrewBtn: document.getElementById("logoutLufthansaCrewBtn"),
   resetLufthansaCrewBtn: document.getElementById("resetLufthansaCrewBtn"),
+  testLufthansaCrewBtn: document.getElementById("testLufthansaCrewBtn"),
+  lufthansaCrewTestResult: document.getElementById("lufthansaCrewTestResult"),
+  lufthansaCrewTestRaw: document.getElementById("lufthansaCrewTestRaw"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
@@ -875,6 +878,11 @@ function renderLufthansaCrewStatus() {
   }
   els.loginLufthansaCrewBtn.hidden = !configured;
   els.loginLufthansaCrewBtn.textContent = token ? "Erneut anmelden" : "Mit Lufthansa Crew anmelden";
+  els.testLufthansaCrewBtn.hidden = !token;
+  if (!token) {
+    els.lufthansaCrewTestResult.hidden = true;
+    els.lufthansaCrewTestRaw.hidden = true;
+  }
   els.logoutLufthansaCrewBtn.hidden = !token;
   els.resetLufthansaCrewBtn.hidden = !configured && !token;
 }
@@ -993,6 +1001,89 @@ async function ensureLufthansaCrewAccessToken() {
   }
   setLufthansaCrewToken(refreshed);
   return refreshed.accessToken;
+}
+
+// Same environment split as lufthansaCrewOAuthHost() - the actual crew
+// data lives on a different host pair than the OAuth2 server itself.
+function lufthansaCrewApiBase() {
+  return getLufthansaCrewSandbox()
+    ? "https://api-sandbox.lufthansa.com/v1/flight_operations/crew_services"
+    : "https://api.lufthansa.com/v1/flight_operations/crew_services";
+}
+
+// COMMON_DUTY_EVENTS - confirmed against the real docs (not guessed):
+// GET .../crew_services/COMMON_DUTY_EVENTS?fromDate=YYYY-MM-DDZ&toDate=YYYY-MM-DDZ
+// returns { pkNumber, fromDate, toDate, rosterDays: [{ day, events: [...] }] }.
+// Genuinely uncertain from that one example alone whether a hotel
+// "Pickup" is its own distinct event (eventType/eventCategory unknown) or
+// only implicit in a flight event's own startTime/startLocation (i.e.
+// report time, which this app already computes independently - see
+// computeLegalRestReference()) - so this only fetches and returns the
+// RAW parsed response for now; nothing downstream (Layover card,
+// transit line) reads from it yet. testLufthansaCrewConnection() below
+// is how the raw shape gets inspected against real data before building
+// anything that depends on guessing an eventType value that might turn
+// out wrong.
+async function fetchLufthansaDutyEvents(fromDateKeyZ, toDateKeyZ) {
+  const token = await ensureLufthansaCrewAccessToken();
+  if (!token) return null;
+  const url = `${lufthansaCrewApiBase()}/COMMON_DUTY_EVENTS?${new URLSearchParams({ fromDate: fromDateKeyZ, toDate: toDateKeyZ })}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+// Same in-app raw-response probe as the other two cards' own "Verbindung
+// testen" buttons - the only way anyone (pilot or a future session
+// working on the actual Pickup-detection logic) gets to see what a real
+// roster's own events actually look like, rather than guessing from the
+// one documented example alone.
+async function testLufthansaCrewConnection() {
+  const token = await ensureLufthansaCrewAccessToken();
+  if (!token) {
+    els.lufthansaCrewTestResult.hidden = false;
+    els.lufthansaCrewTestResult.textContent = "Kein gültiges Token - bitte neu anmelden.";
+    renderLufthansaCrewStatus();
+    return;
+  }
+
+  els.testLufthansaCrewBtn.disabled = true;
+  els.lufthansaCrewTestResult.hidden = false;
+  els.lufthansaCrewTestResult.textContent = "Lade Dienstplan …";
+  els.lufthansaCrewTestRaw.hidden = true;
+  els.lufthansaCrewTestRaw.textContent = "";
+
+  const fromDateKeyZ = `${todayISO(0)}Z`;
+  const toDateKeyZ = `${todayISO(7)}Z`;
+  const url = `${lufthansaCrewApiBase()}/COMMON_DUTY_EVENTS?${new URLSearchParams({ fromDate: fromDateKeyZ, toDate: toDateKeyZ })}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const text = await res.text();
+    if (!res.ok) {
+      els.lufthansaCrewTestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von api.lufthansa.com.`;
+      els.lufthansaCrewTestRaw.hidden = false;
+      els.lufthansaCrewTestRaw.textContent = text;
+    } else {
+      let json;
+      try { json = JSON.parse(text); } catch { json = null; }
+      const dayCount = json && Array.isArray(json.rosterDays) ? json.rosterDays.length : 0;
+      els.lufthansaCrewTestResult.textContent = json
+        ? `Erfolgreich - ${dayCount} Tag(e) vom ${fromDateKeyZ} bis ${toDateKeyZ} erhalten.`
+        : "Antwort kam an, aber kein gültiges JSON.";
+      els.lufthansaCrewTestRaw.hidden = false;
+      els.lufthansaCrewTestRaw.textContent = json !== null ? JSON.stringify(json, null, 2) : text;
+    }
+  } catch (err) {
+    els.lufthansaCrewTestResult.textContent =
+      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
+    els.lufthansaCrewTestRaw.hidden = false;
+    els.lufthansaCrewTestRaw.textContent = String(err);
+  }
+  els.testLufthansaCrewBtn.disabled = false;
 }
 
 // Runs once on every page load (see the init sequence at the bottom of
@@ -4794,6 +4885,8 @@ els.resetLufthansaCrewBtn.addEventListener("click", () => {
   clearLufthansaCrewToken();
   renderLufthansaCrewStatus();
 });
+
+els.testLufthansaCrewBtn.addEventListener("click", testLufthansaCrewConnection);
 
 // ↻ is now the only way any of this app's APIs get queried - there's no
 // background/interval polling left (see the removed 5-minute check and

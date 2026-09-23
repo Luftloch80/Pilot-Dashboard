@@ -837,6 +837,7 @@ function getCardEls(node) {
     arrActualTime: node.querySelector(".arr-actual-time"),
     aircraft: node.querySelector(".aircraft"),
     registration: node.querySelector(".registration"),
+    regPriorArrival: node.querySelector(".reg-prior-arrival"),
     transitInfo: node.querySelector(".transit-info"),
   };
 }
@@ -1160,8 +1161,35 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
 
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;
+  renderRegistrationPriorArrival(f, isActive, cardEls);
 
   renderFlightCardTransit(flights, i, isActive, cardEls);
+}
+
+// Under the registration itself - when this exact aircraft is known and
+// an AeroDataBox key is configured, when it arrived here from whatever it
+// flew right before (same aircraft.schedule lookup the transit line's own
+// "next A/C" note uses for the NEXT flight's aircraft - see
+// ensureAircraftScheduleLoaded()/findPriorLegArrival() - just applied to
+// this card's own flight instead), so that's visible directly on the
+// card showing that aircraft, not only buried in the preceding card's own
+// transit line whenever this happens to be a Flugzeugwechsel.
+function renderRegistrationPriorArrival(f, isActive, cardEls) {
+  if (!cardEls.regPriorArrival) return;
+  cardEls.regPriorArrival.hidden = true;
+  cardEls.regPriorArrival.textContent = "";
+  if (!getAeroDataBoxKey() || !f.registration || f.registration === "–" || !f.depCode || !f.depSchedDate) return;
+
+  const cached = aircraftScheduleCache.get(f.registration);
+  if (!cached) {
+    if (isActive) ensureAircraftScheduleLoaded(f.registration);
+    return;
+  }
+  const priorLeg = findPriorLegArrival(cached.legs, f.depCode, f.depSchedDate);
+  if (priorLeg && priorLeg.arrDate) {
+    cardEls.regPriorArrival.hidden = false;
+    cardEls.regPriorArrival.textContent = `Ankunft ${fmtTime(priorLeg.arrDate)}`;
+  }
 }
 
 // Identifies today's flight list by flight number + date only (not

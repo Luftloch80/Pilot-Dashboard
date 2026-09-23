@@ -433,6 +433,10 @@ body {
   letter-spacing: 0.01em;
   margin-top: 3px;
 }
+.reg-prior-arrival {
+  margin-top: 3px;
+  font-size: 0.72rem;
+}
 
 .transit-info {
   margin-top: 12px;

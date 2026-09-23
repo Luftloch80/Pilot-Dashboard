@@ -176,7 +176,9 @@ body {
 /* Setup */
 .setup-card label,
 #rosterCard label,
-#aeroDataBoxCard label {
+#aeroDataBoxCard label,
+#lufthansaApiCard label,
+#lufthansaCrewCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -188,7 +190,11 @@ body {
 #rosterCard input[type="password"],
 #rosterCard input[type="text"],
 #aeroDataBoxCard input[type="password"],
-#aeroDataBoxCard input[type="text"] {
+#aeroDataBoxCard input[type="text"],
+#lufthansaApiCard input[type="password"],
+#lufthansaApiCard input[type="text"],
+#lufthansaCrewCard input[type="password"],
+#lufthansaCrewCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -196,6 +202,22 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 1rem;
+}
+
+/* Only #lufthansaCrewCard uses a checkbox so far (sandbox/production
+   toggle) - overrides the block label styling above for just this one
+   row, so the checkbox sits inline with its own text instead of on its
+   own line above an (nonexistent) input. */
+.checkbox-label {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0 !important;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
 }
 
 .btn {

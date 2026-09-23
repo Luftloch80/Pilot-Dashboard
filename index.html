@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=50" />
+<link rel="stylesheet" href="assets/style.css?v=51" />
 </head>
 <body>
 
@@ -163,6 +163,39 @@
     <button id="resetLufthansaApiBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
   </section>
 
+  <!-- Lufthansa Crew Login (optional, nur in den Settings): OAuth2/PKCE
+       gegen den separaten Crew-OAuth2-Server - für die (noch nicht
+       angebundene) MyTime-Ersatz-Funktion. Braucht eine echte
+       Crew-Anmeldung (Nutzer-ID + RSA-Token) auf Lufthansas eigener
+       Login-Seite, kein Client-Secret in dieser App. -->
+  <section id="lufthansaCrewCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>Lufthansa Crew Login</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Für den geplanten MyTime-Ersatz (noch nicht angebunden). Meldet dich
+      über Lufthansas eigene Crew-Login-Seite an (Nutzer-ID + RSA-Token) -
+      diese App speichert kein Passwort, nur das danach erhaltene Token,
+      nur lokal auf diesem Gerät.
+    </p>
+    <label for="lufthansaCrewClientIdInput">Client-ID (Crew-App-Registrierung)</label>
+    <input id="lufthansaCrewClientIdInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Deine Crew-API Client-ID" />
+    <label for="lufthansaCrewScopeInput">Scope</label>
+    <input id="lufthansaCrewScopeInput" type="text" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="z. B. https://cms.fra.dlh.de/publicCrewApi" />
+    <label class="checkbox-label">
+      <input id="lufthansaCrewSandboxInput" type="checkbox" />
+      Sandbox/Test-Umgebung verwenden (statt Produktion)
+    </label>
+    <button id="saveLufthansaCrewBtn" class="btn secondary">Speichern</button>
+    <p id="lufthansaCrewStatus" class="muted small" hidden></p>
+    <button id="loginLufthansaCrewBtn" class="btn secondary" hidden>Mit Lufthansa Crew anmelden</button>
+    <button id="logoutLufthansaCrewBtn" class="btn ghost small" hidden>Abmelden (Token löschen)</button>
+    <button id="resetLufthansaCrewBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
+  </section>
+
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
   <section id="setupCard" class="card setup-card" hidden>
     <h2>OpenAirLog verbinden</h2>
@@ -303,6 +336,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=131"></script>
+<script src="assets/app.js?v=132"></script>
 </body>
 </html>

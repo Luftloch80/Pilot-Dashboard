@@ -9,6 +9,17 @@ const AERODATABOX_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
 const LUFTHANSA_CLIENT_ID_STORAGE_KEY = "oal_lufthansa_client_id";
 const LUFTHANSA_CLIENT_SECRET_STORAGE_KEY = "oal_lufthansa_client_secret";
 const LUFTHANSA_API_BASE = "https://api.lufthansa.com/v1";
+const LUFTHANSA_CREW_CLIENT_ID_STORAGE_KEY = "oal_lufthansa_crew_client_id";
+const LUFTHANSA_CREW_SCOPE_STORAGE_KEY = "oal_lufthansa_crew_scope";
+const LUFTHANSA_CREW_SANDBOX_STORAGE_KEY = "oal_lufthansa_crew_sandbox";
+const LUFTHANSA_CREW_TOKEN_STORAGE_KEY = "oal_lufthansa_crew_token";
+const LUFTHANSA_CREW_PKCE_SESSION_KEY = "oal_lufthansa_crew_pkce";
+// Registered with Lufthansa for this app's crew-API client (confirmed by
+// the pilot, not guessed) - must match byte-for-byte what Lufthansa's own
+// authorize/token endpoints expect back, so this is a fixed constant
+// rather than derived from window.location (which would only coincidentally
+// match when actually running from that exact deployed URL).
+const LUFTHANSA_CREW_REDIRECT_URI = "https://luftloch80.github.io/Pilot-Dashboard/";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -136,6 +147,16 @@ const els = {
   lufthansaApiTestResult: document.getElementById("lufthansaApiTestResult"),
   lufthansaApiTestRaw: document.getElementById("lufthansaApiTestRaw"),
   resetLufthansaApiBtn: document.getElementById("resetLufthansaApiBtn"),
+
+  lufthansaCrewCard: document.getElementById("lufthansaCrewCard"),
+  lufthansaCrewClientIdInput: document.getElementById("lufthansaCrewClientIdInput"),
+  lufthansaCrewScopeInput: document.getElementById("lufthansaCrewScopeInput"),
+  lufthansaCrewSandboxInput: document.getElementById("lufthansaCrewSandboxInput"),
+  saveLufthansaCrewBtn: document.getElementById("saveLufthansaCrewBtn"),
+  lufthansaCrewStatus: document.getElementById("lufthansaCrewStatus"),
+  loginLufthansaCrewBtn: document.getElementById("loginLufthansaCrewBtn"),
+  logoutLufthansaCrewBtn: document.getElementById("logoutLufthansaCrewBtn"),
+  resetLufthansaCrewBtn: document.getElementById("resetLufthansaCrewBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
@@ -775,6 +796,249 @@ async function testLufthansaApiConnection() {
   els.testLufthansaApiBtn.disabled = false;
 }
 
+// ---------- Lufthansa Crew OAuth2 (MyTime replacement - login only so far) ----------
+//
+// A wholly separate, second Lufthansa integration from the one above:
+// the FlightOps/Crew Services API (planned MyTime/roster replacement)
+// sits behind its own OAuth2 server (oauth.lufthansa.com/lhcrew/...,
+// confirmed against the real docs, not guessed) and requires an actual
+// interactive crew login (Nutzer-ID + RSA-Token) on Lufthansa's own
+// hosted page - never something this app could do silently with just a
+// stored Client-ID, the way the public Flight Status API's
+// client_credentials grant works above. This app is also a pure static
+// site with nowhere safe to keep a client_secret, so it authenticates as
+// a "public" OAuth2 client via PKCE (RFC7636) instead - confirmed by the
+// Token Endpoint's own documented example request, which has no
+// Authorization header or client_secret at all, only client_id + code +
+// redirect_uri + code_verifier.
+//
+// This block only gets the pilot logged in and a token stored/refreshed -
+// the actual Duty Events (or whichever endpoint has the real pickup/
+// roster data) lookup isn't wired up yet, still waiting on that
+// endpoint's own documented shape.
+
+function getLufthansaCrewClientId() {
+  try { return localStorage.getItem(LUFTHANSA_CREW_CLIENT_ID_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function getLufthansaCrewScope() {
+  try { return localStorage.getItem(LUFTHANSA_CREW_SCOPE_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function getLufthansaCrewSandbox() {
+  try { return localStorage.getItem(LUFTHANSA_CREW_SANDBOX_STORAGE_KEY) === "1"; } catch { return false; }
+}
+function setLufthansaCrewConfig(clientId, scope, sandbox) {
+  try {
+    localStorage.setItem(LUFTHANSA_CREW_CLIENT_ID_STORAGE_KEY, clientId);
+    localStorage.setItem(LUFTHANSA_CREW_SCOPE_STORAGE_KEY, scope);
+    localStorage.setItem(LUFTHANSA_CREW_SANDBOX_STORAGE_KEY, sandbox ? "1" : "0");
+  } catch { /* private mode etc. */ }
+}
+function clearLufthansaCrewConfig() {
+  try {
+    localStorage.removeItem(LUFTHANSA_CREW_CLIENT_ID_STORAGE_KEY);
+    localStorage.removeItem(LUFTHANSA_CREW_SCOPE_STORAGE_KEY);
+    localStorage.removeItem(LUFTHANSA_CREW_SANDBOX_STORAGE_KEY);
+  } catch { /* ignore */ }
+}
+
+// Sandbox (oauth-test.lufthansa.com) also has a mock API reachable
+// without a real RSA token, per the docs - useful for trying the login
+// round-trip itself before ever touching real crew credentials.
+function lufthansaCrewOAuthHost() {
+  return getLufthansaCrewSandbox() ? "https://oauth-test.lufthansa.com" : "https://oauth.lufthansa.com";
+}
+
+function getLufthansaCrewToken() {
+  try {
+    const raw = localStorage.getItem(LUFTHANSA_CREW_TOKEN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+function setLufthansaCrewToken(token) {
+  try { localStorage.setItem(LUFTHANSA_CREW_TOKEN_STORAGE_KEY, JSON.stringify(token)); } catch { /* private mode etc. */ }
+}
+function clearLufthansaCrewToken() {
+  try { localStorage.removeItem(LUFTHANSA_CREW_TOKEN_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function renderLufthansaCrewStatus() {
+  const configured = !!(getLufthansaCrewClientId() && getLufthansaCrewScope());
+  const token = getLufthansaCrewToken();
+  els.lufthansaCrewStatus.hidden = !configured && !token;
+  if (token) {
+    const expired = Date.now() >= token.expiresAt;
+    els.lufthansaCrewStatus.textContent = expired
+      ? "Angemeldet, Token abgelaufen (wird bei Bedarf automatisch erneuert)."
+      : `Angemeldet (gültig bis ${fmtLocalTime(new Date(token.expiresAt))}).`;
+  } else {
+    els.lufthansaCrewStatus.textContent = configured ? "Zugangsdaten hinterlegt, aber noch nicht angemeldet." : "";
+  }
+  els.loginLufthansaCrewBtn.hidden = !configured;
+  els.loginLufthansaCrewBtn.textContent = token ? "Erneut anmelden" : "Mit Lufthansa Crew anmelden";
+  els.logoutLufthansaCrewBtn.hidden = !token;
+  els.resetLufthansaCrewBtn.hidden = !configured && !token;
+}
+
+// RFC7636 PKCE - see the module comment above for why this app uses it
+// instead of a client_secret.
+function base64UrlEncode(bytes) {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function randomPkceString() {
+  const bytes = new Uint8Array(64);
+  crypto.getRandomValues(bytes);
+  return base64UrlEncode(bytes);
+}
+async function pkceChallengeFromVerifier(verifier) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64UrlEncode(new Uint8Array(digest));
+}
+
+async function startLufthansaCrewLogin() {
+  const clientId = getLufthansaCrewClientId();
+  const scope = getLufthansaCrewScope();
+  if (!clientId || !scope) return;
+
+  const verifier = randomPkceString();
+  const challenge = await pkceChallengeFromVerifier(verifier);
+  const state = randomPkceString();
+  try {
+    sessionStorage.setItem(LUFTHANSA_CREW_PKCE_SESSION_KEY, JSON.stringify({ verifier, state }));
+  } catch {
+    // Without sessionStorage (private mode etc.) the redirect back can't
+    // be matched up again - better to say so now than fail silently
+    // after the full round trip to Lufthansa's own login page.
+    showBanner("Anmeldung nicht möglich: privater Modus/eingeschränkter Speicher.", "error");
+    return;
+  }
+
+  const authorizeUrl = `${lufthansaCrewOAuthHost()}/lhcrew/oauth/authorize?` + new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: LUFTHANSA_CREW_REDIRECT_URI,
+    scope,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+  });
+  window.location.href = authorizeUrl;
+}
+
+async function exchangeLufthansaCrewCode(code, verifier) {
+  const clientId = getLufthansaCrewClientId();
+  if (!clientId) return null;
+  try {
+    const res = await fetchWithTimeout(`${lufthansaCrewOAuthHost()}/lhcrew/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: clientId,
+        redirect_uri: LUFTHANSA_CREW_REDIRECT_URI,
+        code,
+        code_verifier: verifier,
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || !json.access_token) return null;
+    return {
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token || null,
+      expiresAt: Date.now() + (Number(json.expires_in) || 3600) * 1000 - 60000,
+      scope: json.scope || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function refreshLufthansaCrewToken(refreshToken) {
+  try {
+    const res = await fetchWithTimeout(`${lufthansaCrewOAuthHost()}/lhcrew/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || !json.access_token) return null;
+    return {
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token || refreshToken,
+      expiresAt: Date.now() + (Number(json.expires_in) || 3600) * 1000 - 60000,
+      scope: json.scope || "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Whichever crew-data lookup ends up using this (Duty Events - not yet
+// wired up, see the module comment above) calls this first: a still-
+// valid access token as-is, a silent refresh_token exchange if it's
+// expired, or null if there's no way to get one without the pilot
+// interactively logging in again (see startLufthansaCrewLogin()).
+async function ensureLufthansaCrewAccessToken() {
+  const token = getLufthansaCrewToken();
+  if (token && Date.now() < token.expiresAt) return token.accessToken;
+  if (!token || !token.refreshToken) return null;
+  const refreshed = await refreshLufthansaCrewToken(token.refreshToken);
+  if (!refreshed) {
+    clearLufthansaCrewToken();
+    renderLufthansaCrewStatus();
+    return null;
+  }
+  setLufthansaCrewToken(refreshed);
+  return refreshed.accessToken;
+}
+
+// Runs once on every page load (see the init sequence at the bottom of
+// this file) - Lufthansa redirects the browser straight back to
+// LUFTHANSA_CREW_REDIRECT_URI (this app's own root) with ?code=&state=
+// (or ?error=...) in the query string; there's no separate callback page
+// to route to, this app only has the one. The matching code_verifier/
+// state were stashed in sessionStorage right before the redirect out
+// (see startLufthansaCrewLogin()) - read and cleared here either way, so
+// a stale entry never gets reused, and the query string itself is
+// stripped via history.replaceState so the one-time code doesn't linger
+// in the address bar/browser history (it's already spent after this).
+async function handleLufthansaCrewOAuthRedirect() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const error = params.get("error");
+  if (!code && !error) return;
+
+  history.replaceState(null, "", window.location.pathname + window.location.hash);
+
+  let pkce = null;
+  try {
+    const raw = sessionStorage.getItem(LUFTHANSA_CREW_PKCE_SESSION_KEY);
+    pkce = raw ? JSON.parse(raw) : null;
+    sessionStorage.removeItem(LUFTHANSA_CREW_PKCE_SESSION_KEY);
+  } catch { /* ignore */ }
+
+  if (error) {
+    showBanner(`Lufthansa-Crew-Anmeldung fehlgeschlagen: ${params.get("error_description") || error}`, "error");
+    return;
+  }
+  if (!pkce || params.get("state") !== pkce.state) {
+    showBanner("Lufthansa-Crew-Anmeldung fehlgeschlagen: Sitzung ungültig. Bitte erneut versuchen.", "error");
+    return;
+  }
+
+  const token = await exchangeLufthansaCrewCode(code, pkce.verifier);
+  if (!token) {
+    showBanner("Lufthansa-Crew-Anmeldung fehlgeschlagen: Token-Austausch nicht erfolgreich.", "error");
+    return;
+  }
+  setLufthansaCrewToken(token);
+  showBanner("Lufthansa-Crew-Anmeldung erfolgreich.", "");
+  renderLufthansaCrewStatus();
+}
+
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
 // not the PDF file itself - so it survives a page refresh instead of
@@ -829,11 +1093,13 @@ function setSettingsOpen(open) {
   els.rosterCard.hidden = !open;
   els.aeroDataBoxCard.hidden = !open;
   els.lufthansaApiCard.hidden = !open;
+  els.lufthansaCrewCard.hidden = !open;
   if (open) {
     renderRosterStatus();
     renderCorsProxyKeyStatus();
     renderAeroDataBoxStatus();
     renderLufthansaApiStatus();
+    renderLufthansaCrewStatus();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
     els.layoverCard.hidden = true;
@@ -4506,6 +4772,29 @@ els.resetLufthansaApiBtn.addEventListener("click", () => {
 
 els.testLufthansaApiBtn.addEventListener("click", testLufthansaApiConnection);
 
+els.saveLufthansaCrewBtn.addEventListener("click", () => {
+  const clientId = els.lufthansaCrewClientIdInput.value.trim();
+  const scope = els.lufthansaCrewScopeInput.value.trim();
+  if (!clientId || !scope) return;
+  setLufthansaCrewConfig(clientId, scope, els.lufthansaCrewSandboxInput.checked);
+  els.lufthansaCrewClientIdInput.value = "";
+  renderLufthansaCrewStatus();
+});
+
+els.loginLufthansaCrewBtn.addEventListener("click", startLufthansaCrewLogin);
+
+els.logoutLufthansaCrewBtn.addEventListener("click", () => {
+  clearLufthansaCrewToken();
+  renderLufthansaCrewStatus();
+});
+
+els.resetLufthansaCrewBtn.addEventListener("click", () => {
+  if (!confirm("Lufthansa-Crew-Zugangsdaten und Anmeldung auf diesem Gerät entfernen?")) return;
+  clearLufthansaCrewConfig();
+  clearLufthansaCrewToken();
+  renderLufthansaCrewStatus();
+});
+
 // ↻ is now the only way any of this app's APIs get queried - there's no
 // background/interval polling left (see the removed 5-minute check and
 // the AeroDataBox lookups' plain "fetch if not yet cached" logic).
@@ -4645,6 +4934,10 @@ renderBrandName();
 loadStoredPdfCrew();
 renderLayover();
 loadInitial();
+// Picks up ?code=/?error= from a just-completed Lufthansa Crew login
+// redirect, if that's how the app was just opened - a no-op otherwise
+// (see handleLufthansaCrewOAuthRedirect()'s own comment).
+handleLufthansaCrewOAuthRedirect();
 
 // Keep the T-minus/T-plus countdown and the layover state current without
 // a full data refresh.

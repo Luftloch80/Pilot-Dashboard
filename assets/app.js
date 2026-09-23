@@ -20,6 +20,7 @@ const LUFTHANSA_CREW_PKCE_SESSION_KEY = "oal_lufthansa_crew_pkce";
 // rather than derived from window.location (which would only coincidentally
 // match when actually running from that exact deployed URL).
 const LUFTHANSA_CREW_REDIRECT_URI = "https://luftloch80.github.io/Pilot-Dashboard/";
+const DEBUG_ALL_MONTH_STORAGE_KEY = "oal_debug_all_month";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -160,6 +161,9 @@ const els = {
   testLufthansaCrewBtn: document.getElementById("testLufthansaCrewBtn"),
   lufthansaCrewTestResult: document.getElementById("lufthansaCrewTestResult"),
   lufthansaCrewTestRaw: document.getElementById("lufthansaCrewTestRaw"),
+
+  debugCard: document.getElementById("debugCard"),
+  debugAllMonthInput: document.getElementById("debugAllMonthInput"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
@@ -529,6 +533,16 @@ function setAeroDataBoxKey(key) {
 }
 function clearAeroDataBoxKey() {
   try { localStorage.removeItem(AERODATABOX_KEY_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+// Debug-only toggle (see #debugCard) - not tied to any one API, just
+// swaps what renderFlight() shows as the ordinary flight-card carousel
+// content, see renderDebugAllMonthCarousel().
+function getDebugAllMonth() {
+  try { return localStorage.getItem(DEBUG_ALL_MONTH_STORAGE_KEY) === "1"; } catch { return false; }
+}
+function setDebugAllMonth(on) {
+  try { localStorage.setItem(DEBUG_ALL_MONTH_STORAGE_KEY, on ? "1" : "0"); } catch { /* private mode etc. */ }
 }
 
 function renderAeroDataBoxStatus() {
@@ -1185,12 +1199,14 @@ function setSettingsOpen(open) {
   els.aeroDataBoxCard.hidden = !open;
   els.lufthansaApiCard.hidden = !open;
   els.lufthansaCrewCard.hidden = !open;
+  els.debugCard.hidden = !open;
   if (open) {
     renderRosterStatus();
     renderCorsProxyKeyStatus();
     renderAeroDataBoxStatus();
     renderLufthansaApiStatus();
     renderLufthansaCrewStatus();
+    els.debugAllMonthInput.checked = getDebugAllMonth();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
     els.layoverCard.hidden = true;
@@ -1834,7 +1850,68 @@ function renderActiveFlightExtras() {
   ensureCrewLoaded(f);
 }
 
+// Debug-only (see #debugCard/getDebugAllMonth()) - every real flight in
+// state.allFlights (the whole -7/+21-day fetch window, see
+// loadFlights()'s own comment), not just today's own state.flights, as
+// one long scrollable card carousel. Deliberately ignores the Layover/
+// Ortstag mode switches entirely (this is for eyeballing card fields
+// across many flights, not for representing "right now") - state.mode is
+// still forced to "flights" and state.previewLayover cleared so the
+// shared dots/height/scroll-listener code (which branch on those) behave
+// exactly like the ordinary case with no preview page attached.
+function renderDebugAllMonthCarousel() {
+  state.mode = "flights";
+  state.previewLayover = null;
+  state.flights = state.allFlights.filter((f) => f.flightNumber);
+  if (state.index >= state.flights.length) state.index = 0;
+
+  els.dutyStatusCard.hidden = true;
+  els.layoverCard.hidden = true;
+  if (els.layoverCard.parentElement !== els.flightCardTrack && els.layoverCard.previousElementSibling !== els.crewCard) {
+    els.crewCard.after(els.layoverCard);
+  }
+
+  const showFlightCard = !!state.flights.length;
+  els.flightCardTrack.hidden = !showFlightCard;
+  els.crewCard.hidden = !showFlightCard;
+  if (!showFlightCard) {
+    els.flightCardDots.hidden = true;
+    renderAirlineBadge(null);
+    showBanner("Keine Flüge im geladenen Zeitraum.", "");
+    return;
+  }
+
+  const signature = flightsSignature(state.flights) + "|DEBUG_ALL_MONTH";
+  const rebuilt = signature !== lastCardSignature;
+  if (rebuilt) {
+    buildFlightCards(null);
+    lastCardSignature = signature;
+  }
+
+  state.flights.forEach((flight, i) => renderFlightCardContent(state.flights, state.cardNodes, i, i === state.index));
+  if (rebuilt) scrollTrackToIndex(state.index);
+  els.flightCardDots.hidden = state.flights.length <= 1;
+  renderFlightDots();
+  updateTrackHeight();
+
+  const f = state.flights[state.index];
+  renderAirlineBadge(f.flightNumber);
+  renderCrew(f);
+  ensureCrewLoaded(f);
+}
+
 function renderFlight() {
+  // Debug-only escape hatch (see #debugCard) - bypasses everything below
+  // (today-only filtering, the Ortstag/post-landing switch, the dedicated
+  // Layover carousel) in favor of one long scrollable carousel over every
+  // real flight in the whole loaded window, so the new AeroDataBox/
+  // Lufthansa-API-driven card fields can be checked across a full month
+  // without waiting for each flight to actually become "today".
+  if (getDebugAllMonth()) {
+    renderDebugAllMonthCarousel();
+    return;
+  }
+
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
   // completed flight card - see shouldShowPostLandingHomeView(). And while
@@ -4888,6 +4965,22 @@ els.resetLufthansaCrewBtn.addEventListener("click", () => {
 
 els.testLufthansaCrewBtn.addEventListener("click", testLufthansaCrewConnection);
 
+els.debugAllMonthInput.addEventListener("change", () => {
+  const on = els.debugAllMonthInput.checked;
+  setDebugAllMonth(on);
+  // Turning it back off: state.flights is left holding whatever
+  // renderDebugAllMonthCarousel() put there (the whole month) - nothing
+  // else recomputes it back down on its own (the 30s ticker's own reset
+  // is deliberately skipped while debug mode is on, see its own comment),
+  // so this has to do it here, the same way that ticker normally would.
+  if (!on && state.allFlights.length) {
+    state.flights = computeTodayFlights(state.allFlights);
+    state.index = state.flights.length ? Math.min(pickInitialIndex(state.flights), state.flights.length - 1) : 0;
+  }
+  lastCardSignature = null; // force a rebuild either way, switching card sets
+  renderFlight();
+});
+
 // ↻ is now the only way any of this app's APIs get queried - there's no
 // background/interval polling left (see the removed 5-minute check and
 // the AeroDataBox lookups' plain "fetch if not yet cached" logic).
@@ -5038,7 +5131,11 @@ setInterval(() => {
   // Re-applies the 20-minutes-past-arrival retirement (see
   // computeTodayFlights()) - purely time-based, so a flight can cross
   // that mark while the app just sits open, not only right after a load.
-  if (state.allFlights.length) {
+  // Skipped entirely while the debug "all month" toggle is on (see
+  // renderDebugAllMonthCarousel()) - otherwise this would reset
+  // state.flights back down to just today's list every 30s, immediately
+  // undoing what that toggle is for.
+  if (state.allFlights.length && !getDebugAllMonth()) {
     const refreshed = computeTodayFlights(state.allFlights);
     if (refreshed.length !== state.flights.length || refreshed.some((f, i) => f !== state.flights[i])) {
       state.flights = refreshed;

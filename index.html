@@ -199,6 +199,20 @@
     <button id="resetLufthansaCrewBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
   </section>
 
+  <!-- Debug (optional, nur in den Settings): zum Testen der neuen APIs
+       (AeroDataBox/Lufthansa) gegen mehr als nur den heutigen Flug. -->
+  <section id="debugCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>Debug</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <label class="checkbox-label">
+      <input id="debugAllMonthInput" type="checkbox" />
+      Alle Flüge des geladenen Zeitraums anzeigen (statt nur heute) - zum
+      Testen der neuen APIs
+    </label>
+  </section>
+
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
   <section id="setupCard" class="card setup-card" hidden>
     <h2>OpenAirLog verbinden</h2>
@@ -339,6 +353,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=133"></script>
+<script src="assets/app.js?v=135"></script>
 </body>
 </html>

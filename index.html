@@ -132,6 +132,37 @@
     <button id="resetAeroDataBoxBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
+  <!-- Lufthansa Developer API (optional, nur in den Settings): zusätzliche
+       Zeiten-/Status-Quelle für den eigenen Flug (Kennzeichen/Callsign
+       bleiben AeroDataBox vorbehalten - die öffentliche Flight-Status-API
+       liefert keine Flugzeugkennung, nur den Flugzeugtyp). -->
+  <section id="lufthansaApiCard" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>Lufthansa Developer API</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Zusätzliche Zeiten-/Status-Quelle für den eigenen Flug (nur bei
+      Lufthansa-Konzernflügen). Liefert keine Flugzeugkennung - dafür
+      bleibt AeroDataBox zuständig. Client-ID/-Secret werden nur lokal auf
+      diesem Gerät gespeichert und bei jeder Anfrage direkt an
+      <code>api.lufthansa.com</code> gesendet. Sie verlassen dieses Gerät
+      sonst nicht.
+    </p>
+    <label for="lufthansaClientIdInput">Client-ID</label>
+    <input id="lufthansaClientIdInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Deine Lufthansa API Client-ID" />
+    <label for="lufthansaClientSecretInput">Client-Secret</label>
+    <input id="lufthansaClientSecretInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein Lufthansa API Client-Secret" />
+    <button id="saveLufthansaApiBtn" class="btn secondary">Speichern</button>
+    <p id="lufthansaApiStatus" class="muted small" hidden></p>
+    <button id="testLufthansaApiBtn" class="btn ghost small" hidden>Verbindung testen</button>
+    <p id="lufthansaApiTestResult" class="muted small" hidden></p>
+    <div id="lufthansaApiTestRaw" class="pdf-text" hidden></div>
+    <button id="resetLufthansaApiBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
+  </section>
+
   <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
   <section id="setupCard" class="card setup-card" hidden>
     <h2>OpenAirLog verbinden</h2>
@@ -272,6 +303,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=130"></script>
+<script src="assets/app.js?v=131"></script>
 </body>
 </html>

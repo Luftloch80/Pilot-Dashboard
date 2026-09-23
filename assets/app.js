@@ -6,6 +6,9 @@ const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
 const AERODATABOX_KEY_STORAGE_KEY = "oal_aerodatabox_key";
 const AERODATABOX_BASE = "https://prod.api.market/api/v1/aedbx/aerodatabox";
+const LUFTHANSA_CLIENT_ID_STORAGE_KEY = "oal_lufthansa_client_id";
+const LUFTHANSA_CLIENT_SECRET_STORAGE_KEY = "oal_lufthansa_client_secret";
+const LUFTHANSA_API_BASE = "https://api.lufthansa.com/v1";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -123,6 +126,16 @@ const els = {
   aeroDataBoxTestResult: document.getElementById("aeroDataBoxTestResult"),
   aeroDataBoxTestRaw: document.getElementById("aeroDataBoxTestRaw"),
   resetAeroDataBoxBtn: document.getElementById("resetAeroDataBoxBtn"),
+
+  lufthansaApiCard: document.getElementById("lufthansaApiCard"),
+  lufthansaClientIdInput: document.getElementById("lufthansaClientIdInput"),
+  lufthansaClientSecretInput: document.getElementById("lufthansaClientSecretInput"),
+  saveLufthansaApiBtn: document.getElementById("saveLufthansaApiBtn"),
+  lufthansaApiStatus: document.getElementById("lufthansaApiStatus"),
+  testLufthansaApiBtn: document.getElementById("testLufthansaApiBtn"),
+  lufthansaApiTestResult: document.getElementById("lufthansaApiTestResult"),
+  lufthansaApiTestRaw: document.getElementById("lufthansaApiTestRaw"),
+  resetLufthansaApiBtn: document.getElementById("resetLufthansaApiBtn"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
@@ -562,6 +575,206 @@ async function testAeroDataBoxConnection() {
   els.testAeroDataBoxBtn.disabled = false;
 }
 
+// ---------- Lufthansa Developer API (public Flight Status) ----------
+//
+// A second, independent time/status source for the pilot's OWN flight
+// only - NOT a replacement for AeroDataBox, which stays the only source
+// for aircraft registration and callsign (see getOwnFlightLiveLeg()'s own
+// comment): the public Flight Status endpoint's own "Equipment" only
+// gives the aircraft TYPE code (e.g. "333" for an A330-300), never the
+// individual tail registration - that field only exists in Lufthansa's
+// separate, crew-only FlightOps API, which requires an actual crew login,
+// not a plain Client-ID/Secret. Field names below are reconstructed from
+// the public documentation (developer.lufthansa.com wasn't directly
+// reachable to confirm a live response against) - kept defensive
+// (returns null rather than throwing on anything unexpected) for exactly
+// that reason.
+
+function getLufthansaClientId() {
+  try { return localStorage.getItem(LUFTHANSA_CLIENT_ID_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function getLufthansaClientSecret() {
+  try { return localStorage.getItem(LUFTHANSA_CLIENT_SECRET_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setLufthansaCredentials(clientId, clientSecret) {
+  try {
+    localStorage.setItem(LUFTHANSA_CLIENT_ID_STORAGE_KEY, clientId);
+    localStorage.setItem(LUFTHANSA_CLIENT_SECRET_STORAGE_KEY, clientSecret);
+  } catch { /* private mode etc. */ }
+}
+function clearLufthansaCredentials() {
+  try {
+    localStorage.removeItem(LUFTHANSA_CLIENT_ID_STORAGE_KEY);
+    localStorage.removeItem(LUFTHANSA_CLIENT_SECRET_STORAGE_KEY);
+  } catch { /* ignore */ }
+}
+
+function renderLufthansaApiStatus() {
+  const configured = !!(getLufthansaClientId() && getLufthansaClientSecret());
+  els.lufthansaApiStatus.hidden = !configured;
+  els.lufthansaApiStatus.textContent = configured ? "Zugangsdaten hinterlegt." : "";
+  els.testLufthansaApiBtn.hidden = !configured;
+  els.lufthansaApiTestResult.hidden = true;
+  els.lufthansaApiTestRaw.hidden = true;
+  els.resetLufthansaApiBtn.hidden = !configured;
+}
+
+// Bearer token cache (in-memory only, never persisted - re-fetched on
+// every full page load, same as the AeroDataBox key needing no token
+// dance at all). expires_in from a real response was 21600s (6h) in the
+// documented example; refreshed 60s early to avoid a request landing
+// right on the expiry boundary.
+let lufthansaTokenCache = null; // { token, expiresAt } | null
+
+async function fetchLufthansaToken() {
+  const clientId = getLufthansaClientId();
+  const clientSecret = getLufthansaClientSecret();
+  if (!clientId || !clientSecret) return null;
+  try {
+    const res = await fetchWithTimeout(`${LUFTHANSA_API_BASE}/oauth/token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, grant_type: "client_credentials" }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json || !json.access_token) return null;
+    return { token: json.access_token, expiresAt: Date.now() + (Number(json.expires_in) || 3600) * 1000 - 60000 };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureLufthansaToken() {
+  if (lufthansaTokenCache && Date.now() < lufthansaTokenCache.expiresAt) return lufthansaTokenCache.token;
+  lufthansaTokenCache = await fetchLufthansaToken();
+  return lufthansaTokenCache ? lufthansaTokenCache.token : null;
+}
+
+// A {DateTime, ...} node as both *TimeLocal and *TimeUTC siblings report
+// it (inferred shape, see the module comment above) - the UTC variant is
+// always preferred when present; DateTime strings without an explicit
+// zone offset are assumed to already be UTC when taken from the *UTC
+// field, so "Z" is appended if the parser would otherwise treat it as
+// local browser time.
+function parseLufthansaDateTime(node) {
+  const raw = node && node.DateTime;
+  if (!raw) return null;
+  const iso = /[Z+-]\d{2}:?\d{2}$|Z$/.test(raw) ? raw : `${raw}Z`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeLufthansaFlight(flight) {
+  if (!flight) return null;
+  const dep = flight.Departure || {};
+  const arr = flight.Arrival || {};
+  const marketing = flight.MarketingCarrier || {};
+  return {
+    depCode: dep.AirportCode || "---",
+    arrCode: arr.AirportCode || "---",
+    depSchedDate: parseLufthansaDateTime(dep.ScheduledTimeUTC),
+    arrSchedDate: parseLufthansaDateTime(arr.ScheduledTimeUTC),
+    // "current" time (departure/arrival deviation display) - the actual
+    // time once landed/departed, else whatever's currently estimated.
+    depDate: parseLufthansaDateTime(dep.ActualTimeUTC) || parseLufthansaDateTime(dep.EstimatedTimeUTC) || parseLufthansaDateTime(dep.ScheduledTimeUTC),
+    arrDate: parseLufthansaDateTime(arr.ActualTimeUTC) || parseLufthansaDateTime(arr.EstimatedTimeUTC) || parseLufthansaDateTime(arr.ScheduledTimeUTC),
+    depRunwayDate: parseLufthansaDateTime(dep.ActualTimeUTC),
+    flightNumber: `${marketing.AirlineID || ""}${marketing.FlightNumber || ""}`,
+    status: (flight.FlightStatus && flight.FlightStatus.Code) || "",
+    // Deliberately not populated - see the module comment above.
+    registration: null,
+    callSign: null,
+  };
+}
+
+async function fetchLufthansaFlightStatus(flightNumber, dateKey) {
+  const token = await ensureLufthansaToken();
+  if (!token || !flightNumber || !dateKey) return null;
+  // The public endpoint takes the bare IATA flight number (no airline
+  // prefix duplicated), e.g. "1427" under carrier "LH" - OpenAirLog's own
+  // flightNumber already comes as "LH1427", which the endpoint accepts
+  // directly per its own documented examples.
+  const url = `${LUFTHANSA_API_BASE}/operations/flightstatus/${encodeURIComponent(flightNumber)}/${encodeURIComponent(dateKey)}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const flights = json && json.FlightStatusResource && json.FlightStatusResource.Flights && json.FlightStatusResource.Flights.Flight;
+    const entries = Array.isArray(flights) ? flights : flights ? [flights] : [];
+    return normalizeLufthansaFlight(entries[0]);
+  } catch {
+    return null;
+  }
+}
+
+const lufthansaFlightStatusCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
+const lufthansaFlightStatusLoading = new Set();
+
+async function ensureLufthansaFlightStatusLoaded(flightNumber, dateKey) {
+  const cacheKey = `${flightNumber}|${dateKey}`;
+  if (lufthansaFlightStatusLoading.has(cacheKey)) return;
+  lufthansaFlightStatusLoading.add(cacheKey);
+  const leg = await fetchLufthansaFlightStatus(flightNumber, dateKey);
+  lufthansaFlightStatusLoading.delete(cacheKey);
+  lufthansaFlightStatusCache.set(cacheKey, { leg, fetchedAt: Date.now() });
+  renderFlight();
+}
+
+// Same in-app probe as testAeroDataBoxConnection() - first the token
+// endpoint (catches a bad Client-ID/Secret on its own before even trying
+// a real flight), then one real flight-status lookup against whichever
+// flight is already loaded.
+async function testLufthansaApiConnection() {
+  if (!getLufthansaClientId() || !getLufthansaClientSecret()) return;
+  const testFlight = state.flights[state.index] || state.allFlights[0];
+
+  els.testLufthansaApiBtn.disabled = true;
+  els.lufthansaApiTestResult.hidden = false;
+  els.lufthansaApiTestResult.textContent = "Teste Zugangsdaten …";
+  els.lufthansaApiTestRaw.hidden = true;
+  els.lufthansaApiTestRaw.textContent = "";
+
+  function showRaw(value) {
+    els.lufthansaApiTestRaw.hidden = false;
+    els.lufthansaApiTestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  lufthansaTokenCache = null; // force a fresh token attempt for this test
+  const token = await ensureLufthansaToken();
+  if (!token) {
+    els.lufthansaApiTestResult.textContent = "Fehlgeschlagen: Kein Token erhalten - Client-ID/-Secret prüfen.";
+    return void (els.testLufthansaApiBtn.disabled = false);
+  }
+  if (!testFlight || !testFlight.flightNumber || !(testFlight.raw && testFlight.raw.date)) {
+    els.lufthansaApiTestResult.textContent = "Token OK. Kein Testflug verfügbar - erst Flugdaten laden.";
+    return void (els.testLufthansaApiBtn.disabled = false);
+  }
+
+  els.lufthansaApiTestResult.textContent = `Token OK. Teste mit ${testFlight.flightNumber} …`;
+  const url = `${LUFTHANSA_API_BASE}/operations/flightstatus/${encodeURIComponent(testFlight.flightNumber)}/${encodeURIComponent(testFlight.raw.date)}`;
+  try {
+    const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    const text = await res.text();
+    if (!res.ok) {
+      els.lufthansaApiTestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von api.lufthansa.com.`;
+      showRaw(text);
+    } else {
+      let json;
+      try { json = JSON.parse(text); } catch { json = null; }
+      els.lufthansaApiTestResult.textContent = json
+        ? `Erfolgreich - Antwort für ${testFlight.flightNumber} erhalten.`
+        : "Antwort kam an, aber kein gültiges JSON.";
+      showRaw(json !== null ? json : text);
+    }
+  } catch (err) {
+    els.lufthansaApiTestResult.textContent =
+      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
+    showRaw(String(err));
+  }
+  els.testLufthansaApiBtn.disabled = false;
+}
+
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
 // not the PDF file itself - so it survives a page refresh instead of
@@ -615,10 +828,12 @@ function setSettingsOpen(open) {
   els.crewPdfCard.hidden = !open;
   els.rosterCard.hidden = !open;
   els.aeroDataBoxCard.hidden = !open;
+  els.lufthansaApiCard.hidden = !open;
   if (open) {
     renderRosterStatus();
     renderCorsProxyKeyStatus();
     renderAeroDataBoxStatus();
+    renderLufthansaApiStatus();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
     els.layoverCard.hidden = true;
@@ -682,26 +897,57 @@ function renderFlightDots() {
 }
 
 // Shared by the flight number's callsign suffix and the depTime/arrTime
-// deviation labels - all three want the same AeroDataBox lookup for this
+// deviation labels - all three want the same live lookup for this
 // pilot's own current flight (its own flight number + date), so this is
-// the one place that checks the cache and triggers a fetch if it's
-// stale, rather than each caller doing that separately. peekOnly reads
+// the one place that checks both caches and triggers a fetch if either
+// is stale, rather than each caller doing that separately. peekOnly reads
 // whatever's cached without triggering a new fetch - used for the cards
 // the user isn't currently looking at, so scrolling past several of them
 // doesn't fire off a lookup for each one.
-function getOwnFlightAeroDataBoxLeg(f, opts) {
+//
+// Two independent sources, merged: AeroDataBox is the only one that can
+// ever provide callsign or aircraft registration (see
+// fetchLufthansaFlightStatus()'s own comment on why the public Lufthansa
+// Developer API can't - its Equipment field is the aircraft TYPE, not the
+// tail) - but when a Lufthansa API key is ALSO configured, its own
+// times/status are preferred over AeroDataBox's for the actual
+// dep/arr/runway times themselves, since it's the airline's own data for
+// its own (Lufthansa Group) flights. Falls back to AeroDataBox's times
+// whenever Lufthansa has nothing (non-LH flight, no key, or the lookup
+// simply failed).
+function getOwnFlightLiveLeg(f, opts) {
   const dateKey = f.raw && f.raw.date;
-  if (!getAeroDataBoxKey() || !f.flightNumber || !dateKey) return null;
+  if (!f.flightNumber || !dateKey) return null;
   const cacheKey = `${f.flightNumber}|${dateKey}`;
-  const cached = flightByNumberCache.get(cacheKey);
   const peekOnly = opts && opts.peekOnly;
+
   // No time-based staleness re-fetch anymore - only ↻ (see refreshAll())
-  // clears this cache, so a lookup only ever fires once per flight until
-  // the pilot explicitly asks for new data.
-  if (!peekOnly && !cached) {
-    ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+  // clears these caches, so a lookup only ever fires once per flight
+  // until the pilot explicitly asks for new data.
+  let aeroLeg = null;
+  if (getAeroDataBoxKey()) {
+    const cached = flightByNumberCache.get(cacheKey);
+    if (!peekOnly && !cached) ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+    aeroLeg = cached ? cached.leg : null;
   }
-  return cached ? cached.leg : null;
+
+  let lhLeg = null;
+  if (getLufthansaClientId() && getLufthansaClientSecret()) {
+    const cached = lufthansaFlightStatusCache.get(cacheKey);
+    if (!peekOnly && !cached) ensureLufthansaFlightStatusLoaded(f.flightNumber, dateKey);
+    lhLeg = cached ? cached.leg : null;
+  }
+
+  if (!aeroLeg && !lhLeg) return null;
+  return {
+    callSign: aeroLeg && aeroLeg.callSign,
+    registration: aeroLeg && aeroLeg.registration,
+    depDate: (lhLeg && lhLeg.depDate) || (aeroLeg && aeroLeg.depDate) || null,
+    arrDate: (lhLeg && lhLeg.arrDate) || (aeroLeg && aeroLeg.arrDate) || null,
+    depRunwayDate: (lhLeg && lhLeg.depRunwayDate) || (aeroLeg && aeroLeg.depRunwayDate) || null,
+    depSchedDate: (lhLeg && lhLeg.depSchedDate) || (aeroLeg && aeroLeg.depSchedDate) || null,
+    arrSchedDate: (lhLeg && lhLeg.arrSchedDate) || (aeroLeg && aeroLeg.arrSchedDate) || null,
+  };
 }
 
 // Shows the AeroDataBox-reported current time under the scheduled one
@@ -1133,7 +1379,7 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
 }
 
 // Fills one card's content. Only the active (currently scrolled-to) card
-// is allowed to trigger AeroDataBox lookups (getOwnFlightAeroDataBoxLeg's
+// is allowed to trigger AeroDataBox lookups (getOwnFlightLiveLeg's
 // peekOnly) - the others show whatever's already cached from an earlier
 // visit, so simply having several cards in the DOM doesn't multiply the
 // API quota this uses. Takes an explicit flights/cardNodes array pair
@@ -1148,7 +1394,7 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
   // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
   // main flight card, not in the crew list's inbound/outbound labels or
   // the transit line, which are about other flights, not this one.
-  const ownLeg = getOwnFlightAeroDataBoxLeg(f, { peekOnly: !isActive });
+  const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: !isActive });
   cardEls.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
   updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus);
 
@@ -4236,17 +4482,45 @@ els.resetAeroDataBoxBtn.addEventListener("click", () => {
 
 els.testAeroDataBoxBtn.addEventListener("click", testAeroDataBoxConnection);
 
+els.saveLufthansaApiBtn.addEventListener("click", () => {
+  const clientId = els.lufthansaClientIdInput.value.trim();
+  const clientSecret = els.lufthansaClientSecretInput.value.trim();
+  if (!clientId || !clientSecret) return;
+  setLufthansaCredentials(clientId, clientSecret);
+  els.lufthansaClientIdInput.value = "";
+  els.lufthansaClientSecretInput.value = "";
+  lufthansaTokenCache = null;
+  lufthansaFlightStatusCache.clear();
+  renderLufthansaApiStatus();
+  renderFlight();
+});
+
+els.resetLufthansaApiBtn.addEventListener("click", () => {
+  if (!confirm("Lufthansa-API-Zugangsdaten auf diesem Gerät entfernen?")) return;
+  clearLufthansaCredentials();
+  lufthansaTokenCache = null;
+  lufthansaFlightStatusCache.clear();
+  renderLufthansaApiStatus();
+  renderFlight();
+});
+
+els.testLufthansaApiBtn.addEventListener("click", testLufthansaApiConnection);
+
 // ↻ is now the only way any of this app's APIs get queried - there's no
 // background/interval polling left (see the removed 5-minute check and
 // the AeroDataBox lookups' plain "fetch if not yet cached" logic).
-// Clearing the AeroDataBox caches here, rather than adding a separate
-// "force" path to every lookup, lets that existing lazy logic naturally
-// re-fetch whatever's relevant to what ends up shown once loadFlights()
-// re-renders - own flight's callsign/deviation, the transit line's next
-// A/C, and crew ex/to refs all go through the same two caches.
+// Clearing the AeroDataBox/Lufthansa caches here, rather than adding a
+// separate "force" path to every lookup, lets that existing lazy logic
+// naturally re-fetch whatever's relevant to what ends up shown once
+// loadFlights() re-renders - own flight's callsign/deviation, the
+// transit line's next A/C, and crew ex/to refs all go through these
+// caches. The Lufthansa bearer token itself is left alone (still valid
+// for up to its own 6h expiry - see ensureLufthansaToken()), only the
+// per-flight status cache is cleared.
 async function refreshAll() {
   flightByNumberCache.clear();
   aircraftScheduleCache.clear();
+  lufthansaFlightStatusCache.clear();
   // Roster overrides apply to state.allFlights, so this has to wait for
   // loadFlights() to finish replacing it with the fresh window first -
   // firing both at once let the roster fetch (if it happened to resolve
@@ -4400,7 +4674,7 @@ setInterval(() => {
     const node = state.cardNodes[i];
     if (!node) return;
     const statusEl = node.querySelector(".status-pill");
-    const ownLeg = getOwnFlightAeroDataBoxLeg(f, { peekOnly: i !== state.index });
+    const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: i !== state.index });
     updateFlightTimerDisplay(f, ownLeg, statusEl);
   });
   tickPostLandingSwitch();

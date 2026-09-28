@@ -1862,7 +1862,7 @@ function renderActiveFlightExtras() {
 function renderDebugAllMonthCarousel() {
   state.mode = "flights";
   state.previewLayover = null;
-  state.flights = state.allFlights.filter((f) => f.flightNumber);
+  state.flights = state.allFlights.filter((f) => f.flightNumber && !f.isDeadhead);
   if (state.index >= state.flights.length) state.index = 0;
 
   els.dutyStatusCard.hidden = true;
@@ -2437,11 +2437,24 @@ function startsNewTour(flight) {
   return !previous || previous.arrCode !== flight.depCode;
 }
 
+// A PDF Umlaufcrewliste only ever prints "Ihr angeforderter Flug und
+// weitere Flüge Ihres Umlaufs" onward - it starts AT the requested flight,
+// so its first leg has no lookback: nobody who's on it can be shown as
+// "joining" from anything, since the document itself doesn't cover
+// whatever came before. Confirmed against a real Umlaufcrewliste where an
+// entire block-1 crew (a fresh start together on the pilot's own requested
+// flight) was otherwise wrongly flagged as joining from the pilot's own
+// unrelated previous OpenAirLog flight, purely because that older flight
+// happened to land at the same airport this one departs from.
+function isPdfFirstBlockFlight(flight) {
+  return !!(state.pdfLegs.length && state.pdfLegs[0].flightNumber === flight.flightNumber);
+}
+
 // Whoever's crew a flight starts a new tour from is unrelated to this one
 // - the whole crew being "new" there is expected, not a meaningful join,
 // and would just be noise.
 function findJoiningCrew(flight, crew) {
-  if (startsNewTour(flight)) return new Set();
+  if (startsNewTour(flight) || isPdfFirstBlockFlight(flight)) return new Set();
   const previous = adjacentFlightCrew(flight, -1);
   if (!previous) return new Set();
   const previousOperating = previous.filter(isOperatingCrewMember);
@@ -2646,7 +2659,17 @@ function renderCrew(f) {
   const entry = f.id != null ? crewCache.get(f.id) : undefined;
   const hasEmbedded = f.embeddedCrew.length > 0;
   const apiCrew = hasEmbedded ? f.embeddedCrew : entry && entry.status === "ok" ? entry.crew : [];
-  const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length);
+  // A PDF's routing table can simply not cover this particular flight - a
+  // rotation regenerated under a new Umlauf number, an old upload left over
+  // from a previous day, or (in "alle Kacheln" debug mode) a flight outside
+  // the PDF's own date range altogether. Showing it as "PDF · Umlauf ..."
+  // regardless would silently attach a completely unrelated crew list.
+  // Only trust it here once its own leg table actually lists this flight
+  // number; no leg table at all (parsing failed but crew rows still did)
+  // keeps the old permissive behavior rather than blocking on nothing.
+  const pdfCoversFlight = !state.pdfLegs.length ||
+    state.pdfLegs.some((leg) => leg.flightNumber === f.flightNumber);
+  const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length && pdfCoversFlight);
 
   const detectedOwnName = detectOwnName(f, apiCrew);
   if (detectedOwnName) applyDetectedOwnName(detectedOwnName);
@@ -2814,10 +2837,14 @@ const FLIGHT_RETIRE_AFTER_ARRIVAL_MS = 20 * 60 * 1000;
 // need to reach across days, e.g. adjacentFlight(), still work) down to
 // today's date, then further down to what's still worth showing as a
 // card. Re-run on every 30s tick as well as on load, since "20 minutes
-// past arrival" becomes true while the app just sits there.
+// past arrival" becomes true while the app just sits there. A flight the
+// pilot is only deadheading on doesn't get its own card - it's excluded
+// here rather than in the caller so it's also gone from "the last flight
+// of the day" special-casing below.
 function computeTodayFlights(allFlights) {
   const todayKey = localDateKey(new Date());
   const today = allFlights.filter((f) => {
+    if (f.isDeadhead) return false;
     const d = f.depSchedDate || f.depActualDate;
     return d && localDateKey(d) === todayKey;
   });

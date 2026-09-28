@@ -3189,7 +3189,21 @@ function parseCrewFromLines(lines, refs = []) {
     m = line.match(CREW_ROW_NO_ID_RE);
     if (m) {
       const [, role, name] = m;
-      crew.push({ role: role.trim(), name: displayName(name.trim().replace(/\s+/g, " ")), details: "", ...refFields });
+      let fullName = name.trim().replace(/\s+/g, " ");
+      // A multi-word given name can itself wrap onto its own line - distinct
+      // from CREW_ROW_SURNAME_WRAP_RE's surname wrap below, this is the
+      // surname *and* the first word of the given name already fitting on
+      // this line, with the rest of the given name alone on the next one
+      // (confirmed on a real Umlaufcrewliste: "BARTELS YOSHIDA, JONAS" /
+      // "LINO", with the PK-Nummer only appearing after that) - without
+      // this, the truncated PDF name ("..., Jonas") no longer shares a
+      // first name with OpenAirLog's own ("..., Jonas Lino") and
+      // mergeCrewWithPdf() silently stops applying it.
+      if (looksLikeNameContinuation(lines[i + 1])) {
+        fullName = `${fullName} ${lines[i + 1].trim()}`;
+        i++;
+      }
+      crew.push({ role: role.trim(), name: displayName(fullName), details: "", ...refFields });
       continue;
     }
     m = line.match(CREW_ROW_SURNAME_WRAP_RE);
@@ -3533,20 +3547,36 @@ function findApiLayover(allFlights) {
   return { arrCode: current.arrCode, arrTime: currentArr, flight: current };
 }
 
-// Once today's own last flight (state.flights, see computeTodayFlights())
-// has actually departed - not merely still scheduled to - the pilot wants
-// a look ahead at the layover it's flying into, attached as one more
-// swipeable page right after that flight's own card in the ordinary
-// flight-card carousel (see buildFlightCards()/renderFlight()), well
-// before findApiLayover()'s own POST_LANDING_SWITCH_MS gate flips the
-// whole app over into the dedicated Layover carousel. Same non-home-base/
-// same-day-connection exclusions as findApiLayover() - this is genuinely
-// a preview of the SAME layover that eventually takes over there, not a
-// separate concept, and stays scoped to state.flights so it starts over
-// with whatever today's own list is once midnight rolls the date over,
+// Today's flights including a deadhead one, unlike state.flights (the
+// card list, see computeTodayFlights()) - a deadhead leg to the layover
+// city is still a real physical event that decides where the day actually
+// ends, even though it doesn't get its own card. Filtered straight from
+// state.allFlights (untouched, all dates) rather than cached, so it always
+// reflects the current date the same way computeTodayFlights() does.
+function todaysFlightsIncludingDeadhead() {
+  const todayKey = localDateKey(new Date());
+  return state.allFlights.filter((f) => {
+    const d = f.depSchedDate || f.depActualDate;
+    return d && localDateKey(d) === todayKey;
+  });
+}
+
+// Once today's own last flight - including a trailing deadhead leg, which
+// is what actually puts the pilot at the layover city even without a card
+// of its own (see todaysFlightsIncludingDeadhead()) - has actually
+// departed, not merely still scheduled to, the pilot wants a look ahead at
+// the layover it's flying into, attached as one more swipeable page right
+// after the last card in the ordinary flight-card carousel (see
+// buildFlightCards()/renderFlight()), well before findApiLayover()'s own
+// POST_LANDING_SWITCH_MS gate flips the whole app over into the dedicated
+// Layover carousel. Same non-home-base/same-day-connection exclusions as
+// findApiLayover() - this is genuinely a preview of the SAME layover that
+// eventually takes over there, not a separate concept, and stays scoped to
+// today's own flights so it starts over once midnight rolls the date over,
 // same as the rest of the app (see computeTodayFlights()).
 function previewLayoverFlight() {
-  const last = state.flights[state.flights.length - 1];
+  const today = todaysFlightsIncludingDeadhead();
+  const last = today[today.length - 1];
   if (!last || last.arrCode === HOME_BASE) return null;
   const dep = last.depActualDate || last.depSchedDate;
   if (!dep || Date.now() < dep.getTime()) return null;
@@ -3652,9 +3682,11 @@ function todayDutyType() {
 const POST_LANDING_SWITCH_MS = 30 * 60 * 1000;
 const BRIEFING_LEAD_MS = 120 * 60 * 1000;
 
-// Once today's last flight has landed back at home base, the pilot wants
-// the dashboard to switch into the same "Ortstag" view as an actual
-// ORTSTAG duty_code would produce - 30 minutes after that flight's
+// Once today's last flight - including a trailing deadhead leg home, which
+// is what actually gets the pilot back even without a card of its own (see
+// todaysFlightsIncludingDeadhead()) - has landed back at home base, the
+// pilot wants the dashboard to switch into the same "Ortstag" view as an
+// actual ORTSTAG duty_code would produce - 30 minutes after that flight's
 // *scheduled* arrival, not the actual one (matches the rest of the app,
 // which times things off the schedule rather than waiting on actual
 // block times that may never get filled in). Only applies while looking
@@ -3663,8 +3695,9 @@ const BRIEFING_LEAD_MS = 120 * 60 * 1000;
 function shouldShowPostLandingHomeView() {
   const n = state.flights.length;
   if (!n || state.index !== n - 1) return false;
-  const last = state.flights[n - 1];
-  if (last.arrCode !== HOME_BASE || !last.arrSchedDate) return false;
+  const today = todaysFlightsIncludingDeadhead();
+  const last = today[today.length - 1];
+  if (!last || last.arrCode !== HOME_BASE || !last.arrSchedDate) return false;
   return Date.now() - last.arrSchedDate.getTime() >= POST_LANDING_SWITCH_MS;
 }
 

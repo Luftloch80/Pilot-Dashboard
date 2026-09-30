@@ -3303,19 +3303,27 @@ const ROSTER_FLIGHT_SUMMARY_RE = /^(DH\s+)?([A-Z]{2,3})\s+(\d{1,4}):\s*([A-Z]{3}
 const ROSTER_WINDOW_PAST_MS = 14 * 24 * 3600 * 1000;
 const ROSTER_WINDOW_FUTURE_MS = 60 * 24 * 3600 * 1000;
 
+// Confirmed real SUMMARY text for a simulator session: just "Simulator"
+// (an earlier guess also expected a session-code suffix like "EBTF3A" -
+// not part of the confirmed text itself, but this still matches it fine
+// since it only checks for the word anywhere in the summary). Ground
+// training, never real duty flying - shared by rosterEventsToRawFlights()
+// (so a session never becomes a "flight"/"next duty") and
+// findRosterBriefing() (so that session's own Briefing, always earlier
+// the same day, never gets mistaken for a real flight's).
+function isSimulatorEvent(ev) {
+  return /simulator/i.test(ev.summary || "");
+}
+
 function rosterEventsToRawFlights(events) {
   const raw = [];
   const now = Date.now();
   for (const ev of events) {
     if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
-    // Simulator sessions (e.g. "Simulator EBTF3A"/"EBTF3B" - confirmed
-    // real text, though not the full line format) are ground training,
-    // not a flight - never real duty flying, so they'd be wrong as
-    // "next duty" (nextDutyFlight()), on a flight card, or anywhere else
-    // a real flight is expected. Checked before the flight-summary regex
-    // below, regardless of whether a session happens to also look
+    // See isSimulatorEvent() - checked before the flight-summary regex
+    // below regardless of whether a session happens to also look
     // route-shaped, so this can't accidentally slip through either way.
-    if (/simulator/i.test(ev.summary)) continue;
+    if (isSimulatorEvent(ev)) continue;
     const t = ev.dtstart.getTime();
     if (t < now - ROSTER_WINDOW_PAST_MS || t > now + ROSTER_WINDOW_FUTURE_MS) continue;
     const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
@@ -3354,8 +3362,22 @@ function findRosterPickup(events, stationIcao, afterDate) {
 // renderDutyStatus() to show the real MyTime briefing time for the
 // upcoming duty. Real-or-nothing, same as the layover card's own Pickup
 // line - no computed estimate, see renderDutyStatus()'s own comment.
+// A Simulator session gets its own Briefing too, always the same day
+// and earlier than the session itself (see isSimulatorEvent()) - always
+// excluded here regardless of which flight it's being matched against,
+// not just when it happens to fall on some unrelated flight's own day
+// (the briefingSameDay check in renderDutyStatus() already guards
+// against that specific case, but a same-day real duty would still slip
+// through without this).
 function findRosterBriefing(events, stationIcao, afterDate) {
-  return findRosterTimedEvent(events, BRIEFING_SUMMARY_RE, stationIcao, afterDate);
+  const filtered = events.filter((ev) => {
+    if (!ev.dtstart || !BRIEFING_SUMMARY_RE.test((ev.summary || "").trim())) return true;
+    return !events.some((other) =>
+      other.dtstart && isSimulatorEvent(other) && other.dtstart > ev.dtstart &&
+      localDateKey(other.dtstart) === localDateKey(ev.dtstart)
+    );
+  });
+  return findRosterTimedEvent(filtered, BRIEFING_SUMMARY_RE, stationIcao, afterDate);
 }
 
 function findRosterTimedEvent(events, re, stationIcao, afterDate) {

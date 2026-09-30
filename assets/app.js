@@ -4224,19 +4224,15 @@ if ("serviceWorker" in navigator) {
 // empty until a data source populates it (applyLoadedFlights() is ready
 // for that, just nothing calls it yet). Flightradar24 only ever enriches
 // flights already known from elsewhere, it isn't a source of which
-// flights exist. ↻ (refreshAll()) refreshes the MyTime roster and clears
-// the Flightradar24 lookup caches.
-// MyTime roster is the primary duty-plan source now, so - unlike the
-// former "manual ↻ only" design, back when OpenAirLog/roster were two
-// separate live sources and this was the pilot's own explicit choice -
-// startup loads it once right away (respecting ensureRosterLoaded()'s own
-// "already fresh, skip" check): without this, the dashboard would stay
-// permanently blank on every open until a manual tap, since nothing else
-// populates state.flights anymore.
+// flights exist. Never fetched automatically, on startup or otherwise -
+// the pilot's own explicit choice to control when a sync happens (mobile
+// data, freshness) - only ↻ (refreshAll()) ever loads the roster and
+// clears the Flightradar24 lookup caches. The dashboard genuinely starts
+// blank on every open until that first manual tap; nothing here is
+// cached across page loads to show in the meantime.
 function loadInitial() {
   els.refreshBtn.hidden = false;
   showBanner("", "");
-  ensureRosterLoaded();
 }
 
 renderBrandName();

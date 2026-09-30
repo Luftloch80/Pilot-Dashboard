@@ -153,8 +153,6 @@ const state = {
   mode: "flights", previewLayover: null,
   layoverFlights: [], layoverPageIndex: 0, layoverCardNodes: [],
 };
-const crewCache = new Map(); // flightId -> { status: "loading"|"ok"|"error"|"forbidden", crew: [], message?: string }
-
 // ---------- helpers ----------
 
 function getPath(obj, path) {
@@ -2044,16 +2042,6 @@ function adjacentFlight(flight, offset) {
   return idx >= 0 ? state.allFlights[idx + offset] : undefined;
 }
 
-// Live OpenAirLog crew for that adjacent flight - embedded if present,
-// otherwise whatever's already in crewCache, or null if that's genuinely
-// not known yet.
-function adjacentFlightCrew(flight, offset) {
-  const adjacent = adjacentFlight(flight, offset);
-  if (!adjacent) return null;
-  if (adjacent.embeddedCrew.length) return adjacent.embeddedCrew;
-  const cached = adjacent.id != null ? crewCache.get(adjacent.id) : undefined;
-  return cached && cached.status === "ok" ? cached.crew : null;
-}
 
 // The PDF's own ref reads like "LH1168 -1/19" - flight number, an offset
 // whose exact meaning isn't documented anywhere, and a bare day-of-month.
@@ -2146,6 +2134,30 @@ function buildPdfRefMap(f, field) {
     map.set(crewKey(m.role, m.name), label);
   }
   return map;
+}
+
+// Position of a flight number in the PDF's own leg table (state.pdfLegs,
+// in document order) - or -1 if the PDF doesn't cover it at all.
+function pdfLegIndex(flightNumber) {
+  return state.pdfLegs.findIndex((leg) => leg.flightNumber === flightNumber);
+}
+
+// True if this crew member's block (blockFirstFlight..blockLastFlight,
+// see parseCrewFromLines()) covers the given flight - the PDF only ever
+// prints a block's own start/end boundary explicitly (the Ex/To
+// references buildPdfRefMap() reads), never every flight in between, so
+// "is this person actually on flight X's crew" has to be inferred from
+// where X falls between those two boundaries in the PDF's own leg-table
+// order. Used by renderLayoverCrew() instead of comparing crew across
+// adjacent flights (which needed OpenAirLog's live per-flight crew data -
+// always empty now that crew is PDF-only, see the join/leave arrow fix
+// this mirrors).
+function isPdfCrewOnFlight(member, flightNumber) {
+  const idx = pdfLegIndex(flightNumber);
+  const startIdx = pdfLegIndex(member.blockFirstFlight);
+  const endIdx = pdfLegIndex(member.blockLastFlight);
+  if (idx === -1 || startIdx === -1 || endIdx === -1) return false;
+  return idx >= startIdx && idx <= endIdx;
 }
 
 // Crew only ever comes from the uploaded PDF now (see state.pdfCrew) -
@@ -2261,7 +2273,6 @@ function applyLoadedFlights(allRaw) {
 
   const flights = computeTodayFlights(allFlights);
 
-  crewCache.clear();
   state.flights = flights;
   state.allFlights = allFlights;
   state.allDuties = allDuties;
@@ -4037,22 +4048,18 @@ function isOwnName(memberName, ownName) {
 // (so they're really at this layover, not just listed somewhere else in
 // the PDF) and still on the next flight too (a room number is only
 // useful for coordinating with someone who's still around tomorrow, not
-// a colleague leaving the crew at this stop) - determined from the
-// flight's own live-tracked crew (the same comparison the join/leave
-// arrows already use), rather than the PDF's flat list.
+// a colleague leaving the crew at this stop) - determined from the PDF's
+// own block boundaries (isPdfCrewOnFlight()), the same source the
+// join/leave arrows use now, rather than the flight's own live-tracked
+// crew (OpenAirLog only, always empty since crew went PDF-only).
 function renderLayoverCrew(arrCode, hotel, flight) {
   const allCrew = state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
   const ownName = getOwnName();
   let crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
 
-  const hereCrew = flight ? adjacentFlightCrew(flight, 0) : null;
-  const nextCrew = flight ? adjacentFlightCrew(flight, 1) : null;
-  crew = hereCrew && nextCrew
-    ? crew.filter((m) => {
-        const key = crewKey(m.role, m.name);
-        return hereCrew.some((c) => crewKey(c.role, c.name) === key) &&
-          nextCrew.some((c) => crewKey(c.role, c.name) === key);
-      })
+  const next = flight ? adjacentFlight(flight, 1) : null;
+  crew = flight && next
+    ? crew.filter((m) => isPdfCrewOnFlight(m, flight.flightNumber) && isPdfCrewOnFlight(m, next.flightNumber))
     : [];
 
   // The PDF crew list has one row per block a person appears in (see

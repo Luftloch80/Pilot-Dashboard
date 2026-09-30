@@ -2965,7 +2965,6 @@ function todayDutyType() {
 }
 
 const POST_LANDING_SWITCH_MS = 30 * 60 * 1000;
-const BRIEFING_LEAD_MS = 120 * 60 * 1000;
 
 // Once today's last flight - including a trailing deadhead leg home, which
 // is what actually gets the pilot back even without a card of its own (see
@@ -3333,9 +3332,8 @@ function findRosterPickup(events, stationIcao, afterDate) {
 
 // Next Briefing event for the given station after afterDate - used by
 // renderDutyStatus() to show the real MyTime briefing time for the
-// upcoming duty instead of the computed BRIEFING_LEAD_MS estimate,
-// exactly the same "real roster event over a guess" preference the
-// layover card's own Pickup line already applies.
+// upcoming duty. Real-or-nothing, same as the layover card's own Pickup
+// line - no computed estimate, see renderDutyStatus()'s own comment.
 function findRosterBriefing(events, stationIcao, afterDate) {
   return findRosterTimedEvent(events, BRIEFING_SUMMARY_RE, stationIcao, afterDate);
 }
@@ -3610,22 +3608,29 @@ function renderDutyStatus() {
 
     // Pickup/Briefing: the real MyTime roster events for this duty's own
     // departure station when published (findRosterPickup()/
-    // findRosterBriefing() - same "real roster event over a computed
-    // guess" rule the layover card's own Pickup line already follows).
-    // Bounded to before the duty's own departure so a duty with no
-    // Pickup/Briefing of its own can't accidentally pick up some later,
-    // unrelated duty's event instead. Briefing still falls back to the
-    // BRIEFING_LEAD_MS estimate when nothing's published yet (e.g. too
-    // far out); Pickup has no such estimate - not every duty gets picked
-    // up at all (home base, self-driven), so showing nothing here is the
-    // honest answer, same as the layover card.
+    // findRosterBriefing()) - real-or-nothing for both, no computed
+    // guess for either (a made-up Briefing lead time used to fill in
+    // here, confirmed wrong against a real MyTime briefing - 05:05
+    // guessed vs. 05:45 actual - so it's gone; not every duty gets
+    // picked up either, e.g. home base/self-driven, so Pickup never had
+    // one to begin with). Bounded to before the duty's own departure so
+    // a duty with no Pickup/Briefing of its own can't accidentally pick
+    // up some later, unrelated duty's event instead.
     if (!rosterEventsCache.events) ensureRosterLoaded();
     const now = new Date();
     const rosterPickup = rosterEventsCache.events && next.depCode
       ? findRosterPickup(rosterEventsCache.events, next.depCode, now)
       : null;
-    const rosterBriefing = rosterEventsCache.events && next.depCode
-      ? findRosterBriefing(rosterEventsCache.events, next.depCode, now)
+    // Searched from a day before the duty itself, not from "now" - using
+    // "now" as the lower bound meant checking this card after the
+    // duty's own real Briefing time had already passed today (a very
+    // normal thing to do) rejected it outright, even though the real
+    // roster event was sitting right there. The briefingSameDay check
+    // below is what actually keeps this from matching some unrelated
+    // day's event at the same station, so "now" was never doing useful
+    // work here in the first place.
+    const rosterBriefing = rosterEventsCache.events && next.depCode && next.depSchedDate
+      ? findRosterBriefing(rosterEventsCache.events, next.depCode, new Date(next.depSchedDate.getTime() - 24 * 3600 * 1000))
       : null;
 
     if (rosterPickup && (!next.depSchedDate || rosterPickup.dtstart <= next.depSchedDate)) {
@@ -3647,12 +3652,12 @@ function renderDutyStatus() {
       const briefingDateLabel = `${weekdayShortLocal(rosterBriefing.dtstart)}, ${rosterBriefing.dtstart.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusBriefing.hidden = false;
       els.dutyStatusBriefingValue.textContent = `${briefingDateLabel} - ${rosterBriefing.time} LT`;
-    } else if (next.depSchedDate) {
-      const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
-      const briefingDateLabel = `${weekdayShortLocal(briefing)}, ${briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
-      els.dutyStatusBriefing.hidden = false;
-      els.dutyStatusBriefingValue.textContent = `${briefingDateLabel} - ${fmtLocalTime(briefing)} LT`;
     } else {
+      // No computed estimate here (there used to be a BRIEFING_LEAD_MS-
+      // before-departure guess) - a made-up lead time was never reliably
+      // right (confirmed wrong against a real MyTime briefing) and there's
+      // no way to make it right, so same rule as Pickup: only the real
+      // roster event, or nothing at all.
       els.dutyStatusBriefing.hidden = true;
     }
 

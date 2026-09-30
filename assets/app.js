@@ -556,6 +556,7 @@ function normalizeFr24Leg(entry) {
     flightNumber: String(entry.flight || "").replace(/\s+/g, ""),
     status: entry.flight_ended ? "Landed" : depDate ? "En Route" : "Scheduled",
     registration: entry.reg || null,
+    aircraftType: entry.type || null,
     callSign: entry.callsign || null,
   };
 }
@@ -1309,6 +1310,20 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
   const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: !isActive });
   cardEls.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
   updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus);
+
+  // The roster feed itself carries no aircraft/registration at all (see
+  // rosterEventsToRawFlights()) - Flightradar24 is the only source for
+  // either now, so backfill them onto the flight object itself once
+  // known, the same way ensureAircraftScheduleLoaded()'s own cache works.
+  // Written back here rather than read fresh from ownLeg everywhere else
+  // this card's registration is used (renderRegistrationPriorArrival(),
+  // renderFlightCardTransit()'s "next A/C" check) - those need it too,
+  // and a stable f.registration is simpler than threading ownLeg through
+  // all of them separately.
+  if (ownLeg) {
+    if (f.registration === "–" && ownLeg.registration) f.registration = ownLeg.registration;
+    if (f.aircraft === "–" && ownLeg.aircraftType) f.aircraft = ownLeg.aircraftType;
+  }
 
   cardEls.depCode.textContent = f.depCode;
   cardEls.arrCode.textContent = f.arrCode;

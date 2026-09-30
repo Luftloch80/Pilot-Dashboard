@@ -113,6 +113,9 @@ const els = {
   rosterUrlInput: document.getElementById("rosterUrlInput"),
   saveRosterBtn: document.getElementById("saveRosterBtn"),
   rosterStatus: document.getElementById("rosterStatus"),
+  testRosterBtn: document.getElementById("testRosterBtn"),
+  rosterTestResult: document.getElementById("rosterTestResult"),
+  rosterTestRaw: document.getElementById("rosterTestRaw"),
   resetRosterBtn: document.getElementById("resetRosterBtn"),
   corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
   saveCorsProxyKeyBtn: document.getElementById("saveCorsProxyKeyBtn"),
@@ -458,6 +461,9 @@ function renderCorsProxyKeyStatus() {
 function renderRosterStatus() {
   const url = getRosterUrl();
   els.rosterStatus.hidden = !url;
+  els.testRosterBtn.hidden = !url;
+  els.rosterTestResult.hidden = true;
+  els.rosterTestRaw.hidden = true;
   els.resetRosterBtn.hidden = !url;
   if (!url) {
     els.rosterStatus.textContent = "";
@@ -3446,6 +3452,50 @@ async function fetchRosterIcsText(url) {
   throw new Error(attempts.join(" | "));
 }
 
+// Same in-app probe pattern the other API cards use (see
+// testFr24Connection()) - shows exactly what the roster feed actually
+// returns and how parseIcsEvents() reads it, right on the page, so a
+// wrong/stale Pickup or Briefing time (or a link that silently stopped
+// working) can be checked against the real feed without needing
+// separate console/Web Inspector access. Runs the exact same
+// fetchRosterIcsText()/parseIcsEvents() pipeline ensureRosterLoaded()
+// itself uses - same CORS-proxy fallback chain, same parsing - rather
+// than a simplified stand-in that could pass while the real thing fails.
+async function testRosterConnection() {
+  const url = getRosterUrl();
+  if (!url) return;
+
+  els.testRosterBtn.disabled = true;
+  els.rosterTestResult.hidden = false;
+  els.rosterTestResult.textContent = "Teste …";
+  els.rosterTestRaw.hidden = true;
+  els.rosterTestRaw.textContent = "";
+
+  function showRaw(value) {
+    els.rosterTestRaw.hidden = false;
+    els.rosterTestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  try {
+    const { text, viaProxy } = await fetchRosterIcsText(url);
+    const events = parseIcsEvents(text);
+    const via = viaProxy ? ` (über ${viaProxy})` : "";
+    els.rosterTestResult.textContent = events.length
+      ? `Erfolgreich${via} - ${events.length} Termin(e) im Feed gefunden.`
+      : `Antwort kam an${via}, aber keine Termine im Feed erkannt.`;
+    showRaw(events.map((ev) => ({
+      summary: ev.summary || null,
+      location: ev.location || null,
+      dtstart: ev.dtstart ? ev.dtstart.toISOString() : null,
+      dtend: ev.dtend ? ev.dtend.toISOString() : null,
+    })));
+  } catch (err) {
+    els.rosterTestResult.textContent = `Fehlgeschlagen: ${briefErrorReason(err)}`;
+    showRaw(String(err));
+  }
+  els.testRosterBtn.disabled = false;
+}
+
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
 // once per URL and never again on its own (no automatic refresh - see
 // refreshAll()), then re-renders so anything reading rosterEventsCache
@@ -4058,6 +4108,8 @@ els.saveRosterBtn.addEventListener("click", () => {
   renderRosterStatus();
   renderLayover();
 });
+
+els.testRosterBtn.addEventListener("click", testRosterConnection);
 
 els.resetRosterBtn.addEventListener("click", () => {
   if (!confirm("Roster-Link auf diesem Gerät entfernen?")) return;

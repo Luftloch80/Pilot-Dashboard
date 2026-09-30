@@ -101,6 +101,9 @@
            spellcheck="false" placeholder="https://api.lufthansa.com/mytime/..." />
     <button id="saveRosterBtn" class="btn secondary">Speichern</button>
     <p id="rosterStatus" class="muted small" hidden></p>
+    <button id="testRosterBtn" class="btn ghost small" hidden>Verbindung testen</button>
+    <p id="rosterTestResult" class="muted small" hidden></p>
+    <div id="rosterTestRaw" class="pdf-text" hidden></div>
     <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
 
     <label for="corsProxyKeyInput">corsproxy.io API-Schlüssel (optional, für einen zuverlässigeren Abruf)</label>
@@ -274,6 +277,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=149"></script>
+<script src="assets/app.js?v=150"></script>
 </body>
 </html>

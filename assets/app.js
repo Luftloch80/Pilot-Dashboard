@@ -1386,14 +1386,14 @@ function renderActiveFlightExtras() {
 // still forced to "flights" and state.previewLayover cleared so the
 // shared dots/height/scroll-listener code (which branch on those) behave
 // exactly like the ordinary case with no preview page attached.
-// "Month" is the operative word here, not "everything the roster
-// happens to carry" - state.allFlights can now span the roster's whole
-// ROSTER_WINDOW_PAST_MS/ROSTER_WINDOW_FUTURE_MS window (~75 days, see
-// rosterEventsToRawFlights()), which is more than this debug switch was
-// ever meant to dump into one carousel (see the comment above - "eyeballing
-// card fields", not a full rotation history). Capped to a real calendar
-// month around today, same as the feature's own name says.
-const DEBUG_ALL_MONTH_WINDOW_MS = 15 * 24 * 3600 * 1000;
+// Not "everything the roster happens to carry" - state.allFlights can
+// now span the roster's whole ROSTER_WINDOW_PAST_MS/ROSTER_WINDOW_FUTURE_MS
+// window (~75 days, see rosterEventsToRawFlights()), which is more than
+// this debug switch was ever meant to dump into one carousel (see the
+// comment above - "eyeballing card fields", not a full rotation
+// history). Capped to a week back/two weeks ahead around today instead.
+const DEBUG_ALL_MONTH_WINDOW_PAST_MS = 7 * 24 * 3600 * 1000;
+const DEBUG_ALL_MONTH_WINDOW_FUTURE_MS = 14 * 24 * 3600 * 1000;
 
 function renderDebugAllMonthCarousel() {
   state.mode = "flights";
@@ -1402,7 +1402,9 @@ function renderDebugAllMonthCarousel() {
   state.flights = state.allFlights.filter((f) => {
     if (!f.flightNumber || f.isDeadhead) return false;
     const d = f.depSchedDate || f.depActualDate;
-    return d && Math.abs(d.getTime() - now) <= DEBUG_ALL_MONTH_WINDOW_MS;
+    if (!d) return false;
+    const delta = d.getTime() - now;
+    return delta >= -DEBUG_ALL_MONTH_WINDOW_PAST_MS && delta <= DEBUG_ALL_MONTH_WINDOW_FUTURE_MS;
   });
   if (state.index >= state.flights.length) state.index = 0;
 

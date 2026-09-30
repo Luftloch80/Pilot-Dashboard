@@ -5,7 +5,13 @@ const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
 const DEBUG_ALL_MONTH_STORAGE_KEY = "oal_debug_all_month";
 const FR24_KEY_STORAGE_KEY = "oal_fr24_key";
 const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
-const FETCH_TIMEOUT_MS = 15000;
+// 15s was too tight for a real Flightradar24 response over a weak mobile
+// connection - confirmed by a real "Verbindung testen" tap surfacing an
+// AbortError (WebKit's exact wording for our own fetchWithTimeout()
+// aborting it, not a CORS rejection, which fails near-instantly with a
+// different error shape) rather than a genuine timeout being the right
+// call.
+const FETCH_TIMEOUT_MS = 30000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
 // anywhere (checked every field on a real flight object), so it's
@@ -733,8 +739,13 @@ async function testFr24Connection() {
       showRaw(json !== null ? json : text);
     }
   } catch (err) {
-    els.fr24TestResult.textContent =
-      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
+    // AbortError specifically means OUR OWN fetchWithTimeout() gave up
+    // after FETCH_TIMEOUT_MS with no response at all - a CORS rejection
+    // fails near-instantly with a different error shape, so this is a
+    // genuinely slow/unreachable API call, not a browser-side block.
+    els.fr24TestResult.textContent = err && err.name === "AbortError"
+      ? `Fehlgeschlagen: Keine Antwort von fr24api.flightradar24.com innerhalb von ${FETCH_TIMEOUT_MS / 1000}s.`
+      : "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
     showRaw(String(err));
   }
   els.testFr24Btn.disabled = false;

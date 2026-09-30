@@ -3289,6 +3289,14 @@ function rosterEventsToRawFlights(events) {
   const now = Date.now();
   for (const ev of events) {
     if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
+    // Simulator sessions (e.g. "Simulator EBTF3A"/"EBTF3B" - confirmed
+    // real text, though not the full line format) are ground training,
+    // not a flight - never real duty flying, so they'd be wrong as
+    // "next duty" (nextDutyFlight()), on a flight card, or anywhere else
+    // a real flight is expected. Checked before the flight-summary regex
+    // below, regardless of whether a session happens to also look
+    // route-shaped, so this can't accidentally slip through either way.
+    if (/simulator/i.test(ev.summary)) continue;
     const t = ev.dtstart.getTime();
     if (t < now - ROSTER_WINDOW_PAST_MS || t > now + ROSTER_WINDOW_FUTURE_MS) continue;
     const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
@@ -3628,7 +3636,14 @@ function renderDutyStatus() {
       els.dutyStatusPickup.hidden = true;
     }
 
-    if (rosterBriefing && (!next.depSchedDate || rosterBriefing.dtstart <= next.depSchedDate)) {
+    // A flight day's own Briefing always starts on the same calendar day
+    // as the flight itself - a same-station Briefing event found on a
+    // different day (e.g. a Simulator session's own Briefing, a day or
+    // more before the real duty) is never this flight's, even though
+    // it'd otherwise still satisfy "before departure" above.
+    const briefingSameDay = rosterBriefing && next.depSchedDate &&
+      localDateKey(rosterBriefing.dtstart) === localDateKey(next.depSchedDate);
+    if (briefingSameDay) {
       const briefingDateLabel = `${weekdayShortLocal(rosterBriefing.dtstart)}, ${rosterBriefing.dtstart.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusBriefing.hidden = false;
       els.dutyStatusBriefingValue.textContent = `${briefingDateLabel} - ${rosterBriefing.time} LT`;

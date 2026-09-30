@@ -1913,43 +1913,6 @@ function computeMinRestAfterDuty(flight) {
   };
 }
 
-// "inbound" (joining): the pilot's own previous flight, formatted the
-// exact same "LHxxx <time>" way as a colleague's own PDF Ex reference does
-// (see buildPdfRefMap()/formatExRefLabelLive()) - the live Flightradar24
-// arrival time when a key is configured, since that reflects this exact
-// occurrence's actual/revised arrival rather than whatever the flight's
-// own schedule last recorded, falling back to that scheduled arrival time
-// only when no FR24 key is set. Used identically regardless of which crew
-// source (OpenAirLog vs PDF) is currently displayed - see renderCrew() -
-// so a joining colleague's info reads the same either way whenever they
-// have no more specific PDF ref of their own.
-function ownAdjacentFlightLiveLabel(flight) {
-  if (!flight) return null;
-  const dateKey = flight.raw && flight.raw.date;
-  if (getFr24Key() && dateKey) {
-    const cacheKey = `${flight.flightNumber}|${dateKey}`;
-    const cached = flightByNumberCache.get(cacheKey);
-    if (!cached) ensureFlightByNumberLoaded(flight.flightNumber, dateKey);
-    if (cached && cached.leg) return formatExRefLabelLive(flight.flightNumber, cached.leg);
-  }
-  const arr = flight.arrActualDate || flight.arrSchedDate;
-  return arr ? `${flight.flightNumber} ${fmtTime(arr)}` : flight.flightNumber;
-}
-
-// "outbound" (leaving, OpenAirLog-fallback case) only needs the flight
-// number and its departure time - already known locally (this is our own
-// adjacent flight from OpenAirLog, not a lookup). Only shown when that
-// flight actually departs the same day as the one being viewed - a
-// colleague leaving the operating crew today but still appearing as our
-// own next loaded flight (e.g. a DH placement tomorrow) shouldn't be
-// captioned with a flight a full day away, which read as if they were
-// still on today's own connection.
-function nextFlightRefLabel(currentFlight, flight) {
-  if (!flight || !currentFlight || !flight.depSchedDate) return null;
-  if (localDateKey(flight.depSchedDate) !== localDateKey(currentFlight.depSchedDate)) return null;
-  return `${flight.flightNumber} ${fmtTime(flight.depSchedDate)}`;
-}
-
 // Deadheading covers both OpenAirLog crew (see normalizeCrewMember()'s
 // isDeadhead) and a PDF crew list, which marks the same thing directly in
 // the role text. Someone deadheading isn't actually working that flight -
@@ -1963,7 +1926,6 @@ function isOperatingCrewMember(member) {
 function renderCrewMembers(listEl, crew, opts = {}) {
   const {
     leaving = new Set(), joining = new Set(),
-    leavingInfo = null, joiningInfo = null,
     pdfExRefs = new Map(), pdfToRefs = new Map(),
     ownName = "", legalOnBlockLabel = null,
   } = opts;
@@ -2000,23 +1962,26 @@ function renderCrewMembers(listEl, crew, opts = {}) {
       name.appendChild(arrow);
     }
     if (isJoining) {
-      // Prefer the PDF's own "Ex" column when available - it's about this
-      // specific colleague's own routing, not just our own neighboring
-      // flight, which is all the OpenAirLog-only fallback can offer.
+      // The PDF's own "Ex" column, when it prints one - a block can start
+      // with no Ex column at all (no prior flight documented for that
+      // colleague), which still means they're joining, just with nothing
+      // more specific to caption the arrow with.
       const pdfRef = pdfExRefs.get(key);
-      const info = document.createElement("span");
-      info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `← inbound ${pdfRef}`;
-      else if (joiningInfo) info.textContent = `← inbound ${joiningInfo}`;
-      if (info.textContent) name.appendChild(info);
+      if (pdfRef) {
+        const info = document.createElement("span");
+        info.className = "crew-arrow-info";
+        info.textContent = `← inbound ${pdfRef}`;
+        name.appendChild(info);
+      }
     }
     if (isLeaving) {
       const pdfRef = pdfToRefs.get(key);
-      const info = document.createElement("span");
-      info.className = "crew-arrow-info";
-      if (pdfRef) info.textContent = `→ outbound ${pdfRef}`;
-      else if (leavingInfo) info.textContent = `→ outbound ${leavingInfo}`;
-      if (info.textContent) name.appendChild(info);
+      if (pdfRef) {
+        const info = document.createElement("span");
+        info.className = "crew-arrow-info";
+        info.textContent = `→ outbound ${pdfRef}`;
+        name.appendChild(info);
+      }
     }
     // Only ever appended to the pilot's own entry, never a colleague's -
     // see computeMaxLegalOnBlock().
@@ -2193,19 +2158,22 @@ function renderCrew(f) {
 
   const { crew, rotation, fileName } = state.pdfCrew;
   els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
-  // Who's joining/leaving is the PDF's own Ex/To references now (see
-  // buildPdfRefMap()) - a crew member with an exRef for this flight
-  // starts their block here (joining), one with a toRef ends it here
-  // (leaving). This used to be findLeavingCrew()/findJoiningCrew(),
-  // comparing crew across adjacent flights via OpenAirLog's live
-  // per-flight data (embeddedCrew/crewCache) - both always empty now
-  // that crew only ever comes from this one flat PDF list, which
-  // silently zeroed out every join/leave arrow.
+  // Who's joining/leaving is the PDF's own block boundaries (see
+  // parseCrewFromLines()) - a crew member whose block starts here is
+  // joining, one whose block ends here is leaving, regardless of whether
+  // the PDF also happens to print an Ex/To reference for them. A block
+  // can end with no To column at all (no onward flight documented for
+  // that colleague) - that still means they're leaving, just without a
+  // caption to show beyond the arrow itself. This used to be keyed off
+  // the Ex/To text's own presence (via buildPdfRefMap()'s map keys),
+  // which silently dropped the arrow entirely whenever that text was
+  // missing instead of showing an uncaptioned one.
+  const joining = new Set(crew.filter((m) => m.blockFirstFlight === f.flightNumber).map((m) => crewKey(m.role, m.name)));
+  const leaving = new Set(crew.filter((m) => m.blockLastFlight === f.flightNumber).map((m) => crewKey(m.role, m.name)));
   const pdfExRefs = buildPdfRefMap(f, "exRef");
   const pdfToRefs = buildPdfRefMap(f, "toRef");
   renderCrewMembers(els.crewList, crew, {
-    leaving: new Set(pdfToRefs.keys()), joining: new Set(pdfExRefs.keys()),
-    leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
+    leaving, joining,
     pdfExRefs, pdfToRefs,
     ownName, legalOnBlockLabel,
   });

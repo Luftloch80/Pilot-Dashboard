@@ -1490,7 +1490,6 @@ function renderDebugAllMonthCarousel() {
   });
   if (state.index >= state.flights.length) state.index = 0;
 
-  els.dutyStatusCard.hidden = true;
   els.layoverCard.hidden = true;
   if (els.layoverCard.parentElement !== els.flightCardTrack && els.layoverCard.previousElementSibling !== els.crewCard) {
     els.crewCard.after(els.layoverCard);
@@ -1502,9 +1501,17 @@ function renderDebugAllMonthCarousel() {
   if (!showFlightCard) {
     els.flightCardDots.hidden = true;
     renderAirlineBadge(null);
-    showBanner("Keine Flüge im geladenen Zeitraum.", "");
+    // Same fallback the normal (non-debug) view uses - a rest day further
+    // out than the +-7/14 day debug window still has real duty info
+    // (countdown/Briefing/route) worth showing instead of a bare "nothing
+    // in this window" banner; only fall back to that banner once
+    // renderDutyStatus() itself has nothing either.
+    renderDutyStatus();
+    showBanner(els.dutyStatusCard.hidden ? "Keine Flüge im geladenen Zeitraum." : "", "");
     return;
   }
+  els.dutyStatusCard.hidden = true;
+  showBanner("", "");
 
   const signature = flightsSignature(state.flights) + "|DEBUG_ALL_MONTH";
   const rebuilt = signature !== lastCardSignature;
@@ -1554,6 +1561,7 @@ function renderFlight() {
     state.mode = "layover";
     els.crewCard.hidden = true; // renderLayoverCarousel() below shows/hides it itself once it knows which page is active
     els.dutyStatusCard.hidden = true;
+    showBanner("", "");
     renderAirlineBadge(layover.flight ? layover.flight.flightNumber : null);
     renderLayoverCarousel(layover);
     return;
@@ -1576,9 +1584,17 @@ function renderFlight() {
     els.flightCardDots.hidden = true;
     renderAirlineBadge(null);
     renderDutyStatus();
+    // Clears any banner left over from a mode this view just switched
+    // away from (e.g. the debug "alle Kacheln" toggle's own "no flights
+    // in this window" banner - see renderDebugAllMonthCarousel()) - this
+    // view already has its own way of saying "nothing here" (the Duty
+    // Status/Layover cards themselves), same as tickPostLandingSwitch().
+    const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
+    showBanner(nothingToShow ? "Heute nichts geplant." : "", "");
     return;
   }
   els.dutyStatusCard.hidden = true;
+  showBanner("", "");
 
   const previewLayover = previewLayoverFlight();
   state.previewLayover = previewLayover;

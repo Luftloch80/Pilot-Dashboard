@@ -552,11 +552,17 @@ function normalizeFr24Leg(entry) {
     depCode: entry.orig_icao || "---",
     arrCode: entry.dest_icao_actual || entry.dest_icao || "---",
     depDate, arrDate,
-    // Once datetime_takeoff exists at all it's a real ADS-B observation,
-    // not a still-changeable estimate the way AeroDataBox's revisedTime
-    // was - so it doubles directly as the "confirmed off-block" signal
-    // updateFlightTimerDisplay() uses to retire the countdown pill.
+    // datetime_takeoff is wheels-up, not off-block (leaving the gate) -
+    // a real, earlier, separately-reported ADS-B/event moment (see
+    // fetchGateDepartureEvent() below) - so this is only ever a fallback
+    // approximation for updateFlightTimerDisplay()'s "confirmed
+    // off-block, retire the countdown pill" signal, used until/unless
+    // the real gate_departure event has loaded.
     depRunwayDate: depDate,
+    // Needed to query /historic/flight-events/full for this exact flight
+    // instance (see fetchGateDepartureEvent()) - that endpoint takes
+    // fr24_id, never a flight number or registration.
+    fr24Id: entry.fr24_id || null,
     // FR24 only ever reports what actually happened/is happening, never
     // a schedule - see the module comment above.
     depSchedDate: null,
@@ -596,6 +602,63 @@ async function fetchFr24FlightSummary(filterParam, filterValue, fromParam, toPar
     console.warn("[Flightradar24] flight-summary request failed (network/CORS?)", err, url);
     return null;
   }
+}
+
+// ---------- Flightradar24 historic flight events - the real off-block moment ----------
+//
+// Confirmed via the official fr24api-mcp source (github.com/Flightradar24/
+// fr24api-mcp - the fr24api.flightradar24.com docs domain itself isn't
+// reachable from here): GET /historic/flight-events/full, queried by
+// flight_ids (comma-separated fr24_id values, up to 15 - never a flight
+// number or registration, so this only ever runs *after* a flight-summary
+// lookup has already resolved one) and event_types (comma-separated, or
+// "all"). Response is one entry per fr24_id, each with an events[] array
+// of {type, timestamp, lat?, lon?, alt?, gspeed?, details?} - type one of
+// gate_departure, takeoff, cruising, airspace_transition, descent,
+// landed, gate_arrival. "gate_departure" (leaving the gate) is the real
+// off-block moment - a separate, earlier event than "takeoff" (wheels-up,
+// what flight-summary/full's own datetime_takeoff actually reports, used
+// as an off-block approximation until this resolves - see
+// normalizeFr24Leg()'s depRunwayDate).
+async function fetchGateDepartureEvent(fr24Id) {
+  const key = getFr24Key();
+  if (!key || !fr24Id) return null;
+  const params = new URLSearchParams({ flight_ids: fr24Id, event_types: "gate_departure" });
+  const url = `${FR24_API_BASE}/historic/flight-events/full?${params}`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { Accept: "application/json", "Accept-Version": "v1", Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) {
+      console.warn("[Flightradar24] historic flight-events failed", res.status, url);
+      return null;
+    }
+    const json = await res.json();
+    const entry = Array.isArray(json) ? json[0] : null;
+    const ev = entry && Array.isArray(entry.events)
+      ? entry.events.find((e) => e.type === "gate_departure")
+      : null;
+    return ev ? parseFr24DateTime(ev.timestamp) : null;
+  } catch (err) {
+    console.warn("[Flightradar24] historic flight-events request failed (network/CORS?)", err, url);
+    return null;
+  }
+}
+
+const gateDepartureCache = new Map(); // fr24Id -> { date: Date|null, fetchedAt }
+const gateDepartureLoading = new Set(); // fr24Id currently in flight, to avoid duplicate concurrent requests
+
+// Fire-and-forget, same pattern as ensureAircraftScheduleLoaded() - fetches
+// once per fr24_id, caches (including a real "no gate_departure event
+// (yet)" null, so a miss doesn't retry every render), then re-renders so
+// updateFlightTimerDisplay() picks up the real off-block moment once known.
+async function ensureGateDepartureLoaded(fr24Id) {
+  if (!fr24Id || gateDepartureCache.has(fr24Id) || gateDepartureLoading.has(fr24Id)) return;
+  gateDepartureLoading.add(fr24Id);
+  const date = await fetchGateDepartureEvent(fr24Id);
+  gateDepartureLoading.delete(fr24Id);
+  gateDepartureCache.set(fr24Id, { date, fetchedAt: Date.now() });
+  renderFlight();
 }
 
 // ISO-ish, no milliseconds/zone suffix - matches the one confirmed real
@@ -930,19 +993,34 @@ function renderTimerPill(f, statusEl) {
 }
 
 // The countdown-to-scheduled pill is only a stand-in for not yet knowing
-// the real time - once a live data source (ownLeg, currently always null -
-// see getOwnFlightLiveLeg()'s removal) has resolved a current departure
-// time (whether or not it's off enough from schedule to show as a
-// deviation next to depTime/arrTime), it's redundant and goes away rather
-// than sitting there next to more current information. Called for every
-// card on each render/tick, so the pill doesn't reappear on a card after
+// the real time - once a live data source (ownLeg, from Flightradar24 -
+// see getOwnFlightLiveLeg()) has resolved a confirmed off-block moment
+// (whether or not it's off enough from schedule to show as a deviation
+// next to depTime/arrTime), it's redundant and goes away rather than
+// sitting there next to more current information. Called for every card
+// on each render/tick, so the pill doesn't reappear on a card after
 // being hidden here.
-function updateFlightTimerDisplay(f, ownLeg, statusEl) {
-  // depRunwayDate only exists once a live source reports the aircraft has
-  // actually left the blocks - a revised/estimated time alone (depDate)
-  // isn't enough to retire the countdown, since that can change again
-  // before departure actually happens.
-  if (!f.isDeadhead && ownLeg && ownLeg.depRunwayDate) {
+function updateFlightTimerDisplay(f, ownLeg, statusEl, isActive) {
+  if (f.isDeadhead || !ownLeg) {
+    statusEl.hidden = false;
+    renderTimerPill(f, statusEl);
+    return;
+  }
+
+  // The real gate_departure event once known (see
+  // ensureGateDepartureLoaded()) - falls back to depRunwayDate (FR24's
+  // own takeoff time, an approximation, see normalizeFr24Leg()) until
+  // then, since *something* confirmed-off-block-looking should retire
+  // the countdown as soon as reasonably possible, not only once the
+  // more precise event has loaded.
+  const cached = ownLeg.fr24Id ? gateDepartureCache.get(ownLeg.fr24Id) : undefined;
+  if (ownLeg.fr24Id && cached === undefined && isActive) ensureGateDepartureLoaded(ownLeg.fr24Id);
+  const confirmedOffBlock = (cached && cached.date) || ownLeg.depRunwayDate;
+
+  // A revised/estimated time alone (depDate) isn't enough to retire the
+  // countdown, since that can change again before departure actually
+  // happens - only a confirmed off-block moment does.
+  if (confirmedOffBlock) {
     statusEl.hidden = true;
     return;
   }
@@ -1317,7 +1395,7 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
   // the transit line, which are about other flights, not this one.
   const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: !isActive });
   cardEls.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
-  updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus);
+  updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus, isActive);
 
   // The roster feed itself carries no aircraft/registration at all (see
   // rosterEventsToRawFlights()) - Flightradar24 is the only source for
@@ -4366,7 +4444,7 @@ setInterval(() => {
     if (!node) return;
     const statusEl = node.querySelector(".status-pill");
     const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: i !== state.index });
-    updateFlightTimerDisplay(f, ownLeg, statusEl);
+    updateFlightTimerDisplay(f, ownLeg, statusEl, i === state.index);
   });
   tickPostLandingSwitch();
 }, 30000);

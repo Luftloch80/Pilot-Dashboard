@@ -2991,12 +2991,26 @@ function shouldShowPostLandingHomeView() {
   return Date.now() - last.arrSchedDate.getTime() >= POST_LANDING_SWITCH_MS;
 }
 
-// What renderDutyStatus() actually shows: either a real duty_code
-// (vacation/Ortstag) or, absent that, the post-landing override above -
-// both end up looking like "Ortstag" since either way there's no more
-// flying scheduled for the rest of today.
+// What renderDutyStatus() actually shows: a real duty_code (vacation/
+// Ortstag - never actually produced by the roster feed itself, see
+// todayDutyType(), but kept in case a source that does exist again some
+// day), the post-landing override above, or - now the only way an
+// ordinary rest day at home (no flight at all today, not just "landed
+// 30+ min ago") can be recognized at all, since the roster never marks
+// a day off explicitly the way a duty_code would - simply having
+// nothing scheduled today. Without this, a genuine day off at home
+// silently showed nothing at all (no flight card, since there's no
+// flight - and no duty status card either, since neither of the other
+// two conditions ever applied): blank screen, including the "next duty"
+// countdown/Pickup/Briefing preview this card is the only place that
+// shows. Gated on findApiLayover() being null too - a rest day *away*
+// from home in the middle of a multi-day layover is still a layover,
+// not a home day, and already has its own card for exactly that.
 function effectiveDutyType() {
-  return todayDutyType() || (shouldShowPostLandingHomeView() ? "homeday" : null);
+  if (todayDutyType()) return todayDutyType();
+  if (shouldShowPostLandingHomeView()) return "homeday";
+  if (!todaysFlightsIncludingDeadhead().length && !findApiLayover(state.allFlights)) return "homeday";
+  return null;
 }
 
 // First real flight strictly after today - "next duty" for both vacation

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=53" />
+<link rel="stylesheet" href="assets/style.css?v=54" />
 </head>
 <body>
 
@@ -60,8 +60,8 @@
       <span class="muted small">optional</span>
     </div>
     <p class="muted small">
-      Ersetzt bei Erfolg die Crew im Dashboard (z. B. für ein separates
-      Briefing-PDF). Die Datei wird nur lokal im Browser gelesen, nicht
+      Einzige Quelle für die Crew im Dashboard - lädt eine echte
+      Umlaufcrewliste. Die Datei wird nur lokal im Browser gelesen, nicht
       hochgeladen.
     </p>
     <label for="crewPdfInput" class="btn secondary file-btn">
@@ -72,6 +72,11 @@
     <p id="crewPdfStatus" class="muted small" hidden></p>
     <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
     <div id="crewPdfResult" class="pdf-text" hidden></div>
+
+    <label for="ownNameInput">Eigener Name (für "latest Onblock" und Zimmerliste beim Layover)</label>
+    <input id="ownNameInput" type="text" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Nachname, Vorname" />
+    <button id="saveOwnNameBtn" class="btn secondary">Speichern</button>
   </section>
 
   <!-- MyTime-Roster-Link (optional, nur in den Settings): liefert die
@@ -219,7 +224,6 @@
     </div>
     <ul id="crewList" class="crew-list"></ul>
     <p id="crewEmpty" class="muted" hidden></p>
-    <button id="crewSourceSwitchBtn" class="btn ghost small" hidden></button>
   </section>
 
   <!-- Layover: aus OpenAirLog erkannt -->
@@ -269,6 +273,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=139"></script>
+<script src="assets/app.js?v=140"></script>
 </body>
 </html>

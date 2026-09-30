@@ -175,7 +175,8 @@ body {
 
 /* Setup */
 #rosterCard label,
-#fr24Card label {
+#fr24Card label,
+#crewPdfCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -185,7 +186,8 @@ body {
 #rosterCard input[type="password"],
 #rosterCard input[type="text"],
 #fr24Card input[type="password"],
-#fr24Card input[type="text"] {
+#fr24Card input[type="text"],
+#crewPdfCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -269,6 +271,10 @@ body {
 }
 #fr24Card #resetFr24Btn {
   margin-top: 16px;
+}
+
+#crewPdfCard #saveOwnNameBtn {
+  margin-top: 14px;
 }
 
 /* Status banner */

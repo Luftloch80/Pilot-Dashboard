@@ -91,7 +91,6 @@ const els = {
   crewSource: document.getElementById("crewSource"),
   crewList: document.getElementById("crewList"),
   crewEmpty: document.getElementById("crewEmpty"),
-  crewSourceSwitchBtn: document.getElementById("crewSourceSwitchBtn"),
 
   crewPdfCard: document.getElementById("crewPdfCard"),
   crewPdfInput: document.getElementById("crewPdfInput"),
@@ -99,6 +98,8 @@ const els = {
   crewPdfStatus: document.getElementById("crewPdfStatus"),
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
+  ownNameInput: document.getElementById("ownNameInput"),
+  saveOwnNameBtn: document.getElementById("saveOwnNameBtn"),
 
   rosterCard: document.getElementById("rosterCard"),
   rosterUrlInput: document.getElementById("rosterUrlInput"),
@@ -126,9 +127,9 @@ const els = {
   dataStamp: document.getElementById("dataStamp"),
 };
 
-/** @type {{flights: any[], index: number, crewSource: "api"|"pdf", pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
+/** @type {{flights: any[], index: number, pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
 const state = {
-  flights: [], allFlights: [], allDuties: [], index: 0, crewSource: "api",
+  flights: [], allFlights: [], allDuties: [], index: 0,
   pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [],
   // "flights" (the ordinary carousel, state.flights/state.index/state.cardNodes -
   // once today's own last flight has departed into a layover,
@@ -748,7 +749,6 @@ function savePdfCrew() {
     if (state.pdfCrew || state.pdfLegs.length) {
       localStorage.setItem(PDF_CREW_STORAGE_KEY, JSON.stringify({
         ...(state.pdfCrew || {}),
-        crewSource: state.crewSource,
         legs: state.pdfLegs,
         lines: state.pdfLines,
       }));
@@ -770,7 +770,6 @@ function loadStoredPdfCrew() {
 
     if (Array.isArray(stored.crew) && stored.crew.length) {
       state.pdfCrew = { crew: stored.crew, rotation: stored.rotation || null, fileName: stored.fileName || "PDF" };
-      state.crewSource = stored.crewSource === "pdf" ? "pdf" : "api";
       els.crewPdfLabel.textContent = stored.fileName || "PDF";
       els.crewPdfStatus.hidden = false;
       els.crewPdfStatus.textContent =
@@ -796,6 +795,7 @@ function setSettingsOpen(open) {
     renderRosterStatus();
     renderCorsProxyKeyStatus();
     renderFr24Status();
+    els.ownNameInput.value = getOwnName();
     els.debugAllMonthInput.checked = getDebugAllMonth();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
@@ -2007,24 +2007,6 @@ async function ensureAdjacentFlightCrewLoaded(flight, offset) {
   if (state.flights[state.index] === flight) renderCrew(flight);
 }
 
-// The PDF crew list is a snapshot from whenever it was uploaded/downloaded
-// and can go stale mid-trip (e.g. a late P1 swap) - OpenAirLog stays the
-// live source of truth. So rather than showing the PDF's list verbatim,
-// take each OpenAirLog crew member and use the PDF's name for them only
-// if the same role's first name still matches (the PDF's "Nachname,
-// Vorname" is nicer than OpenAirLog's partly-anonymized "H., Nicolas");
-// a role whose occupant has since changed falls back to OpenAirLog's own
-// name for that entry instead of showing whoever the PDF still lists.
-function mergeCrewWithPdf(apiCrew, pdfCrew) {
-  return apiCrew.map((member) => {
-    const match = pdfCrew.find(
-      (p) => p.role.toUpperCase() === member.role.toUpperCase() &&
-        firstNameOf(p.name) === firstNameOf(member.name)
-    );
-    return match ? { name: match.name, role: member.role } : member;
-  });
-}
-
 // The PDF's own ref reads like "LH1168 -1/19" - flight number, an offset
 // whose exact meaning isn't documented anywhere, and a bare day-of-month.
 // Confirmed against a real Umlaufcrewliste (and the pilot's own reading of
@@ -2118,13 +2100,9 @@ function buildPdfRefMap(f, field) {
   return map;
 }
 
-// Crew shown here comes either from OpenAirLog (per-flight, via
-// /flights/{id}/crew) or - if the pilot uploaded a PDF - from that PDF,
-// which then overwrites the OpenAirLog crew until switched back.
+// Crew only ever comes from the uploaded PDF now (see state.pdfCrew) -
+// there's no other source left to fall back to or switch between.
 function renderCrew(f) {
-  const entry = f.id != null ? crewCache.get(f.id) : undefined;
-  const hasEmbedded = f.embeddedCrew.length > 0;
-  const apiCrew = hasEmbedded ? f.embeddedCrew : entry && entry.status === "ok" ? entry.crew : [];
   // A PDF's routing table can simply not cover this particular flight - a
   // rotation regenerated under a new Umlauf number, an old upload left over
   // from a previous day, or (in "alle Kacheln" debug mode) a flight outside
@@ -2137,26 +2115,19 @@ function renderCrew(f) {
     state.pdfLegs.some((leg) => leg.flightNumber === f.flightNumber);
   const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length && pdfCoversFlight);
 
-  const detectedOwnName = detectOwnName(f, apiCrew);
-  if (detectedOwnName) applyDetectedOwnName(detectedOwnName);
-
   // Fill in the leaving/joining indicators once loaded, each re-renders itself
   ensureAdjacentFlightCrewLoaded(f, 1);
   ensureAdjacentFlightCrewLoaded(f, -1);
 
-  if (hasPdfCrew) {
-    els.crewSourceSwitchBtn.hidden = false;
-    els.crewSourceSwitchBtn.textContent =
-      state.crewSource === "pdf" ? "OpenAirLog-Crew stattdessen anzeigen" : "PDF-Crew stattdessen anzeigen";
-  } else {
-    els.crewSourceSwitchBtn.hidden = true;
-    state.crewSource = "api"; // nothing to override with (anymore)
-  }
-
-  const useSource = hasPdfCrew && state.crewSource === "pdf" ? "pdf" : "api";
-
   els.crewList.innerHTML = "";
   els.crewEmpty.hidden = true;
+
+  if (!hasPdfCrew) {
+    els.crewSource.textContent = "";
+    els.crewEmpty.hidden = false;
+    els.crewEmpty.textContent = "Keine Crewdaten - bitte Umlaufcrewliste als PDF hochladen.";
+    return;
+  }
 
   const ownName = getOwnName();
   const maxDuty = computeMaxLegalOnBlock(f);
@@ -2164,54 +2135,10 @@ function renderCrew(f) {
     ? `latest Onblock: ${fmtTime(maxDuty.latestOnBlockUtc).replace("Z", " UTC")} (${maxDuty.source})`
     : null;
 
-  if (useSource === "pdf") {
-    const { crew, rotation, fileName } = state.pdfCrew;
-    els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
-    // Reconcile with the live OpenAirLog crew when it's available - falls
-    // back to the raw PDF list only while the API crew hasn't loaded yet.
-    const merged = apiCrew.length ? mergeCrewWithPdf(apiCrew, crew) : crew;
-    // The PDF's own Ex/To columns are preferred when present (a colleague's
-    // actual, specific connection), but not every join/leave has one there
-    // (e.g. a name the PDF's own layout-based row parser missed, or a block
-    // boundary that doesn't line up with this exact OpenAirLog flight) - so
-    // this falls back to the same pilot's-own-adjacent-flight guess the
-    // OpenAirLog view uses (see the api-source call below), rather than
-    // silently showing nothing for a join/leave the arrow itself already
-    // says is real.
-    renderCrewMembers(els.crewList, merged, {
-      leaving: findLeavingCrew(f, merged), joining: findJoiningCrew(f, merged),
-      leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
-      pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
-      ownName, legalOnBlockLabel,
-    });
-    return;
-  }
-
-  els.crewSource.textContent = "OpenAirLog";
-
-  if (!hasEmbedded && entry && entry.status === "loading") {
-    els.crewEmpty.hidden = false;
-    els.crewEmpty.textContent = "Lade Crew …";
-    return;
-  }
-  if (!hasEmbedded && entry && entry.status === "forbidden") {
-    els.crewEmpty.hidden = false;
-    els.crewEmpty.textContent = "Keine Berechtigung für Crew-Daten (Scope crew:read fehlt für diesen API-Schlüssel).";
-    return;
-  }
-  if (!hasEmbedded && entry && entry.status === "error") {
-    els.crewEmpty.hidden = false;
-    els.crewEmpty.textContent = entry.message || "Crew konnte nicht geladen werden.";
-    return;
-  }
-  if (!apiCrew.length) {
-    els.crewEmpty.hidden = false;
-    els.crewEmpty.textContent = "Keine Crewdaten in OpenAirLog für diesen Flug hinterlegt.";
-    return;
-  }
-
-  renderCrewMembers(els.crewList, apiCrew, {
-    leaving: findLeavingCrew(f, apiCrew), joining: findJoiningCrew(f, apiCrew),
+  const { crew, rotation, fileName } = state.pdfCrew;
+  els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
+  renderCrewMembers(els.crewList, crew, {
+    leaving: findLeavingCrew(f, crew), joining: findJoiningCrew(f, crew),
     leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
     pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
     ownName, legalOnBlockLabel,
@@ -2485,9 +2412,8 @@ function parseCrewFromLines(lines, refs = []) {
       // this line, with the rest of the given name alone on the next one
       // (confirmed on a real Umlaufcrewliste: "BARTELS YOSHIDA, JONAS" /
       // "LINO", with the PK-Nummer only appearing after that) - without
-      // this, the truncated PDF name ("..., Jonas") no longer shares a
-      // first name with OpenAirLog's own ("..., Jonas Lino") and
-      // mergeCrewWithPdf() silently stops applying it.
+      // this, the name is silently truncated ("..., Jonas" instead of
+      // "..., Jonas Lino").
       if (looksLikeNameContinuation(lines[i + 1])) {
         fullName = `${fullName} ${lines[i + 1].trim()}`;
         i++;
@@ -2629,6 +2555,52 @@ const ICAO_CITY = {
 
 function cityForIcao(code) {
   return ICAO_CITY[code] || null;
+}
+
+// IATA -> ICAO, for turning MyTime roster's own 3-letter station codes
+// ("LH 1172: FRA-LIS", confirmed real format - see
+// rosterEventsToRawFlights()) into the 4-letter ICAO codes the rest of
+// this app is built around (ICAO_CITY/TIMEZONE_BY_ICAO above, and
+// Flightradar24's own orig_icao/dest_icao fields) - standard, publicly
+// documented IATA/ICAO pairs (unlike an airline-internal callsign, not
+// something that needs confirming one at a time), covering exactly the
+// same airports ICAO_CITY already does, so nothing here introduces a
+// station this codebase doesn't already trust. An airport missing from
+// this table (a station outside that list) is passed through unconverted
+// rather than dropped - degrades to "ICAO_CITY/Flightradar24 just won't
+// recognize it," not a crash.
+const IATA_TO_ICAO = {
+  FRA: "EDDF", MUC: "EDDM", BER: "EDDB", HAM: "EDDH", DUS: "EDDL", CGN: "EDDK",
+  STR: "EDDS", NUE: "EDDN", BRE: "EDDW", LEJ: "EDDP", SCN: "EDDR", HAJ: "EDDV",
+  DRS: "EDDC", FMO: "EDDG",
+  VIE: "LOWW", SZG: "LOWS", INN: "LOWI", GRZ: "LOWG", LNZ: "LOWL",
+  ZRH: "LSZH", GVA: "LSGG", BRN: "LSZB", BSL: "LFSB",
+  LHR: "EGLL", LGW: "EGKK", STN: "EGSS", LTN: "EGGW", LCY: "EGLC", MAN: "EGCC",
+  BHX: "EGBB", EDI: "EGPH", GLA: "EGPF", NCL: "EGNT", DUB: "EIDW",
+  CDG: "LFPG", ORY: "LFPO", LYS: "LFLL", NCE: "LFMN", MRS: "LFML", TLS: "LFBO",
+  NTE: "LFRS", SXB: "LFST", BOD: "LFBD", AMS: "EHAM", BRU: "EBBR",
+  MAD: "LEMD", BCN: "LEBL", PMI: "LEPA", AGP: "LEMG", SVQ: "LEZL", VLC: "LEVC",
+  ALC: "LEAL", BIO: "LEBB", LPA: "GCLP", TFS: "GCTS", LIS: "LPPT", OPO: "LPPR",
+  FAO: "LPFR",
+  FCO: "LIRF", CIA: "LIRA", LIN: "LIML", MXP: "LIMC", NAP: "LIRN", FLR: "LIRQ",
+  VCE: "LIPZ", PMO: "LICJ", CTA: "LICC", BRI: "LIBD",
+  ARN: "ESSA", OSL: "ENGM", CPH: "EKCH", BLL: "EKBI", HEL: "EFHK", VNO: "EYVI",
+  RIX: "EVRA", TLL: "EETN",
+  WAW: "EPWA", KRK: "EPKK", POZ: "EPPO", WRO: "EPWR", GDN: "EPGD", PRG: "LKPR",
+  BUD: "LHBP", OTP: "LROP", SOF: "LBSF", ZAG: "LDZA", SPU: "LDSP", DBV: "LDDU",
+  LJU: "LJLJ", BEG: "LYBE", RMO: "LUKK",
+  ATH: "LGAV", SKG: "LGTS", HER: "LGIR", RHO: "LGRP", IST: "LTFM", AYT: "LTAI",
+  SAW: "LTFJ", LCA: "LCLK", MLA: "LMML",
+  CMN: "GMMN", CAI: "HECA", HRG: "HEGN", SSH: "HESH", DXB: "OMDB", DOH: "OTHH",
+  AUH: "OMAA", RUH: "OERK", JED: "OEJN",
+  JFK: "KJFK", EWR: "KEWR", LAX: "KLAX", ORD: "KORD", MIA: "KMIA", IAD: "KIAD",
+  BOS: "KBOS", SFO: "KSFO", ATL: "KATL", YYZ: "CYYZ", YUL: "CYUL",
+  NRT: "RJAA", HND: "RJTT", PEK: "ZBAA", HKG: "VHHH", SIN: "WSSS", BOM: "VABB",
+  DEL: "VIDP", ICN: "RKSI", JNB: "FAOR", NBO: "HKJK", SYD: "YSSY", GRU: "SBGR",
+};
+
+function iataToIcao(code) {
+  return IATA_TO_ICAO[code] || code;
 }
 
 // 3-letter station code per ICAO code, for the route chain on the
@@ -3254,6 +3226,45 @@ function icsDateToDate(value) {
   return new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi, +s));
 }
 
+// Matches the confirmed real "Flight"/"Deadhead" SUMMARY formats (see the
+// module comment above): "LH 1172: FRA-LIS" or, deadheading, "DH LH 895:
+// VNO-FRA". Layover/Pickup/Briefing events never match this (no
+// "XX 1234: AAA-AAA" shape), so they fall straight through untouched.
+const ROSTER_FLIGHT_SUMMARY_RE = /^(DH\s+)?([A-Z]{2,3})\s+(\d{1,4}):\s*([A-Z]{3})-([A-Z]{3})/;
+
+// Turns the roster's own flight/deadhead events into OpenAirLog-shaped
+// raw entries (flight_number/departure/arrival/date/scheduled_off_block/
+// scheduled_on_block/duty_code) - the exact shape normalizeFlight()
+// already knows how to read - so applyLoadedFlights() can be reused
+// completely unchanged as the duty-plan pipeline, just fed from the
+// roster instead of a live API now. Registration/aircraft type/crew
+// aren't in the roster feed at all - registration/callsign/actual times
+// come from Flightradar24 instead (see getOwnFlightLiveLeg()), crew only
+// ever from the uploaded PDF (see renderCrew()).
+function rosterEventsToRawFlights(events) {
+  const raw = [];
+  for (const ev of events) {
+    if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
+    const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
+    if (!m) continue;
+    const [, dh, airline, number, depCode, arrCode] = m;
+    raw.push({
+      flight_number: `${airline}${number}`,
+      // The roster's own codes are IATA ("FRA") - converted to ICAO here
+      // so depCode/arrCode stay consistent with the rest of the app
+      // (ICAO_CITY/TIMEZONE_BY_ICAO, Flightradar24's own orig_icao/
+      // dest_icao) - see iataToIcao().
+      departure: iataToIcao(depCode),
+      arrival: iataToIcao(arrCode),
+      date: ev.dtstart.toISOString().slice(0, 10),
+      scheduled_off_block: ev.dtstart.toISOString(),
+      scheduled_on_block: ev.dtend.toISOString(),
+      duty_code: dh ? "DH" : undefined,
+    });
+  }
+  return raw;
+}
+
 const PICKUP_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Pickup\s+(\S+)/i;
 
 // Next Pickup event for the given station after the layover's arrival
@@ -3402,18 +3413,16 @@ async function ensureRosterLoaded(force) {
       rosterEventsCache.lastError = null;
       renderRosterStatus();
 
-      // The last flight's transit line (and the Layover card) depend on
-      // roster data too (its pickup time, see findRosterPickupForFlight()) -
-      // re-render now that it's arrived. Scheduled flight times themselves
-      // (depSchedDate/arrSchedDate) are never touched by roster data - see
-      // computeMaxLegalOnBlock()'s comment: an earlier "trust whichever
-      // source is fresher" override here shifted a flight's own scheduled
-      // time away from OpenAirLog's, which in turn silently changed the
-      // legal FDP limit already shown - confirmed wrong against a real eFF
-      // screen, since FDP is computed against the officially planned
-      // report time, not whatever a re-fetch happens to disagree on.
-      renderFlight();
-      renderLayover();
+      // MyTime roster is the primary duty-plan source now - its own
+      // flight/deadhead events become state.flights/allFlights via the
+      // same applyLoadedFlights()/normalizeFlight() pipeline a live API
+      // used to feed (see rosterEventsToRawFlights()), which re-renders
+      // the flight card and Layover itself. Scheduled times come straight
+      // from the roster's own DTSTART/DTEND, faithfully, with no
+      // freshness-based override logic - see computeMaxLegalOnBlock()'s
+      // comment on why silently shifting a flight's own scheduled time
+      // once already broke the legal FDP figure shown there.
+      applyLoadedFlights(rosterEventsToRawFlights(events));
     } catch (e) {
       // Stays stale, retried on next call - but now at least visible in
       // Settings (see renderRosterStatus()) instead of a silent no-op.
@@ -3772,43 +3781,6 @@ function setOwnName(name) {
   try { localStorage.setItem(OWN_NAME_STORAGE_KEY, name); } catch { /* private mode etc. */ }
 }
 
-// Auto-detects the pilot's own name from a flight's crew list, so it
-// doesn't have to be typed in by hand. Two confirmed, real-data-verified
-// signals (not a guess about unpublished airline-internal data - this is
-// how OpenAirLog's own response is actually shaped):
-// 1. The flight itself carries the pilot's own role as crew_position
-//    (e.g. "CP") - the crew entry with that same role is, by definition,
-//    this pilot.
-// 2. OpenAirLog only gives the *authenticated pilot's own* crew entry a
-//    full, un-anonymized name ("Droste, Alexander"); every colleague is
-//    shown reduced to a single initial ("H., Nicolas") - confirmed across
-//    multiple real flights. Kept as a fallback for the (should be rare)
-//    case where crew_position doesn't line up with any crew role.
-function detectOwnName(f, apiCrew) {
-  if (!apiCrew || !apiCrew.length) return null;
-
-  const myRole = f && f.raw && f.raw.crew_position;
-  if (myRole) {
-    const match = apiCrew.find((m) => m.role && m.role.toUpperCase() === String(myRole).toUpperCase());
-    if (match && match.name && match.name.includes(",")) return match.name;
-  }
-
-  const unanonymized = apiCrew.filter((m) => {
-    const comma = m.name.indexOf(",");
-    if (comma === -1) return false;
-    return !/^[A-ZÄÖÜ]\.$/.test(m.name.slice(0, comma).trim());
-  });
-  return unanonymized.length === 1 ? unanonymized[0].name : null;
-}
-
-// Keeps the stored own name in sync with what OpenAirLog's crew data says
-// - fully automatic, no manual entry anywhere in the UI.
-function applyDetectedOwnName(name) {
-  if (getOwnName() === name) return;
-  setOwnName(name);
-  renderBrandName();
-}
-
 // The Settings field stores the name the same way OpenAirLog/the PDF write
 // it ("Nachname, Vorname"), but the header reads better the natural way
 // round ("Vorname Nachname"). A name typed without a comma is shown as-is.
@@ -3839,34 +3811,16 @@ function isOwnName(memberName, ownName) {
   return !!fa && fa === firstNameOf(ownName);
 }
 
-function allKnownApiCrewNames() {
-  const names = new Set();
-  for (const f of state.allFlights) {
-    for (const m of f.embeddedCrew) names.add(firstNameOf(m.name));
-  }
-  return names;
-}
-
-// True if there's nothing to compare against (no OpenAirLog crew data
-// loaded yet) or the PDF crew shares at least one first name with it -
-// false only when both have data and share *no* names at all, i.e. the
-// PDF is very likely for a different/stale rotation.
-function crewListsPlausiblyMatch(pdfCrew) {
-  const apiNames = allKnownApiCrewNames();
-  if (!apiNames.size) return true;
-  return pdfCrew.some((m) => apiNames.has(firstNameOf(m.name)));
-}
-
-// Only shown once a PDF has been uploaded *and* accepted as the active
-// crew source. Narrowed to whoever's actually on the flight that landed
-// here (so they're really at this layover, not just listed somewhere else
-// in the PDF) and still on the next flight too (a room number is only
+// Only shown once a PDF has actually been uploaded (the only crew
+// source). Narrowed to whoever's actually on the flight that landed here
+// (so they're really at this layover, not just listed somewhere else in
+// the PDF) and still on the next flight too (a room number is only
 // useful for coordinating with someone who's still around tomorrow, not
-// a colleague leaving the crew at this stop) - determined from
-// OpenAirLog's own per-flight crew, the same live comparison the join/
-// leave arrows already use, rather than the PDF's flat list.
+// a colleague leaving the crew at this stop) - determined from the
+// flight's own live-tracked crew (the same comparison the join/leave
+// arrows already use), rather than the PDF's flat list.
 function renderLayoverCrew(arrCode, hotel, flight) {
-  const allCrew = state.crewSource === "pdf" && state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  const allCrew = state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
   const ownName = getOwnName();
   let crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
 
@@ -3951,23 +3905,9 @@ async function handleCrewPdf(file) {
       state.pdfCrew = { crew, rotation, fileName: file.name };
       els.crewPdfResult.hidden = true; // available via "Rohtext anzeigen"
       els.crewPdfStatus.hidden = false;
-
-      // Only auto-apply the PDF crew if it plausibly belongs to this
-      // rotation - if OpenAirLog's crew names have nothing in common with
-      // the PDF's, it's likely a stale/wrong PDF, so keep OpenAirLog
-      // active instead (still switchable by hand via the button below).
-      if (crewListsPlausiblyMatch(crew)) {
-        state.crewSource = "pdf";
-        els.crewPdfStatus.textContent =
-          `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
-          (rotation ? ` (Umlauf ${rotation.rotation})` : "");
-      } else {
-        state.crewSource = "api";
-        els.crewPdfStatus.textContent =
-          `${crew.length} Crewmitglied(er) erkannt, aber die Namen stimmen mit keinem ` +
-          `OpenAirLog-Flug überein - vermutlich die falsche/eine alte PDF. OpenAirLog-Crew ` +
-          `bleibt aktiv; über den Button unten lässt sich manuell zur PDF-Crew wechseln.`;
-      }
+      els.crewPdfStatus.textContent =
+        `${crew.length} Crewmitglied(er) erkannt und oben als Crew übernommen.` +
+        (rotation ? ` (Umlauf ${rotation.rotation})` : "");
     } else {
       // Couldn't recognize crew rows in this layout: nothing to overwrite
       // with, show the raw text directly instead of hiding it behind a
@@ -4145,11 +4085,12 @@ els.crewPdfRawToggle.addEventListener("click", () => {
   els.crewPdfRawToggle.textContent = els.crewPdfResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
 });
 
-els.crewSourceSwitchBtn.addEventListener("click", () => {
-  state.crewSource = state.crewSource === "pdf" ? "api" : "pdf";
-  savePdfCrew();
+els.saveOwnNameBtn.addEventListener("click", () => {
+  setOwnName(els.ownNameInput.value.trim());
+  renderBrandName();
   const f = state.flights[state.index];
   if (f) renderCrew(f);
+  renderLayover();
 });
 
 els.roomNumberInput.addEventListener("input", () => {
@@ -4178,9 +4119,17 @@ if ("serviceWorker" in navigator) {
 // flights already known from elsewhere, it isn't a source of which
 // flights exist. ↻ (refreshAll()) refreshes the MyTime roster and clears
 // the Flightradar24 lookup caches.
+// MyTime roster is the primary duty-plan source now, so - unlike the
+// former "manual ↻ only" design, back when OpenAirLog/roster were two
+// separate live sources and this was the pilot's own explicit choice -
+// startup loads it once right away (respecting ensureRosterLoaded()'s own
+// "already fresh, skip" check): without this, the dashboard would stay
+// permanently blank on every open until a manual tap, since nothing else
+// populates state.flights anymore.
 function loadInitial() {
   els.refreshBtn.hidden = false;
   showBanner("", "");
+  ensureRosterLoaded();
 }
 
 renderBrandName();

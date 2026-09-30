@@ -1954,11 +1954,10 @@ function nextFlightRefLabel(currentFlight, flight) {
 
 // Deadheading covers both OpenAirLog crew (see normalizeCrewMember()'s
 // isDeadhead) and a PDF crew list, which marks the same thing directly in
-// the role text. Someone deadheading isn't actually working that flight,
-// so they don't count as "still there" for findLeavingCrew()/
-// findJoiningCrew() either - a colleague who leaves the operating crew
-// today but only rides along DH tomorrow has genuinely left, not stayed
-// on, even though their name still appears on tomorrow's crew list.
+// the role text. Someone deadheading isn't actually working that flight -
+// shown in the crew list, but never counted as part of it for anything
+// that needs to know who's actually operating (e.g. renderLayoverCrew()'s
+// own room-list filtering).
 function isOperatingCrewMember(member) {
   return !member.isDeadhead && String(member.role || "").toUpperCase() !== "DH";
 }
@@ -2054,70 +2053,6 @@ function adjacentFlightCrew(flight, offset) {
   if (adjacent.embeddedCrew.length) return adjacent.embeddedCrew;
   const cached = adjacent.id != null ? crewCache.get(adjacent.id) : undefined;
   return cached && cached.status === "ok" ? cached.crew : null;
-}
-
-// Whichever crew member on the currently viewed flight doesn't also show
-// up (same role, same first name) on the next flight is - as far as live
-// OpenAirLog data can tell - not continuing with the crew after this one;
-// the mirror image (findJoiningCrew) checks the previous flight instead,
-// for whoever's new as of this one. Compared by first name rather than
-// the full name so this still works against OpenAirLog's partly-
-// anonymized names ("H., Nicolas") and isn't thrown off by the PDF-merged
-// display name. No adjacent flight loaded, or its crew not known (crew
-// only ever comes from the uploaded PDF now, never fetched per-flight -
-// see renderCrew()), means nothing can be said either way.
-function findLeavingCrew(flight, crew) {
-  const next = adjacentFlightCrew(flight, 1);
-  if (!next) return new Set();
-  const nextOperating = next.filter(isOperatingCrewMember);
-  const leaving = new Set();
-  for (const member of crew) {
-    const staysOn = nextOperating.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
-    if (!staysOn) leaving.add(crewKey(member.role, member.name));
-  }
-  return leaving;
-}
-
-// A flight starts a new tour - rather than just continuing on from the
-// previous leg - when there's no previous flight loaded, or that previous
-// flight landed somewhere other than where this one departs from. Landing
-// at home base mid-rotation and departing again the same day (a quick
-// turn, common on short-haul) is NOT a new tour and must not be treated
-// as one - confirmed against a real rotation where exactly this
-// (EDDF->EKBI right after LPPT->EDDF) wrongly suppressed a real join
-// before this was narrowed from a blanket "departs home base" check.
-function startsNewTour(flight) {
-  const previous = adjacentFlight(flight, -1);
-  return !previous || previous.arrCode !== flight.depCode;
-}
-
-// A PDF Umlaufcrewliste only ever prints "Ihr angeforderter Flug und
-// weitere Flüge Ihres Umlaufs" onward - it starts AT the requested flight,
-// so its first leg has no lookback: nobody who's on it can be shown as
-// "joining" from anything, since the document itself doesn't cover
-// whatever came before. Confirmed against a real Umlaufcrewliste where an
-// entire block-1 crew (a fresh start together on the pilot's own requested
-// flight) was otherwise wrongly flagged as joining from the pilot's own
-// unrelated previous OpenAirLog flight, purely because that older flight
-// happened to land at the same airport this one departs from.
-function isPdfFirstBlockFlight(flight) {
-  return !!(state.pdfLegs.length && state.pdfLegs[0].flightNumber === flight.flightNumber);
-}
-
-// Whoever's crew a flight starts a new tour from is unrelated to this one
-// - the whole crew being "new" there is expected, not a meaningful join,
-// and would just be noise.
-function findJoiningCrew(flight, crew) {
-  if (startsNewTour(flight) || isPdfFirstBlockFlight(flight)) return new Set();
-  const previous = adjacentFlightCrew(flight, -1);
-  if (!previous) return new Set();
-  const previousOperating = previous.filter(isOperatingCrewMember);
-  const joining = new Set();
-  for (const member of crew) {
-    const wasThereBefore = previousOperating.some((m) => crewKey(m.role, m.name) === crewKey(member.role, member.name));
-    if (!wasThereBefore) joining.add(crewKey(member.role, member.name));
-  }
-  return joining;
 }
 
 // The PDF's own ref reads like "LH1168 -1/19" - flight number, an offset
@@ -2246,10 +2181,20 @@ function renderCrew(f) {
 
   const { crew, rotation, fileName } = state.pdfCrew;
   els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
+  // Who's joining/leaving is the PDF's own Ex/To references now (see
+  // buildPdfRefMap()) - a crew member with an exRef for this flight
+  // starts their block here (joining), one with a toRef ends it here
+  // (leaving). This used to be findLeavingCrew()/findJoiningCrew(),
+  // comparing crew across adjacent flights via OpenAirLog's live
+  // per-flight data (embeddedCrew/crewCache) - both always empty now
+  // that crew only ever comes from this one flat PDF list, which
+  // silently zeroed out every join/leave arrow.
+  const pdfExRefs = buildPdfRefMap(f, "exRef");
+  const pdfToRefs = buildPdfRefMap(f, "toRef");
   renderCrewMembers(els.crewList, crew, {
-    leaving: findLeavingCrew(f, crew), joining: findJoiningCrew(f, crew),
+    leaving: new Set(pdfToRefs.keys()), joining: new Set(pdfExRefs.keys()),
     leavingInfo: nextFlightRefLabel(f, adjacentFlight(f, 1)), joiningInfo: ownAdjacentFlightLiveLabel(adjacentFlight(f, -1)),
-    pdfExRefs: buildPdfRefMap(f, "exRef"), pdfToRefs: buildPdfRefMap(f, "toRef"),
+    pdfExRefs, pdfToRefs,
     ownName, legalOnBlockLabel,
   });
 }

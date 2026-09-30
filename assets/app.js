@@ -3159,13 +3159,20 @@ async function fetchCurrentWeather(lat, lon) {
 // Fire-and-forget, same pattern as the other ensure*Loaded() helpers -
 // caches (including failures, so a geocoding miss doesn't get retried on
 // every render) and re-renders the layover card once resolved.
+const currentWeatherLoading = new Set(); // icao currently in flight, to avoid duplicate
+// concurrent requests - renderLayover() itself calls this (see fillLayoverCardContent()),
+// and renderFlight() calls renderLayover() a second time in the same pass, so without this
+// two identical requests would fire back to back before the first one caches anything.
 async function ensureCurrentWeatherLoaded(icao, cityLabel) {
   const cached = currentWeatherCache.get(icao);
   if (cached && Date.now() - cached.fetchedAt < CURRENT_WEATHER_CACHE_MS) return;
+  if (currentWeatherLoading.has(icao)) return;
+  currentWeatherLoading.add(icao);
 
   const coords = await geocodeCity(cityLabel);
   const weather = coords ? await fetchCurrentWeather(coords.lat, coords.lon) : null;
   currentWeatherCache.set(icao, { ...(weather || {}), fetchedAt: Date.now() });
+  currentWeatherLoading.delete(icao);
   renderLayover();
 }
 

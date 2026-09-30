@@ -69,6 +69,8 @@ const els = {
   dutyStatusCard: document.getElementById("dutyStatusCard"),
   dutyStatusTitle: document.getElementById("dutyStatusTitle"),
   dutyStatusCountdown: document.getElementById("dutyStatusCountdown"),
+  dutyStatusPickup: document.getElementById("dutyStatusPickup"),
+  dutyStatusPickupValue: document.getElementById("dutyStatusPickupValue"),
   dutyStatusBriefing: document.getElementById("dutyStatusBriefing"),
   dutyStatusBriefingValue: document.getElementById("dutyStatusBriefingValue"),
   dutyStatusEnd: document.getElementById("dutyStatusEnd"),
@@ -3310,16 +3312,32 @@ function rosterEventsToRawFlights(events) {
 }
 
 const PICKUP_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Pickup\s+(\S+)/i;
+// Same shape as PICKUP_SUMMARY_RE, just the "Briefing" keyword instead
+// of "Pickup" - both confirmed real formats, see the module comment above.
+const BRIEFING_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Briefing\s+(\S+)/i;
 
 // Next Pickup event for the given station after the layover's arrival
 // time - "next" rather than "closest", since a pickup only ever makes
 // sense in the future relative to landing.
 function findRosterPickup(events, stationIcao, afterDate) {
+  return findRosterTimedEvent(events, PICKUP_SUMMARY_RE, stationIcao, afterDate);
+}
+
+// Next Briefing event for the given station after afterDate - used by
+// renderDutyStatus() to show the real MyTime briefing time for the
+// upcoming duty instead of the computed BRIEFING_LEAD_MS estimate,
+// exactly the same "real roster event over a guess" preference the
+// layover card's own Pickup line already applies.
+function findRosterBriefing(events, stationIcao, afterDate) {
+  return findRosterTimedEvent(events, BRIEFING_SUMMARY_RE, stationIcao, afterDate);
+}
+
+function findRosterTimedEvent(events, re, stationIcao, afterDate) {
   const station3 = threeLetterCode(stationIcao).toUpperCase();
   let best = null;
   for (const ev of events) {
     if (!ev.summary || !ev.dtstart) continue;
-    const m = PICKUP_SUMMARY_RE.exec(ev.summary.trim());
+    const m = re.exec(ev.summary.trim());
     if (!m) continue;
     const evStation = (ev.location || m[2] || "").toUpperCase();
     if (evStation !== station3) continue;
@@ -3570,6 +3588,7 @@ function renderDutyStatus() {
 
   if (!next) {
     els.dutyStatusCountdown.textContent = "Kein weiterer Dienst in den nächsten 3 Wochen geplant.";
+    els.dutyStatusPickup.hidden = true;
     els.dutyStatusBriefing.hidden = true;
     els.dutyStatusEnd.hidden = true;
     els.dutyStatusRouteBtn.hidden = true;
@@ -3581,10 +3600,39 @@ function renderDutyStatus() {
     const dayWord = days === 1 ? "Tag" : "Tage";
     els.dutyStatusCountdown.textContent = `Noch ${days} ${dayWord} bis zum nächsten Dienst.`;
 
-    // Briefing = 120 min before the next duty's scheduled departure, shown
-    // in local (not Zulu) time since that's what actually determines when
-    // to leave for the airport.
-    if (next.depSchedDate) {
+    // Pickup/Briefing: the real MyTime roster events for this duty's own
+    // departure station when published (findRosterPickup()/
+    // findRosterBriefing() - same "real roster event over a computed
+    // guess" rule the layover card's own Pickup line already follows).
+    // Bounded to before the duty's own departure so a duty with no
+    // Pickup/Briefing of its own can't accidentally pick up some later,
+    // unrelated duty's event instead. Briefing still falls back to the
+    // BRIEFING_LEAD_MS estimate when nothing's published yet (e.g. too
+    // far out); Pickup has no such estimate - not every duty gets picked
+    // up at all (home base, self-driven), so showing nothing here is the
+    // honest answer, same as the layover card.
+    if (!rosterEventsCache.events) ensureRosterLoaded();
+    const now = new Date();
+    const rosterPickup = rosterEventsCache.events && next.depCode
+      ? findRosterPickup(rosterEventsCache.events, next.depCode, now)
+      : null;
+    const rosterBriefing = rosterEventsCache.events && next.depCode
+      ? findRosterBriefing(rosterEventsCache.events, next.depCode, now)
+      : null;
+
+    if (rosterPickup && (!next.depSchedDate || rosterPickup.dtstart <= next.depSchedDate)) {
+      const pickupDateLabel = `${weekdayShortLocal(rosterPickup.dtstart)}, ${rosterPickup.dtstart.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
+      els.dutyStatusPickup.hidden = false;
+      els.dutyStatusPickupValue.textContent = `${pickupDateLabel} - ${rosterPickup.time} LT`;
+    } else {
+      els.dutyStatusPickup.hidden = true;
+    }
+
+    if (rosterBriefing && (!next.depSchedDate || rosterBriefing.dtstart <= next.depSchedDate)) {
+      const briefingDateLabel = `${weekdayShortLocal(rosterBriefing.dtstart)}, ${rosterBriefing.dtstart.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
+      els.dutyStatusBriefing.hidden = false;
+      els.dutyStatusBriefingValue.textContent = `${briefingDateLabel} - ${rosterBriefing.time} LT`;
+    } else if (next.depSchedDate) {
       const briefing = new Date(next.depSchedDate.getTime() - BRIEFING_LEAD_MS);
       const briefingDateLabel = `${weekdayShortLocal(briefing)}, ${briefing.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })}`;
       els.dutyStatusBriefing.hidden = false;

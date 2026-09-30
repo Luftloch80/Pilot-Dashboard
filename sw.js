@@ -1,13 +1,12 @@
 "use strict";
 
-// Lets the app shell itself (not just data - see FLIGHTS_CACHE_KEY in
-// app.js for that) still load with zero connectivity, e.g. airplane mode.
+// Lets the app shell itself still load with zero connectivity, e.g.
+// airplane mode.
 //
 // Only same-origin requests and pdf.js (loaded from cdnjs) are handled
-// here - OpenAirLog/AeroDataBox/MyTime-roster/weather calls are left
-// alone entirely (never intercepted, never cached) so their own
-// timeout/error handling and the offline-data fallback in app.js keep
-// working exactly as before.
+// here - MyTime-roster/weather calls and any future flight-data API are
+// left alone entirely (never intercepted, never cached) so their own
+// timeout/error handling in app.js keeps working exactly as before.
 //
 // Strategy: network-first, falling back to whatever was cached the last
 // time each file loaded successfully. This - not a fixed precache list -

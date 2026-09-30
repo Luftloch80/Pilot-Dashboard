@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=51" />
+<link rel="stylesheet" href="assets/style.css?v=52" />
 </head>
 <body>
 
@@ -106,101 +106,8 @@
     <button id="resetCorsProxyKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
-  <!-- AeroDataBox (optional, nur in den Settings): bei einem
-       Flugzeugwechsel die Ankunft der neuen Maschine vom Flug davor,
-       über api.market abgefragt. -->
-  <section id="aeroDataBoxCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>AeroDataBox</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Zeigt bei einem Flugzeugwechsel in der Transit-Zeile, wann die neue
-      Maschine vom Flug davor ankommt. Der Schlüssel wird nur lokal auf
-      diesem Gerät gespeichert und bei jeder Anfrage direkt an
-      <code>prod.api.market</code> gesendet. Er verlässt dieses Gerät
-      sonst nicht.
-    </p>
-    <label for="aeroDataBoxKeyInput">API-Schlüssel (api.market)</label>
-    <input id="aeroDataBoxKeyInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein AeroDataBox API-Schlüssel" />
-    <button id="saveAeroDataBoxBtn" class="btn secondary">Speichern</button>
-    <p id="aeroDataBoxStatus" class="muted small" hidden></p>
-    <button id="testAeroDataBoxBtn" class="btn ghost small" hidden>Verbindung testen</button>
-    <p id="aeroDataBoxTestResult" class="muted small" hidden></p>
-    <div id="aeroDataBoxTestRaw" class="pdf-text" hidden></div>
-    <button id="resetAeroDataBoxBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
-  </section>
-
-  <!-- Lufthansa Developer API (optional, nur in den Settings): zusätzliche
-       Zeiten-/Status-Quelle für den eigenen Flug (Kennzeichen/Callsign
-       bleiben AeroDataBox vorbehalten - die öffentliche Flight-Status-API
-       liefert keine Flugzeugkennung, nur den Flugzeugtyp). -->
-  <section id="lufthansaApiCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>Lufthansa Developer API</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Zusätzliche Zeiten-/Status-Quelle für den eigenen Flug (nur bei
-      Lufthansa-Konzernflügen). Liefert keine Flugzeugkennung - dafür
-      bleibt AeroDataBox zuständig. Client-ID/-Secret werden nur lokal auf
-      diesem Gerät gespeichert und bei jeder Anfrage direkt an
-      <code>api.lufthansa.com</code> gesendet. Sie verlassen dieses Gerät
-      sonst nicht.
-    </p>
-    <label for="lufthansaClientIdInput">Client-ID</label>
-    <input id="lufthansaClientIdInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Deine Lufthansa API Client-ID" />
-    <label for="lufthansaClientSecretInput">Client-Secret</label>
-    <input id="lufthansaClientSecretInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein Lufthansa API Client-Secret" />
-    <button id="saveLufthansaApiBtn" class="btn secondary">Speichern</button>
-    <p id="lufthansaApiStatus" class="muted small" hidden></p>
-    <button id="testLufthansaApiBtn" class="btn ghost small" hidden>Verbindung testen</button>
-    <p id="lufthansaApiTestResult" class="muted small" hidden></p>
-    <div id="lufthansaApiTestRaw" class="pdf-text" hidden></div>
-    <button id="resetLufthansaApiBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
-  </section>
-
-  <!-- Lufthansa Crew Login (optional, nur in den Settings): OAuth2/PKCE
-       gegen den separaten Crew-OAuth2-Server - für die (noch nicht
-       angebundene) MyTime-Ersatz-Funktion. Braucht eine echte
-       Crew-Anmeldung (Nutzer-ID + RSA-Token) auf Lufthansas eigener
-       Login-Seite, kein Client-Secret in dieser App. -->
-  <section id="lufthansaCrewCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>Lufthansa Crew Login</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Für den geplanten MyTime-Ersatz (noch nicht angebunden). Meldet dich
-      über Lufthansas eigene Crew-Login-Seite an (Nutzer-ID + RSA-Token) -
-      diese App speichert kein Passwort, nur das danach erhaltene Token,
-      nur lokal auf diesem Gerät.
-    </p>
-    <label for="lufthansaCrewClientIdInput">Client-ID (Crew-App-Registrierung)</label>
-    <input id="lufthansaCrewClientIdInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Deine Crew-API Client-ID" />
-    <label for="lufthansaCrewScopeInput">Scope</label>
-    <input id="lufthansaCrewScopeInput" type="text" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="z. B. https://cms.fra.dlh.de/publicCrewApi" />
-    <label class="checkbox-label">
-      <input id="lufthansaCrewSandboxInput" type="checkbox" />
-      Sandbox/Test-Umgebung verwenden (statt Produktion)
-    </label>
-    <button id="saveLufthansaCrewBtn" class="btn secondary">Speichern</button>
-    <p id="lufthansaCrewStatus" class="muted small" hidden></p>
-    <button id="loginLufthansaCrewBtn" class="btn secondary" hidden>Mit Lufthansa Crew anmelden</button>
-    <button id="testLufthansaCrewBtn" class="btn ghost small" hidden>Dienstplan testen (7 Tage)</button>
-    <p id="lufthansaCrewTestResult" class="muted small" hidden></p>
-    <div id="lufthansaCrewTestRaw" class="pdf-text" hidden></div>
-    <button id="logoutLufthansaCrewBtn" class="btn ghost small" hidden>Abmelden (Token löschen)</button>
-    <button id="resetLufthansaCrewBtn" class="btn ghost small" hidden>Zugangsdaten entfernen</button>
-  </section>
-
-  <!-- Debug (optional, nur in den Settings): zum Testen der neuen APIs
-       (AeroDataBox/Lufthansa) gegen mehr als nur den heutigen Flug. -->
+  <!-- Debug (optional, nur in den Settings): zum Testen gegen mehr als
+       nur den heutigen Flug. -->
   <section id="debugCard" class="card crew-pdf-card" hidden>
     <div class="crew-pdf-head">
       <h2>Debug</h2>
@@ -208,25 +115,8 @@
     </div>
     <label class="checkbox-label">
       <input id="debugAllMonthInput" type="checkbox" />
-      Alle Flüge des geladenen Zeitraums anzeigen (statt nur heute) - zum
-      Testen der neuen APIs
+      Alle Flüge des geladenen Zeitraums anzeigen (statt nur heute)
     </label>
-  </section>
-
-  <!-- Setup-Karte: wird angezeigt, solange kein API-Key hinterlegt ist -->
-  <section id="setupCard" class="card setup-card" hidden>
-    <h2>OpenAirLog verbinden</h2>
-    <p class="muted">
-      Dein API-Schlüssel wird ausschließlich lokal auf diesem Gerät gespeichert
-      (Browser-Speicher) und bei jeder Anfrage direkt an
-      <code>openairlog.de</code> gesendet. Er verlässt dieses Gerät sonst nicht.
-    </p>
-    <label for="apiKeyInput">API-Schlüssel</label>
-    <input id="apiKeyInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein OpenAirLog API-Schlüssel" />
-    <button id="saveKeyBtn" class="btn primary">Speichern &amp; verbinden</button>
-    <p id="setupError" class="error-text" hidden></p>
-    <button id="resetKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
   <!-- Status / Lade / Fehleranzeige -->
@@ -275,7 +165,6 @@
         <div class="meta-item">
           <div class="meta-key">Kennzeichen</div>
           <div class="meta-val registration">–</div>
-          <div class="reg-prior-arrival muted small" hidden></div>
         </div>
       </div>
 
@@ -353,6 +242,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=137"></script>
+<script src="assets/app.js?v=138"></script>
 </body>
 </html>

@@ -174,27 +174,15 @@ body {
 .small { font-size: 0.82rem; }
 
 /* Setup */
-.setup-card label,
-#rosterCard label,
-#aeroDataBoxCard label,
-#lufthansaApiCard label,
-#lufthansaCrewCard label {
+#rosterCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
   margin: 12px 0 6px;
 }
 
-.setup-card input[type="password"],
-.setup-card input[type="text"],
 #rosterCard input[type="password"],
-#rosterCard input[type="text"],
-#aeroDataBoxCard input[type="password"],
-#aeroDataBoxCard input[type="text"],
-#lufthansaApiCard input[type="password"],
-#lufthansaApiCard input[type="text"],
-#lufthansaCrewCard input[type="password"],
-#lufthansaCrewCard input[type="text"] {
+#rosterCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -204,10 +192,10 @@ body {
   font-size: 1rem;
 }
 
-/* Only #lufthansaCrewCard uses a checkbox so far (sandbox/production
-   toggle) - overrides the block label styling above for just this one
-   row, so the checkbox sits inline with its own text instead of on its
-   own line above an (nonexistent) input. */
+/* Debug's checkbox (alle Flüge des Zeitraums) - overrides the block
+   label styling above for just this one row, so the checkbox sits
+   inline with its own text instead of on its own line above an
+   (nonexistent) input. */
 .checkbox-label {
   display: flex !important;
   align-items: center;
@@ -266,21 +254,10 @@ body {
 
 .error-inline { color: var(--danger); }
 
-.setup-card #resetKeyBtn {
-  margin-top: 16px;
-}
-
 #rosterCard #saveRosterBtn {
   margin-top: 14px;
 }
 #rosterCard #resetRosterBtn {
-  margin-top: 16px;
-}
-
-#aeroDataBoxCard #saveAeroDataBoxBtn {
-  margin-top: 14px;
-}
-#aeroDataBoxCard #resetAeroDataBoxBtn {
   margin-top: 16px;
 }
 
@@ -454,10 +431,6 @@ body {
   font-size: 1.05rem;
   letter-spacing: 0.01em;
   margin-top: 3px;
-}
-.reg-prior-arrival {
-  margin-top: 3px;
-  font-size: 0.72rem;
 }
 
 .transit-info {

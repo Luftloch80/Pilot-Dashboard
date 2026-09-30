@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=55" />
+<link rel="stylesheet" href="assets/style.css?v=56" />
 </head>
 <body>
 
@@ -41,6 +41,27 @@
 
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
+
+  <!-- JCT-Dienstplan (Jeppesen "Acknowledged Roster", monatlich): einzige
+       Fallback-Quelle für Flugdaten, falls MyTime nicht erreichbar oder
+       nicht konfiguriert ist - siehe jctLegsToRawFlights() in app.js.
+       Sichtbar, solange keine Flugdaten (weder von MyTime noch vom JCT-
+       Fallback) geladen sind. -->
+  <section id="jctCard" class="card">
+    <h2>JCT-Dienstplan</h2>
+    <p class="muted small">
+      Springt ein, wenn MyTime nicht erreichbar ist - lädt Flugdaten aus
+      dem monatlichen JCT/Jeppesen-Dienstplan ("Acknowledged Roster").
+      Die Datei wird nur lokal im Browser gelesen, nicht hochgeladen.
+    </p>
+    <label for="jctInput" class="btn secondary file-btn">
+      <span id="jctLabel">PDF auswählen</span>
+      <input id="jctInput" type="file" accept="application/pdf" hidden />
+    </label>
+    <p id="jctStatus" class="muted small" hidden></p>
+    <button id="jctRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
+    <div id="jctResult" class="pdf-text" hidden></div>
+  </section>
 
   <!-- Flugkarten: eine pro Flug des Tages, horizontal durchwischbar statt
        über Pfeile/"Flug X von Y" - buildFlightCards() in app.js befüllt
@@ -190,6 +211,6 @@
      committed since this repo is public. A 404 here (file not present,
      e.g. on GitHub Pages) is harmless - app.js only uses it if defined. -->
 <script src="assets/local-config.js"></script>
-<script src="assets/app.js?v=161"></script>
+<script src="assets/app.js?v=162"></script>
 </body>
 </html>

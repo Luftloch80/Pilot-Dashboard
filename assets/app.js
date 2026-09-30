@@ -1,6 +1,7 @@
 "use strict";
 
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
+const JCT_LEGS_STORAGE_KEY = "oal_jct_legs";
 const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
 const DEBUG_ALL_MONTH_STORAGE_KEY = "oal_debug_all_month";
 const FR24_KEY_STORAGE_KEY = "oal_fr24_key";
@@ -108,6 +109,13 @@ const els = {
   ownNameInput: document.getElementById("ownNameInput"),
   saveOwnNameBtn: document.getElementById("saveOwnNameBtn"),
 
+  jctCard: document.getElementById("jctCard"),
+  jctInput: document.getElementById("jctInput"),
+  jctLabel: document.getElementById("jctLabel"),
+  jctStatus: document.getElementById("jctStatus"),
+  jctRawToggle: document.getElementById("jctRawToggle"),
+  jctResult: document.getElementById("jctResult"),
+
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
 };
@@ -116,6 +124,11 @@ const els = {
 const state = {
   flights: [], allFlights: [], allDuties: [], index: 0,
   pdfCrew: null, pdfLegs: [], pdfLines: [], cardNodes: [],
+  // Separate from pdfLegs (the Crew PDF's own routing table, used only
+  // for crew join/leave - see pdfCrewWindows()) - jctLegs comes from the
+  // monthly JCT/Jeppesen "Acknowledged Roster" PDF instead, the fallback
+  // flight-data source now (see jctLegsToRawFlights()).
+  jctLegs: [], jctFileName: null,
   // "flights" (the ordinary carousel, state.flights/state.index/state.cardNodes -
   // once today's own last flight has departed into a layover,
   // previewLayoverFlight() attaches els.layoverCard as one more page at
@@ -692,6 +705,31 @@ function savePdfCrew() {
       localStorage.removeItem(PDF_CREW_STORAGE_KEY);
     }
   } catch { /* private mode etc. */ }
+}
+
+// Persist the JCT roster's own parsed leg table (jctLegsToRawFlights()'s
+// fallback source) separately from the Crew PDF above - two independent
+// uploads, never overwriting each other.
+function saveJctLegs() {
+  try {
+    if (state.jctLegs.length) localStorage.setItem(JCT_LEGS_STORAGE_KEY, JSON.stringify({ legs: state.jctLegs, fileName: state.jctFileName || "JCT.pdf" }));
+    else localStorage.removeItem(JCT_LEGS_STORAGE_KEY);
+  } catch { /* private mode etc. */ }
+}
+
+function loadStoredJctLegs() {
+  try {
+    const raw = localStorage.getItem(JCT_LEGS_STORAGE_KEY);
+    if (!raw) return;
+    const stored = JSON.parse(raw);
+    if (!stored) return;
+    state.jctLegs = Array.isArray(stored.legs) ? stored.legs.map(reviveLeg) : [];
+    state.jctFileName = stored.fileName || "JCT.pdf";
+    if (state.jctLegs.length) {
+      els.jctStatus.hidden = false;
+      els.jctStatus.textContent = `${state.jctLegs.length} Flug(üge) aus vorherigem Upload (${state.jctFileName}).`;
+    }
+  } catch { /* ignore malformed storage */ }
 }
 
 function loadStoredPdfCrew() {
@@ -1361,6 +1399,15 @@ function renderDebugAllMonthCarousel() {
 }
 
 function renderFlight() {
+  // Nothing loaded yet (MyTime unreachable/not configured and no JCT
+  // roster uploaded either, or a JCT roster is uploaded but doesn't
+  // cover any upcoming flight) - ask for the JCT roster right here,
+  // same "ask where it's needed" pattern as the Crew card's own PDF
+  // prompt (see renderCrew()). Shown regardless of which branch below
+  // ends up running, so it's not tucked away behind the debug carousel
+  // or a rest-day view a pilot might land on first.
+  els.jctCard.hidden = !!state.allFlights.length;
+
   // Debug-only escape hatch (see getDebugAllMonth()) - bypasses everything below
   // (today-only filtering, the Ortstag/post-landing switch, the dedicated
   // Layover carousel) in favor of one long scrollable carousel over every
@@ -3207,32 +3254,119 @@ function rosterEventsToRawFlights(events) {
   return raw;
 }
 
+// ---------- JCT/Jeppesen "Acknowledged Roster" PDF - fallback flight-data source ----------
+//
+// A completely different PDF than the Umlaufcrewliste (state.pdfLegs,
+// crew-only) - a whole calendar month's own duty roster, one detailed
+// table row per flight leg with exact UTC times, confirmed against a
+// real "Acknowledged Roster" (Lufthansa/Jeppesen JCT export). Layout,
+// same as the Umlaufcrewliste: table rows reconstructed by
+// extractPdfLines()'s Y-coordinate clustering, so this reads the exact
+// same lines[] shape parseFlightLegs()/parseCrewFromLines() do - not
+// independently verified against that real row-clustering yet (only
+// against the rendered table), so a first real upload is worth checking
+// against #jctPrompt's own raw-text toggle if a leg doesn't show up.
+//
+// Header lines: "Month: October 2026" (the whole table's month/year, no
+// per-row date repeats it) and "... Rank: CP ..." (this pilot's own
+// operating position code, printed on every one of their own flight
+// rows - dynamic here rather than hardcoding "CP" as a small
+// correctness margin, not because a different rank was ever observed).
+//
+// One row per flight leg, e.g. "06 Tue 13186 05:45 CP 390 FRA LUX 05:05
+// 05:55 319 +02:00 01:02 01:02 00:50" (a day's first leg, date+trip+
+// report time prefixed) or "CP 391 LUX FRA 06:30 07:25 319 +02:00 ..."
+// (a later leg the same day, no date repeat - carries forward whichever
+// day number the last JCT_DAY_HEADER_RE match set). Ground
+// training/simulator rows ("CP EBTF3A FRA 05:00 09:00 ...") and days off
+// ("FREE"/"OFF"/no activity at all) never match JCT_FLIGHT_ROW_RE - its
+// own flight-number group requires digits only, which a training code
+// never is - so only real flight legs turn into a leg here. Known gap:
+// a flight whose LT departure/arrival dates straddle local midnight can
+// print split across two day-rows in this format (confirmed on one real
+// example, LH1480 FRA-EVN) - neither half alone matches the regex, so
+// that one leg is silently missed rather than guessed at.
+const JCT_MONTHS = { january: 0, february: 1, march: 2, april: 3, may: 4, june: 5, july: 6, august: 7, september: 8, october: 9, november: 10, december: 11 };
+const JCT_MONTH_HEADER_RE = /^Month:\s*([A-Za-z]+)\s+(\d{4})/i;
+const JCT_RANK_HEADER_RE = /\bRank:\s*([A-Z0-9]+)\b/;
+const JCT_DAY_HEADER_RE = /^(\d{1,2})\s+(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i;
+
+function jctDateTimeUtc(year, month, day, hhmm, anchor) {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m) return null;
+  let d = new Date(Date.UTC(year, month, day, Number(m[1]), Number(m[2])));
+  if (anchor && d < anchor) d = new Date(d.getTime() + 24 * 3600 * 1000);
+  return d;
+}
+
+function parseJctLines(lines) {
+  let year = null, month = null, rank = "CP";
+  for (const line of lines) {
+    if (month == null) {
+      const hm = JCT_MONTH_HEADER_RE.exec(line);
+      if (hm && JCT_MONTHS[hm[1].toLowerCase()] !== undefined) {
+        month = JCT_MONTHS[hm[1].toLowerCase()];
+        year = Number(hm[2]);
+      }
+    }
+    const rm = JCT_RANK_HEADER_RE.exec(line);
+    if (rm) rank = rm[1];
+  }
+  if (month == null || year == null) return [];
+
+  const flightRowRe = new RegExp(
+    `\\b${rank}\\s+(\\d{2,5})\\s+([A-Z]{3})\\s+([A-Z]{3})\\s+(\\d{2}:\\d{2})\\s+(\\d{2}:\\d{2})\\s+(\\S+)`
+  );
+  const legs = [];
+  let currentDay = null;
+  for (const line of lines) {
+    const dm = JCT_DAY_HEADER_RE.exec(line);
+    if (dm) currentDay = Number(dm[1]);
+    if (currentDay == null) continue;
+
+    const fm = flightRowRe.exec(line);
+    if (!fm) continue;
+    const [, flightNumber, depCode, arrCode, startStr, endStr, acType] = fm;
+    const depUtc = jctDateTimeUtc(year, month, currentDay, startStr, null);
+    const arrUtc = depUtc && jctDateTimeUtc(year, month, currentDay, endStr, depUtc);
+    if (!depUtc || !arrUtc) continue;
+    legs.push({
+      flightNumber: `LH${flightNumber}`,
+      depCode: depCode.toUpperCase(),
+      arrCode: arrCode.toUpperCase(),
+      depUtc, arrUtc,
+      aircraftType: acType || null,
+    });
+  }
+  return legs;
+}
+
 // Fallback duty-plan source for when MyTime itself isn't reachable (no
 // roster URL configured, or ensureRosterLoaded() couldn't fetch it - see
-// its own fallback call) - the uploaded Umlaufcrewliste PDF's own
-// routing table (state.pdfLegs, see parseFlightLegs()) already carries
-// everything a flight card needs (number, ICAO-ish 3-letter stations,
-// scheduled UTC times), just never fed through applyLoadedFlights()
-// before. Two things MyTime has that the PDF doesn't: no deadhead
-// marker (the PDF's routing table doesn't distinguish operating from
-// deadhead legs) and no vacation/Ortstag duty-only entries - an
-// acceptable gap for a fallback, not the primary source.
-function pdfLegsToRawFlights() {
+// its own fallback call) - the uploaded JCT roster's own leg table
+// (state.jctLegs, see parseJctLines() above) already carries everything
+// a flight card needs (number, 3-letter stations, scheduled UTC times),
+// just never fed through applyLoadedFlights() before. What MyTime has
+// that this doesn't: no deadhead marker (JCT's own Pos column doesn't
+// distinguish operating from deadhead in the confirmed example) and no
+// vacation/Ortstag duty-only entries - an acceptable gap for a
+// fallback, not the primary source.
+function jctLegsToRawFlights() {
   const raw = [];
-  for (const leg of state.pdfLegs) {
+  for (const leg of state.jctLegs) {
     if (!leg.flightNumber || !leg.depUtc || !leg.arrUtc) continue;
     raw.push({
       flight_number: leg.flightNumber,
-      // The PDF's own routing table prints IATA-ish 3-letter codes
-      // ("FRA", "TIA") - converted to ICAO here for the same reason
-      // rosterEventsToRawFlights() converts the roster's own IATA
-      // codes above (ICAO_CITY/TIMEZONE_BY_ICAO, Flightradar24's own
-      // orig_icao/dest_icao).
+      // JCT's own table prints 3-letter stations ("FRA", "TIA") - same
+      // IATA-to-ICAO conversion rosterEventsToRawFlights()/
+      // pdfLegsToRawFlights() apply for the same reason (ICAO_CITY/
+      // TIMEZONE_BY_ICAO, Flightradar24's own orig_icao/dest_icao).
       departure: iataToIcao(leg.depCode),
       arrival: iataToIcao(leg.arrCode),
       date: leg.depUtc.toISOString().slice(0, 10),
       scheduled_off_block: leg.depUtc.toISOString(),
       scheduled_on_block: leg.arrUtc.toISOString(),
+      aircraft_type: leg.aircraftType || undefined,
     });
   }
   return raw;
@@ -3398,16 +3532,16 @@ async function fetchRosterIcsText(url) {
 let rosterLoadPromise = null;
 
 // MyTime unreachable (no link configured at all, or the fetch itself
-// failed) - falls back to the uploaded PDF's own routing table
-// (pdfLegsToRawFlights()) rather than leaving the dashboard blank, but
+// failed) - falls back to the uploaded JCT roster's own leg table
+// (jctLegsToRawFlights()) rather than leaving the dashboard blank, but
 // only when there's nothing better already showing: a transient fetch
 // failure on a later ↻ tap shouldn't downgrade an already-successfully-
 // loaded roster (richer: deadhead-aware, vacation/Ortstag days) back to
-// the PDF's plainer data. A no-op when no PDF has been uploaded either -
-// applyLoadedFlights() would just get an empty list.
+// JCT's plainer data. A no-op when no JCT roster has been uploaded
+// either - applyLoadedFlights() would just get an empty list.
 function applyPdfFallbackFlightsIfNeeded() {
-  if (state.allFlights.length || !state.pdfLegs.length) return;
-  applyLoadedFlights(pdfLegsToRawFlights());
+  if (state.allFlights.length || !state.jctLegs.length) return;
+  applyLoadedFlights(jctLegsToRawFlights());
 }
 
 async function ensureRosterLoaded(force) {
@@ -3981,6 +4115,48 @@ async function handleCrewPdf(file) {
   }
 }
 
+// Same extractPdfLines() pipeline as handleCrewPdf(), just fed into
+// parseJctLines() instead - a genuinely different PDF (the monthly JCT
+// roster, not the Umlaufcrewliste), so its own upload never touches
+// state.pdfCrew/pdfLegs.
+async function handleJctPdf(file) {
+  els.jctLabel.textContent = file.name;
+  els.jctStatus.hidden = true;
+  els.jctRawToggle.hidden = true;
+  els.jctResult.hidden = false;
+  els.jctResult.textContent = "Lese PDF …";
+
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    const { lines } = await extractPdfLines(pdf);
+    const rawText = lines.join("\n");
+    const legs = parseJctLines(lines);
+
+    els.jctRawToggle.hidden = false;
+    els.jctRawToggle.textContent = "Rohtext anzeigen";
+    els.jctResult.textContent = rawText || "Kein Text im PDF gefunden.";
+
+    if (legs.length) {
+      state.jctLegs = legs;
+      state.jctFileName = file.name;
+      els.jctResult.hidden = true; // available via "Rohtext anzeigen"
+      els.jctStatus.hidden = false;
+      els.jctStatus.textContent = `${legs.length} Flug(üge) erkannt und übernommen.`;
+    } else {
+      els.jctResult.hidden = false;
+      els.jctStatus.hidden = false;
+      els.jctStatus.textContent = "Konnte keine Flüge in dieser PDF erkennen, siehe Rohtext unten.";
+    }
+
+    saveJctLegs();
+    applyPdfFallbackFlightsIfNeeded();
+  } catch (err) {
+    els.jctResult.hidden = false;
+    els.jctResult.textContent = "PDF konnte nicht gelesen werden: " + (err && err.message ? err.message : err);
+  }
+}
+
 // ---------- event wiring ----------
 
 // ↻ refreshes the MyTime roster and clears the Flightradar24 lookup
@@ -4051,6 +4227,16 @@ els.crewPdfRawToggle.addEventListener("click", () => {
   els.crewPdfRawToggle.textContent = els.crewPdfResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
 });
 
+els.jctInput.addEventListener("change", (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) handleJctPdf(file);
+});
+
+els.jctRawToggle.addEventListener("click", () => {
+  els.jctResult.hidden = !els.jctResult.hidden;
+  els.jctRawToggle.textContent = els.jctResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
+});
+
 els.saveOwnNameBtn.addEventListener("click", () => {
   setOwnName(els.ownNameInput.value.trim());
   renderBrandName();
@@ -4114,6 +4300,12 @@ seedLocalConfig();
 renderBrandName();
 els.ownNameInput.value = getOwnName();
 loadStoredPdfCrew();
+loadStoredJctLegs();
+// A previously uploaded JCT roster is already local data (no network
+// call, unlike MyTime) - shown right away rather than waiting for the
+// pilot's first ↻ tap, same reasoning ensureRosterLoaded()'s own
+// fallback call uses.
+applyPdfFallbackFlightsIfNeeded();
 renderLayover();
 loadInitial();
 

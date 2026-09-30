@@ -710,11 +710,11 @@ body {
   cursor: pointer;
 }
 
-#crewPdfStatus {
+#crewPdfStatus, #jctStatus {
   margin-top: 12px;
 }
 
-.crew-pdf-prompt #crewPdfRawToggle {
+.crew-pdf-prompt #crewPdfRawToggle, #jctCard #jctRawToggle {
   margin-top: 10px;
 }
 

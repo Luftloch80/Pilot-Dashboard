@@ -2107,22 +2107,60 @@ function pdfLegIndex(flightNumber) {
   return state.pdfLegs.findIndex((leg) => leg.flightNumber === flightNumber);
 }
 
-// True if this crew member's block (blockFirstFlight..blockLastFlight,
-// see parseCrewFromLines()) covers the given flight - the PDF only ever
-// prints a block's own start/end boundary explicitly (the Ex/To
-// references buildPdfRefMap() reads), never every flight in between, so
-// "is this person actually on flight X's crew" has to be inferred from
-// where X falls between those two boundaries in the PDF's own leg-table
-// order. Used by renderLayoverCrew() instead of comparing crew across
-// adjacent flights (which needed OpenAirLog's live per-flight crew data -
-// always empty now that crew is PDF-only, see the join/leave arrow fix
-// this mirrors).
-function isPdfCrewOnFlight(member, flightNumber) {
+// A PDF crew table only ever lists a CHANGE, never the full roster for
+// its own block - confirmed on a real Umlaufcrewliste: a block with no
+// crew change at all doesn't even get its own crew table ("OD-Crew wird
+// nicht geändert!" stands in for one), and a later block's table only
+// lists the people who actually join or leave there, not everyone still
+// on board unchanged. So a crew member with only one PDF row continues
+// for the REST of the rotation from that row's block onward, not just
+// through that one block - and a second row for the same person (role +
+// name) is what actually marks them leaving, not the first row's own
+// blockLastFlight. The sole exception is the rotation's very first
+// block: its rows are the starting roster, not a join relative to some
+// earlier state, so nobody there gets a join arrow on its first flight.
+//
+// Returns a Map of crewKey -> ordered list of {startIdx, endIdx, joinMember,
+// leaveMember, joins} windows (endIdx null while still open/ongoing).
+function pdfCrewWindows() {
+  const windows = new Map();
+  for (const m of state.pdfCrew.crew) {
+    const startIdx = pdfLegIndex(m.blockFirstFlight);
+    const endIdx = pdfLegIndex(m.blockLastFlight);
+    if (startIdx === -1 || endIdx === -1) continue;
+    const key = crewKey(m.role, m.name);
+    let list = windows.get(key);
+    if (!list) { list = []; windows.set(key, list); }
+    const open = list.length && list[list.length - 1].endIdx === null ? list[list.length - 1] : null;
+    if (open) {
+      open.endIdx = endIdx;
+      open.leaveMember = m;
+    } else {
+      list.push({ startIdx, endIdx: null, joinMember: m, leaveMember: null, joins: startIdx !== 0 });
+    }
+  }
+  return windows;
+}
+
+// Who's actually on the crew for a given flight (deduped - a member with
+// two PDF rows, one for joining and one for leaving, only appears once),
+// plus which of those are joining/leaving right on this flight - derived
+// from pdfCrewWindows() rather than any single row's own boundaries (see
+// its comment for why that's not the same thing).
+function computePdfCrewState(flightNumber) {
   const idx = pdfLegIndex(flightNumber);
-  const startIdx = pdfLegIndex(member.blockFirstFlight);
-  const endIdx = pdfLegIndex(member.blockLastFlight);
-  if (idx === -1 || startIdx === -1 || endIdx === -1) return false;
-  return idx >= startIdx && idx <= endIdx;
+  const members = [];
+  const joining = new Set();
+  const leaving = new Set();
+  if (idx === -1) return { members, joining, leaving };
+  for (const [key, list] of pdfCrewWindows()) {
+    const w = list.find((win) => idx >= win.startIdx && (win.endIdx === null || idx <= win.endIdx));
+    if (!w) continue;
+    members.push(w.joinMember);
+    if (idx === w.startIdx && w.joins) joining.add(key);
+    if (w.endIdx !== null && idx === w.endIdx) leaving.add(key);
+  }
+  return { members, joining, leaving };
 }
 
 // Crew only ever comes from the uploaded PDF now (see state.pdfCrew) -
@@ -2156,23 +2194,21 @@ function renderCrew(f) {
     ? `latest Onblock: ${fmtTime(maxDuty.latestOnBlockUtc).replace("Z", " UTC")} (${maxDuty.source})`
     : null;
 
-  const { crew, rotation, fileName } = state.pdfCrew;
+  const { rotation, fileName } = state.pdfCrew;
   els.crewSource.textContent = rotation ? `PDF · Umlauf ${rotation.rotation}` : `PDF · ${fileName}`;
-  // Who's joining/leaving is the PDF's own block boundaries (see
-  // parseCrewFromLines()) - a crew member whose block starts here is
-  // joining, one whose block ends here is leaving, regardless of whether
-  // the PDF also happens to print an Ex/To reference for them. A block
-  // can end with no To column at all (no onward flight documented for
-  // that colleague) - that still means they're leaving, just without a
-  // caption to show beyond the arrow itself. This used to be keyed off
-  // the Ex/To text's own presence (via buildPdfRefMap()'s map keys),
-  // which silently dropped the arrow entirely whenever that text was
-  // missing instead of showing an uncaptioned one.
-  const joining = new Set(crew.filter((m) => m.blockFirstFlight === f.flightNumber).map((m) => crewKey(m.role, m.name)));
-  const leaving = new Set(crew.filter((m) => m.blockLastFlight === f.flightNumber).map((m) => crewKey(m.role, m.name)));
+  // Who's actually on this flight's crew, and who's joining/leaving right
+  // here, comes from pdfCrewWindows()' running roster (see its comment) -
+  // not from each row's own block boundaries, since a later block's crew
+  // table only ever lists who changes, never the people already on board
+  // who stay unchanged. Falls back to the raw flat list, unfiltered, when
+  // the leg table itself didn't parse (pdfCoversFlight's permissive
+  // branch above) - there's no flight index to place anyone against then.
+  const { members, joining, leaving } = state.pdfLegs.length
+    ? computePdfCrewState(f.flightNumber)
+    : { members: state.pdfCrew.crew, joining: new Set(), leaving: new Set() };
   const pdfExRefs = buildPdfRefMap(f, "exRef");
   const pdfToRefs = buildPdfRefMap(f, "toRef");
-  renderCrewMembers(els.crewList, crew, {
+  renderCrewMembers(els.crewList, members, {
     leaving, joining,
     pdfExRefs, pdfToRefs,
     ownName, legalOnBlockLabel,
@@ -4017,30 +4053,26 @@ function isOwnName(memberName, ownName) {
 // the PDF) and still on the next flight too (a room number is only
 // useful for coordinating with someone who's still around tomorrow, not
 // a colleague leaving the crew at this stop) - determined from the PDF's
-// own block boundaries (isPdfCrewOnFlight()), the same source the
+// own running roster (computePdfCrewState()), the same source the
 // join/leave arrows use now, rather than the flight's own live-tracked
 // crew (OpenAirLog only, always empty since crew went PDF-only).
 function renderLayoverCrew(arrCode, hotel, flight) {
-  const allCrew = state.pdfCrew && state.pdfCrew.crew.length ? state.pdfCrew.crew : [];
+  const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length);
   const ownName = getOwnName();
-  let crew = allCrew.filter((m) => !isOwnName(m.name, ownName));
-
   const next = flight ? adjacentFlight(flight, 1) : null;
-  crew = flight && next
-    ? crew.filter((m) => isPdfCrewOnFlight(m, flight.flightNumber) && isPdfCrewOnFlight(m, next.flightNumber))
-    : [];
 
-  // The PDF crew list has one row per block a person appears in (see
-  // parseCrewFromLines()) - the same person can show up more than once
-  // there across several blocks, which would otherwise list them twice
-  // here for the same layover.
-  const seen = new Set();
-  crew = crew.filter((m) => {
-    const key = crewKey(m.role, m.name);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  // "On the crew for both" via computePdfCrewState()'s running roster
+  // (see its comment) - not each row's own block boundaries, since
+  // someone established earlier (the base crew, or an earlier join) and
+  // never mentioned again is still on board, not just through their own
+  // row's block.
+  let crew = [];
+  if (hasPdfCrew && flight && next) {
+    const hereKeys = new Set(computePdfCrewState(flight.flightNumber).members.map((m) => crewKey(m.role, m.name)));
+    crew = computePdfCrewState(next.flightNumber).members.filter(
+      (m) => hereKeys.has(crewKey(m.role, m.name)) && !isOwnName(m.name, ownName)
+    );
+  }
 
   els.layoverCrew.hidden = !crew.length;
   els.layoverCrewList.innerHTML = "";

@@ -940,33 +940,6 @@ function renderFlightDots() {
   }
 }
 
-// Shows the current time under the scheduled one
-// when they meaningfully differ - green if it's now expected more than 3
-// minutes early, red if more than 3 minutes late. Within that 3-minute
-// span the schedule is treated as still accurate enough, so nothing is
-// shown at all (not even in a neutral color) rather than noise for every
-// small/normal fluctuation.
-function renderTimeDeviation(el, scheduledDate, currentDate) {
-  el.hidden = true;
-  el.textContent = "";
-  // classList.remove rather than resetting className outright - this
-  // element also carries a dep-actual-time/arr-actual-time selector class
-  // (see getCardEls()) that a full overwrite would silently strip on the
-  // second render, leaving that card's lookup unable to find it again.
-  el.classList.remove("early", "late");
-  if (!scheduledDate || !currentDate) return;
-  const diffMin = Math.round((currentDate.getTime() - scheduledDate.getTime()) / 60000);
-  if (diffMin <= -3) {
-    el.hidden = false;
-    el.textContent = fmtTime(currentDate);
-    el.classList.add("early");
-  } else if (diffMin >= 3) {
-    el.hidden = false;
-    el.textContent = fmtTime(currentDate);
-    el.classList.add("late");
-  }
-}
-
 // T-minus/T-plus countdown against the scheduled departure: green "-N min"
 // while still ahead of schedule, red "+N min" once that time has passed.
 function renderTimerPill(f, statusEl) {
@@ -1083,10 +1056,8 @@ function getCardEls(node) {
     flightStatus: node.querySelector(".status-pill"),
     depCode: node.querySelector(".dep-code"),
     depTime: node.querySelector(".dep-time"),
-    depActualTime: node.querySelector(".dep-actual-time"),
     arrCode: node.querySelector(".arr-code"),
     arrTime: node.querySelector(".arr-time"),
-    arrActualTime: node.querySelector(".arr-actual-time"),
     aircraft: node.querySelector(".aircraft"),
     registration: node.querySelector(".registration"),
     regPriorArrival: node.querySelector(".reg-prior-arrival"),
@@ -1409,12 +1380,13 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
     if (f.aircraft === "–" && ownLeg.aircraftType) f.aircraft = ownLeg.aircraftType;
   }
 
+  // Departure/arrival times are always the roster's own schedule, never
+  // touched by Flightradar24's live actual times - MyTime is the single
+  // source of truth for these.
   cardEls.depCode.textContent = threeLetterCode(f.depCode);
   cardEls.arrCode.textContent = threeLetterCode(f.arrCode);
   cardEls.depTime.textContent = fmtTime(f.depSchedDate);
   cardEls.arrTime.textContent = fmtTime(f.arrSchedDate);
-  renderTimeDeviation(cardEls.depActualTime, f.depSchedDate, ownLeg && ownLeg.depDate);
-  renderTimeDeviation(cardEls.arrActualTime, f.arrSchedDate, ownLeg && ownLeg.arrDate);
 
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;

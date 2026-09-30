@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=54" />
+<link rel="stylesheet" href="assets/style.css?v=55" />
 </head>
 <body>
 
@@ -34,124 +34,10 @@
         <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
       </svg>
     </button>
-    <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="7" />
-        <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(45 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(90 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(135 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(180 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(225 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(270 12 12)" />
-        <rect x="10.5" y="2.2" width="3" height="2.6" rx="0.5" transform="rotate(315 12 12)" />
-      </svg>
-    </button>
   </div>
 </header>
 
 <main id="app" class="app">
-
-  <!-- PDF-Crew-Upload (optional, nur in den Settings): überschreibt bei Erfolg die Crew -->
-  <section id="crewPdfCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>Crewliste als PDF</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Einzige Quelle für die Crew im Dashboard - lädt eine echte
-      Umlaufcrewliste. Die Datei wird nur lokal im Browser gelesen, nicht
-      hochgeladen.
-    </p>
-    <label for="crewPdfInput" class="btn secondary file-btn">
-      <span id="crewPdfLabel">PDF auswählen</span>
-      <input id="crewPdfInput" type="file" accept="application/pdf" hidden />
-    </label>
-
-    <p id="crewPdfStatus" class="muted small" hidden></p>
-    <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
-    <div id="crewPdfResult" class="pdf-text" hidden></div>
-
-    <label for="ownNameInput">Eigener Name (für "latest Onblock" und Zimmerliste beim Layover)</label>
-    <input id="ownNameInput" type="text" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Nachname, Vorname" />
-    <button id="saveOwnNameBtn" class="btn secondary">Speichern</button>
-  </section>
-
-  <!-- MyTime-Roster-Link (optional, nur in den Settings): liefert die
-       Pickup-Zeit im Layover. -->
-  <section id="rosterCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>MyTime-Roster</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Zeigt im Layover die Pickup-Zeit an. Der Link enthält deinen
-      persönlichen MyTime-Schlüssel und wird lokal auf diesem Gerät
-      gespeichert. <code>api.lufthansa.com</code> blockiert direkte
-      Zugriffe aus dem Browser (CORS); der Abruf läuft deshalb über
-      einen öffentlichen CORS-Proxy (<code>corsproxy.io</code> mit
-      Schlüssel unten, sonst <code>allorigins.win</code>) - der Link
-      wird also auch an diesen Drittanbieter übertragen, nicht nur an
-      Lufthansa.
-    </p>
-    <label for="rosterUrlInput">Roster-Link (aus MyTime "Teilen")</label>
-    <input id="rosterUrlInput" type="password" inputmode="url" autocomplete="off"
-           spellcheck="false" placeholder="https://api.lufthansa.com/mytime/..." />
-    <button id="saveRosterBtn" class="btn secondary">Speichern</button>
-    <p id="rosterStatus" class="muted small" hidden></p>
-    <button id="testRosterBtn" class="btn ghost small" hidden>Verbindung testen</button>
-    <p id="rosterTestResult" class="muted small" hidden></p>
-    <div id="rosterTestRaw" class="pdf-text" hidden></div>
-    <button id="resetRosterBtn" class="btn ghost small" hidden>Roster-Link entfernen</button>
-
-    <label for="corsProxyKeyInput">corsproxy.io API-Schlüssel (optional, für einen zuverlässigeren Abruf)</label>
-    <input id="corsProxyKeyInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein corsproxy.io API-Schlüssel" />
-    <button id="saveCorsProxyKeyBtn" class="btn secondary">Speichern</button>
-    <p id="corsProxyKeyStatus" class="muted small" hidden></p>
-    <button id="resetCorsProxyKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
-  </section>
-
-  <!-- Flightradar24 (optional, nur in den Settings): primäre Live-Quelle
-       für Kennzeichen, Callsign und tatsächliche Zeiten - kein Ersatz für
-       den eigenen Flugplan, siehe fr24Card in app.js. -->
-  <section id="fr24Card" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>Flightradar24</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <p class="muted small">
-      Live-Quelle für Kennzeichen, Callsign und tatsächliche Abflug-/
-      Ankunftszeiten (auf Basis echter ADS-B-Daten, keine Planzeiten). Der
-      Schlüssel wird nur lokal auf diesem Gerät gespeichert und bei jeder
-      Anfrage direkt an <code>fr24api.flightradar24.com</code> gesendet.
-      Er verlässt dieses Gerät sonst nicht.
-    </p>
-    <label for="fr24KeyInput">API-Schlüssel</label>
-    <input id="fr24KeyInput" type="password" inputmode="text" autocomplete="off"
-           spellcheck="false" placeholder="Dein Flightradar24 API-Schlüssel" />
-    <button id="saveFr24Btn" class="btn secondary">Speichern</button>
-    <p id="fr24Status" class="muted small" hidden></p>
-    <button id="testFr24Btn" class="btn ghost small" hidden>Verbindung testen</button>
-    <p id="fr24TestResult" class="muted small" hidden></p>
-    <div id="fr24TestRaw" class="pdf-text" hidden></div>
-    <button id="resetFr24Btn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
-  </section>
-
-  <!-- Debug (optional, nur in den Settings): zum Testen gegen mehr als
-       nur den heutigen Flug. -->
-  <section id="debugCard" class="card crew-pdf-card" hidden>
-    <div class="crew-pdf-head">
-      <h2>Debug</h2>
-      <span class="muted small">optional</span>
-    </div>
-    <label class="checkbox-label">
-      <input id="debugAllMonthInput" type="checkbox" />
-      Alle Flüge des geladenen Zeitraums anzeigen (statt nur heute)
-    </label>
-  </section>
 
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
@@ -218,14 +104,38 @@
     <div id="dutyStatusWeather" class="route-weather" hidden></div>
   </section>
 
-  <!-- Crew: aus OpenAirLog, wahlweise überschrieben durch eine hochgeladene PDF -->
+  <!-- Crew: einzige Quelle ist eine hochgeladene Umlaufcrewliste als PDF -
+       wird direkt hier angefragt, solange keine (zu diesem Flug passende)
+       PDF vorliegt, statt in eigenen Settings. -->
   <section id="crewCard" class="card crew-card" hidden>
     <div class="crew-card-head">
       <h2>Crew</h2>
       <span id="crewSource" class="muted small"></span>
     </div>
+
+    <div id="crewPdfPrompt" class="crew-pdf-prompt" hidden>
+      <p class="muted small">
+        Für die Crew-Anzeige wird eine Umlaufcrewliste als PDF benötigt.
+        Die Datei wird nur lokal im Browser gelesen, nicht hochgeladen.
+      </p>
+      <label for="crewPdfInput" class="btn secondary file-btn">
+        <span id="crewPdfLabel">PDF auswählen</span>
+        <input id="crewPdfInput" type="file" accept="application/pdf" hidden />
+      </label>
+      <p id="crewPdfStatus" class="muted small" hidden></p>
+      <button id="crewPdfRawToggle" class="btn ghost small" hidden>Rohtext anzeigen</button>
+      <div id="crewPdfResult" class="pdf-text" hidden></div>
+    </div>
+
     <ul id="crewList" class="crew-list"></ul>
     <p id="crewEmpty" class="muted" hidden></p>
+
+    <div class="crew-own-name">
+      <label for="ownNameInput">Eigener Name (für "latest Onblock" und Zimmerliste beim Layover)</label>
+      <input id="ownNameInput" type="text" inputmode="text" autocomplete="off"
+             spellcheck="false" placeholder="Nachname, Vorname" />
+      <button id="saveOwnNameBtn" class="btn secondary">Speichern</button>
+    </div>
   </section>
 
   <!-- Layover: aus OpenAirLog erkannt -->
@@ -280,6 +190,6 @@
      committed since this repo is public. A 404 here (file not present,
      e.g. on GitHub Pages) is harmless - app.js only uses it if defined. -->
 <script src="assets/local-config.js"></script>
-<script src="assets/app.js?v=160"></script>
+<script src="assets/app.js?v=161"></script>
 </body>
 </html>

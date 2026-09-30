@@ -55,7 +55,6 @@ async function fetchWithTimeout(url, options) {
 }
 
 const els = {
-  settingsBtn: document.getElementById("settingsBtn"),
   brandName: document.getElementById("brandName"),
   brandAirlineBadge: document.getElementById("brandAirlineBadge"),
   brandAirlineBadgeCode: document.getElementById("brandAirlineBadgeCode"),
@@ -100,7 +99,7 @@ const els = {
   crewList: document.getElementById("crewList"),
   crewEmpty: document.getElementById("crewEmpty"),
 
-  crewPdfCard: document.getElementById("crewPdfCard"),
+  crewPdfPrompt: document.getElementById("crewPdfPrompt"),
   crewPdfInput: document.getElementById("crewPdfInput"),
   crewPdfLabel: document.getElementById("crewPdfLabel"),
   crewPdfStatus: document.getElementById("crewPdfStatus"),
@@ -108,31 +107,6 @@ const els = {
   crewPdfResult: document.getElementById("crewPdfResult"),
   ownNameInput: document.getElementById("ownNameInput"),
   saveOwnNameBtn: document.getElementById("saveOwnNameBtn"),
-
-  rosterCard: document.getElementById("rosterCard"),
-  rosterUrlInput: document.getElementById("rosterUrlInput"),
-  saveRosterBtn: document.getElementById("saveRosterBtn"),
-  rosterStatus: document.getElementById("rosterStatus"),
-  testRosterBtn: document.getElementById("testRosterBtn"),
-  rosterTestResult: document.getElementById("rosterTestResult"),
-  rosterTestRaw: document.getElementById("rosterTestRaw"),
-  resetRosterBtn: document.getElementById("resetRosterBtn"),
-  corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
-  saveCorsProxyKeyBtn: document.getElementById("saveCorsProxyKeyBtn"),
-  corsProxyKeyStatus: document.getElementById("corsProxyKeyStatus"),
-  resetCorsProxyKeyBtn: document.getElementById("resetCorsProxyKeyBtn"),
-
-  fr24Card: document.getElementById("fr24Card"),
-  fr24KeyInput: document.getElementById("fr24KeyInput"),
-  saveFr24Btn: document.getElementById("saveFr24Btn"),
-  fr24Status: document.getElementById("fr24Status"),
-  testFr24Btn: document.getElementById("testFr24Btn"),
-  fr24TestResult: document.getElementById("fr24TestResult"),
-  fr24TestRaw: document.getElementById("fr24TestRaw"),
-  resetFr24Btn: document.getElementById("resetFr24Btn"),
-
-  debugCard: document.getElementById("debugCard"),
-  debugAllMonthInput: document.getElementById("debugAllMonthInput"),
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
@@ -427,9 +401,6 @@ function getRosterUrl() {
 function setRosterUrl(url) {
   try { localStorage.setItem(ROSTER_URL_STORAGE_KEY, url); } catch { /* private mode etc. */ }
 }
-function clearRosterUrl() {
-  try { localStorage.removeItem(ROSTER_URL_STORAGE_KEY); } catch { /* ignore */ }
-}
 
 // ---------- corsproxy.io API key storage (see rosterCorsProxyBuilders()) ----------
 
@@ -440,48 +411,8 @@ function getCorsProxyKey() {
 function setCorsProxyKey(key) {
   try { localStorage.setItem(CORSPROXY_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
 }
-function clearCorsProxyKey() {
-  try { localStorage.removeItem(CORSPROXY_KEY_STORAGE_KEY); } catch { /* ignore */ }
-}
 
-function renderCorsProxyKeyStatus() {
-  const key = getCorsProxyKey();
-  els.corsProxyKeyStatus.hidden = !key;
-  els.corsProxyKeyStatus.textContent = key ? "corsproxy.io-Schlüssel hinterlegt." : "";
-  els.resetCorsProxyKeyBtn.hidden = !key;
-}
-
-// Surfaces ensureRosterLoaded()'s actual outcome (see rosterEventsCache's
-// lastError/fetchedAt) instead of a static "link saved" message - a
-// silently failing fetch (network, CORS, a bad link) previously looked
-// identical to "no matching pickup event", with no way to tell them
-// apart from the Layover card alone.
-function renderRosterStatus() {
-  const url = getRosterUrl();
-  els.rosterStatus.hidden = !url;
-  els.testRosterBtn.hidden = !url;
-  els.rosterTestResult.hidden = true;
-  els.rosterTestRaw.hidden = true;
-  els.resetRosterBtn.hidden = !url;
-  if (!url) {
-    els.rosterStatus.textContent = "";
-    return;
-  }
-  if (rosterEventsCache.lastError) {
-    els.rosterStatus.textContent = `Fehler beim Abrufen: ${rosterEventsCache.lastError}`;
-    els.rosterStatus.classList.add("error-inline");
-    return;
-  }
-  els.rosterStatus.classList.remove("error-inline");
-  if (!rosterEventsCache.fetchedAt) {
-    els.rosterStatus.textContent = "Roster-Link hinterlegt, noch nicht abgerufen.";
-    return;
-  }
-  const via = rosterEventsCache.viaProxy ? ` (über ${rosterEventsCache.viaProxy})` : "";
-  els.rosterStatus.textContent = `Zuletzt erfolgreich abgerufen: ${fmtLocalTime(new Date(rosterEventsCache.fetchedAt))}${via}`;
-}
-
-// Debug-only toggle (see #debugCard) - not tied to any one API, just
+// Debug-only toggle - not tied to any one API, just
 // swaps what renderFlight() shows as the ordinary flight-card carousel
 // content, see renderDebugAllMonthCarousel().
 function getDebugAllMonth() {
@@ -507,27 +438,14 @@ function setDebugAllMonth(on) {
 // planned times keep coming from wherever the flight itself was loaded
 // from, same as before. The exact request datetime format (with or
 // without trailing "Z"/milliseconds) isn't confirmed from an actual
-// response - "Verbindung testen" below shows the raw JSON so that's
-// checkable against a real key rather than guessed blind.
+// response, guessed from the docs' one confirmed example (an airline/
+// airport lookup, not flight-summary itself).
 
 function getFr24Key() {
   try { return localStorage.getItem(FR24_KEY_STORAGE_KEY) || ""; } catch { return ""; }
 }
 function setFr24Key(key) {
   try { localStorage.setItem(FR24_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
-}
-function clearFr24Key() {
-  try { localStorage.removeItem(FR24_KEY_STORAGE_KEY); } catch { /* ignore */ }
-}
-
-function renderFr24Status() {
-  const key = getFr24Key();
-  els.fr24Status.hidden = !key;
-  els.fr24Status.textContent = key ? "API-Schlüssel hinterlegt." : "";
-  els.testFr24Btn.hidden = !key;
-  els.fr24TestResult.hidden = true;
-  els.fr24TestRaw.hidden = true;
-  els.resetFr24Btn.hidden = !key;
 }
 
 // A {DateTime string} as ISO 8601 - the exact presence/absence of a "Z"
@@ -758,69 +676,6 @@ function getOwnFlightLiveLeg(f, opts) {
   return cached ? cached.leg : null;
 }
 
-// Same in-app probe pattern the other API cards used - shows the raw
-// response right on the page so the request/response shape (genuinely
-// unconfirmed in places, see the module comment above) can be checked
-// against a real key without needing separate console/Web Inspector
-// access.
-async function testFr24Connection() {
-  const key = getFr24Key();
-  if (!key) return;
-  const testFlight = state.flights[state.index] || state.allFlights[0];
-  if (!testFlight || !testFlight.flightNumber || !(testFlight.raw && testFlight.raw.date)) {
-    els.fr24TestResult.hidden = false;
-    els.fr24TestResult.textContent = "Kein Testflug verfügbar - erst Flugdaten laden.";
-    return;
-  }
-
-  els.testFr24Btn.disabled = true;
-  els.fr24TestResult.hidden = false;
-  els.fr24TestResult.textContent = `Teste mit ${testFlight.flightNumber} …`;
-  els.fr24TestRaw.hidden = true;
-  els.fr24TestRaw.textContent = "";
-
-  function showRaw(value) {
-    els.fr24TestRaw.hidden = false;
-    els.fr24TestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  }
-
-  const dateKey = testFlight.raw.date;
-  const params = new URLSearchParams({
-    flights: testFlight.flightNumber,
-    flight_datetime_from: `${dateKey}T00:00:00`,
-    flight_datetime_to: `${dateKey}T23:59:59`,
-  });
-  const url = `${FR24_API_BASE}/flight-summary/full?${params}`;
-  try {
-    const res = await fetchWithTimeout(url, {
-      headers: { Accept: "application/json", "Accept-Version": "v1", Authorization: `Bearer ${key}` },
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      els.fr24TestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von fr24api.flightradar24.com. Key/Abo prüfen.`;
-      showRaw(text);
-    } else {
-      let json;
-      try { json = JSON.parse(text); } catch { json = null; }
-      const entries = Array.isArray(json) ? json : [];
-      els.fr24TestResult.textContent = entries.length
-        ? `Erfolgreich - ${entries.length} Eintrag/Einträge für ${testFlight.flightNumber} gefunden.`
-        : "Antwort kam an, aber leer oder kein gültiges JSON-Array.";
-      showRaw(json !== null ? json : text);
-    }
-  } catch (err) {
-    // AbortError specifically means OUR OWN fetchWithTimeout() gave up
-    // after FETCH_TIMEOUT_MS with no response at all - a CORS rejection
-    // fails near-instantly with a different error shape, so this is a
-    // genuinely slow/unreachable API call, not a browser-side block.
-    els.fr24TestResult.textContent = err && err.name === "AbortError"
-      ? `Fehlgeschlagen: Keine Antwort von fr24api.flightradar24.com innerhalb von ${FETCH_TIMEOUT_MS / 1000}s.`
-      : "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
-    showRaw(String(err));
-  }
-  els.testFr24Btn.disabled = false;
-}
-
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
 // not the PDF file itself - so it survives a page refresh instead of
@@ -861,35 +716,6 @@ function loadStoredPdfCrew() {
 }
 
 // ---------- rendering ----------
-
-// Settings is a focused screen containing only the API key and the PDF
-// upload: opening it hides the rest of the dashboard (flight, layover,
-// crew) and shows the PDF upload card, which otherwise stays hidden.
-// Closing it re-runs the normal render functions so flight/crew/layover
-// reappear only if there's actually something to show.
-function setSettingsOpen(open) {
-  els.crewPdfCard.hidden = !open;
-  els.rosterCard.hidden = !open;
-  els.fr24Card.hidden = !open;
-  els.debugCard.hidden = !open;
-  if (open) {
-    renderRosterStatus();
-    renderCorsProxyKeyStatus();
-    renderFr24Status();
-    els.ownNameInput.value = getOwnName();
-    els.debugAllMonthInput.checked = getDebugAllMonth();
-    els.flightCardTrack.hidden = true;
-    els.flightCardDots.hidden = true;
-    els.layoverCard.hidden = true;
-    els.crewCard.hidden = true;
-    els.dutyStatusCard.hidden = true;
-  } else {
-    // renderFlight() already decides flight card vs. duty status card
-    // internally (including the post-landing "Ortstag" switch).
-    renderFlight();
-    renderLayover();
-  }
-}
 
 function showBanner(message, kind) {
   els.statusBanner.hidden = !message;
@@ -1459,7 +1285,9 @@ function renderActiveFlightExtras() {
   ensureCrewLoaded(f);
 }
 
-// Debug-only (see #debugCard/getDebugAllMonth()) - every real flight in
+// Debug-only (see getDebugAllMonth(), toggled via
+// localStorage.setItem("oal_debug_all_month", "1") - no UI for this
+// anymore, Settings removed) - every real flight in
 // state.allFlights (however wide a window the current data source
 // loads), not just today's own state.flights, as one long scrollable
 // card carousel. Deliberately ignores the Layover/
@@ -1533,7 +1361,7 @@ function renderDebugAllMonthCarousel() {
 }
 
 function renderFlight() {
-  // Debug-only escape hatch (see #debugCard) - bypasses everything below
+  // Debug-only escape hatch (see getDebugAllMonth()) - bypasses everything below
   // (today-only filtering, the Ortstag/post-landing switch, the dedicated
   // Layover carousel) in favor of one long scrollable carousel over every
   // real flight in the whole loaded window, so card fields can be checked
@@ -2171,10 +1999,17 @@ function renderCrew(f) {
 
   if (!hasPdfCrew) {
     els.crewSource.textContent = "";
-    els.crewEmpty.hidden = false;
-    els.crewEmpty.textContent = "Keine Crewdaten - bitte Umlaufcrewliste als PDF hochladen.";
+    // Asks for the PDF right here (see #crewPdfPrompt) rather than in a
+    // separate Settings screen - there's no other source for crew data
+    // left, so this is the one place it's ever actually needed.
+    els.crewPdfPrompt.hidden = false;
+    if (state.pdfCrew && !pdfCoversFlight) {
+      els.crewEmpty.hidden = false;
+      els.crewEmpty.textContent = "Die hochgeladene PDF deckt diesen Flug nicht ab - bitte aktuelle Umlaufcrewliste hochladen.";
+    }
     return;
   }
+  els.crewPdfPrompt.hidden = true;
 
   const ownName = getOwnName();
   const maxDuty = computeMaxLegalOnBlock(f);
@@ -3372,6 +3207,37 @@ function rosterEventsToRawFlights(events) {
   return raw;
 }
 
+// Fallback duty-plan source for when MyTime itself isn't reachable (no
+// roster URL configured, or ensureRosterLoaded() couldn't fetch it - see
+// its own fallback call) - the uploaded Umlaufcrewliste PDF's own
+// routing table (state.pdfLegs, see parseFlightLegs()) already carries
+// everything a flight card needs (number, ICAO-ish 3-letter stations,
+// scheduled UTC times), just never fed through applyLoadedFlights()
+// before. Two things MyTime has that the PDF doesn't: no deadhead
+// marker (the PDF's routing table doesn't distinguish operating from
+// deadhead legs) and no vacation/Ortstag duty-only entries - an
+// acceptable gap for a fallback, not the primary source.
+function pdfLegsToRawFlights() {
+  const raw = [];
+  for (const leg of state.pdfLegs) {
+    if (!leg.flightNumber || !leg.depUtc || !leg.arrUtc) continue;
+    raw.push({
+      flight_number: leg.flightNumber,
+      // The PDF's own routing table prints IATA-ish 3-letter codes
+      // ("FRA", "TIA") - converted to ICAO here for the same reason
+      // rosterEventsToRawFlights() converts the roster's own IATA
+      // codes above (ICAO_CITY/TIMEZONE_BY_ICAO, Flightradar24's own
+      // orig_icao/dest_icao).
+      departure: iataToIcao(leg.depCode),
+      arrival: iataToIcao(leg.arrCode),
+      date: leg.depUtc.toISOString().slice(0, 10),
+      scheduled_off_block: leg.depUtc.toISOString(),
+      scheduled_on_block: leg.arrUtc.toISOString(),
+    });
+  }
+  return raw;
+}
+
 const PICKUP_SUMMARY_RE = /^(\d{2}:\d{2})\s*LT\s*Pickup\s+(\S+)/i;
 // Same shape as PICKUP_SUMMARY_RE, just the "Briefing" keyword instead
 // of "Pickup" - both confirmed real formats, see the module comment above.
@@ -3427,9 +3293,8 @@ const rosterEventsCache = { events: null, dtstamp: null, fetchedAt: 0, url: null
 // rosterCorsProxyBuilders() have already failed - fetchRosterIcsText()
 // throws with all of their outcomes joined together (e.g. "direkt:
 // Failed to fetch | corsproxy.io: HTTP 401 – ... | api.allorigins.win:
-// Load failed"), shown as-is rather than collapsed into one generic
-// message. See renderRosterStatus(), which surfaces this instead of
-// silently leaving the pilot looking at an unexplained backup pickup.
+// Load failed"), kept on rosterEventsCache.lastError as-is (ensureRosterLoaded()
+// then falls back to the PDF's own routing table, see pdfLegsToRawFlights()).
 function describeRosterFetchError(e) {
   return (e && e.message) || "Unbekannter Fehler beim Abrufen.";
 }
@@ -3514,50 +3379,6 @@ async function fetchRosterIcsText(url) {
   throw new Error(attempts.join(" | "));
 }
 
-// Same in-app probe pattern the other API cards use (see
-// testFr24Connection()) - shows exactly what the roster feed actually
-// returns and how parseIcsEvents() reads it, right on the page, so a
-// wrong/stale Pickup or Briefing time (or a link that silently stopped
-// working) can be checked against the real feed without needing
-// separate console/Web Inspector access. Runs the exact same
-// fetchRosterIcsText()/parseIcsEvents() pipeline ensureRosterLoaded()
-// itself uses - same CORS-proxy fallback chain, same parsing - rather
-// than a simplified stand-in that could pass while the real thing fails.
-async function testRosterConnection() {
-  const url = getRosterUrl();
-  if (!url) return;
-
-  els.testRosterBtn.disabled = true;
-  els.rosterTestResult.hidden = false;
-  els.rosterTestResult.textContent = "Teste …";
-  els.rosterTestRaw.hidden = true;
-  els.rosterTestRaw.textContent = "";
-
-  function showRaw(value) {
-    els.rosterTestRaw.hidden = false;
-    els.rosterTestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-  }
-
-  try {
-    const { text, viaProxy } = await fetchRosterIcsText(url);
-    const events = parseIcsEvents(text);
-    const via = viaProxy ? ` (über ${viaProxy})` : "";
-    els.rosterTestResult.textContent = events.length
-      ? `Erfolgreich${via} - ${events.length} Termin(e) im Feed gefunden.`
-      : `Antwort kam an${via}, aber keine Termine im Feed erkannt.`;
-    showRaw(events.map((ev) => ({
-      summary: ev.summary || null,
-      location: ev.location || null,
-      dtstart: ev.dtstart ? ev.dtstart.toISOString() : null,
-      dtend: ev.dtend ? ev.dtend.toISOString() : null,
-    })));
-  } catch (err) {
-    els.rosterTestResult.textContent = `Fehlgeschlagen: ${briefErrorReason(err)}`;
-    showRaw(String(err));
-  }
-  els.testRosterBtn.disabled = false;
-}
-
 // Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
 // once per URL and never again on its own (no automatic refresh - see
 // refreshAll()), then re-renders so anything reading rosterEventsCache
@@ -3576,9 +3397,25 @@ async function testRosterConnection() {
 // rate-limited or metered CORS proxy (see rosterCorsProxyBuilders()).
 let rosterLoadPromise = null;
 
+// MyTime unreachable (no link configured at all, or the fetch itself
+// failed) - falls back to the uploaded PDF's own routing table
+// (pdfLegsToRawFlights()) rather than leaving the dashboard blank, but
+// only when there's nothing better already showing: a transient fetch
+// failure on a later ↻ tap shouldn't downgrade an already-successfully-
+// loaded roster (richer: deadhead-aware, vacation/Ortstag days) back to
+// the PDF's plainer data. A no-op when no PDF has been uploaded either -
+// applyLoadedFlights() would just get an empty list.
+function applyPdfFallbackFlightsIfNeeded() {
+  if (state.allFlights.length || !state.pdfLegs.length) return;
+  applyLoadedFlights(pdfLegsToRawFlights());
+}
+
 async function ensureRosterLoaded(force) {
   const url = getRosterUrl();
-  if (!url) return;
+  if (!url) {
+    applyPdfFallbackFlightsIfNeeded();
+    return;
+  }
   if (!force && rosterEventsCache.url === url && rosterEventsCache.events) return;
   if (rosterLoadPromise) return rosterLoadPromise;
   rosterLoadPromise = (async () => {
@@ -3591,7 +3428,6 @@ async function ensureRosterLoaded(force) {
       rosterEventsCache.url = url;
       rosterEventsCache.viaProxy = viaProxy;
       rosterEventsCache.lastError = null;
-      renderRosterStatus();
 
       // MyTime roster is the primary duty-plan source now - its own
       // flight/deadhead events become state.flights/allFlights via the
@@ -3604,10 +3440,11 @@ async function ensureRosterLoaded(force) {
       // once already broke the legal FDP figure shown there.
       applyLoadedFlights(rosterEventsToRawFlights(events));
     } catch (e) {
-      // Stays stale, retried on next call - but now at least visible in
-      // Settings (see renderRosterStatus()) instead of a silent no-op.
+      // Stays stale, retried on next call - rosterEventsCache.lastError
+      // still recorded for anything that reads it, even with nowhere
+      // left to display it directly (Settings removed).
       rosterEventsCache.lastError = describeRosterFetchError(e);
-      renderRosterStatus();
+      applyPdfFallbackFlightsIfNeeded();
     } finally {
       rosterLoadPromise = null;
     }
@@ -4146,95 +3983,6 @@ async function handleCrewPdf(file) {
 
 // ---------- event wiring ----------
 
-els.settingsBtn.addEventListener("click", () => {
-  setSettingsOpen(els.crewPdfCard.hidden);
-});
-
-els.saveRosterBtn.addEventListener("click", () => {
-  const val = els.rosterUrlInput.value.trim();
-  if (!val) return;
-  setRosterUrl(val);
-  els.rosterUrlInput.value = "";
-  rosterEventsCache.events = null;
-  rosterEventsCache.fetchedAt = 0;
-  rosterEventsCache.url = null;
-  rosterEventsCache.lastError = null;
-  renderRosterStatus();
-  renderLayover();
-});
-
-els.testRosterBtn.addEventListener("click", testRosterConnection);
-
-els.resetRosterBtn.addEventListener("click", () => {
-  if (!confirm("Roster-Link auf diesem Gerät entfernen?")) return;
-  clearRosterUrl();
-  rosterEventsCache.events = null;
-  rosterEventsCache.fetchedAt = 0;
-  rosterEventsCache.url = null;
-  rosterEventsCache.lastError = null;
-  renderRosterStatus();
-  renderLayover();
-});
-
-els.saveCorsProxyKeyBtn.addEventListener("click", () => {
-  const val = els.corsProxyKeyInput.value.trim();
-  if (!val) return;
-  setCorsProxyKey(val);
-  els.corsProxyKeyInput.value = "";
-  renderCorsProxyKeyStatus();
-  // A previous failure may only have been the missing key - retry now
-  // rather than making the pilot tap ↻ separately.
-  rosterEventsCache.events = null;
-  rosterEventsCache.fetchedAt = 0;
-  rosterEventsCache.url = null;
-  rosterEventsCache.lastError = null;
-  ensureRosterLoaded(true);
-});
-
-els.resetCorsProxyKeyBtn.addEventListener("click", () => {
-  if (!confirm("corsproxy.io API-Schlüssel auf diesem Gerät entfernen?")) return;
-  clearCorsProxyKey();
-  renderCorsProxyKeyStatus();
-});
-
-els.saveFr24Btn.addEventListener("click", () => {
-  const val = els.fr24KeyInput.value.trim();
-  if (!val) return;
-  setFr24Key(val);
-  els.fr24KeyInput.value = "";
-  flightByNumberCache.clear();
-  aircraftScheduleCache.clear();
-  renderFr24Status();
-  renderFlight();
-});
-
-els.resetFr24Btn.addEventListener("click", () => {
-  if (!confirm("Flightradar24-API-Schlüssel auf diesem Gerät entfernen?")) return;
-  clearFr24Key();
-  flightByNumberCache.clear();
-  aircraftScheduleCache.clear();
-  renderFr24Status();
-  renderFlight();
-});
-
-els.testFr24Btn.addEventListener("click", testFr24Connection);
-
-els.debugAllMonthInput.addEventListener("change", () => {
-  const on = els.debugAllMonthInput.checked;
-  setDebugAllMonth(on);
-  // Turning it back off: state.flights is left holding whatever
-  // renderDebugAllMonthCarousel() put there (the whole month) - nothing
-  // else recomputes it back down on its own (the 30s ticker's own reset
-  // is deliberately skipped while debug mode is on, see its own comment),
-  // so this has to do it here, the same way that ticker normally would.
-  if (!on && state.allFlights.length) {
-    state.flights = computeTodayFlights(state.allFlights);
-    state.index = state.flights.length ? Math.min(pickInitialIndex(state.flights), state.flights.length - 1) : 0;
-  }
-  lastCardSignature = null; // force a rebuild either way, switching card sets
-  renderFlight();
-});
-
 // ↻ refreshes the MyTime roster and clears the Flightradar24 lookup
 // caches, so a stale registration/callsign/live-time lookup doesn't keep
 // showing after the pilot explicitly asks for fresh data - the normal
@@ -4364,6 +4112,7 @@ function seedLocalConfig() {
 
 seedLocalConfig();
 renderBrandName();
+els.ownNameInput.value = getOwnName();
 loadStoredPdfCrew();
 renderLayover();
 loadInitial();

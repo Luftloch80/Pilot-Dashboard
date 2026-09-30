@@ -137,11 +137,11 @@ body {
   justify-content: center;
 }
 
-/* #refreshBtn and #settingsBtn draw their icon as an inline SVG (not a
-   Unicode glyph) specifically so they're guaranteed the same visual size -
-   text glyphs like ↻/⚙︎ render at inconsistent, platform-dependent sizes
-   (emoji-style presentation, different intrinsic glyph metrics) that a
-   font-size tweak alone can't reliably equalize. */
+/* #refreshBtn draws its icon as an inline SVG (not a Unicode glyph)
+   specifically so it's guaranteed the same visual size - a text glyph
+   like ↻ renders at inconsistent, platform-dependent sizes (emoji-style
+   presentation, different intrinsic glyph metrics) that a font-size
+   tweak alone can't reliably equalize. */
 .icon-btn svg {
   width: 20px;
   height: 20px;
@@ -174,20 +174,14 @@ body {
 .small { font-size: 0.82rem; }
 
 /* Setup */
-#rosterCard label,
-#fr24Card label,
-#crewPdfCard label {
+#crewCard label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
   margin: 12px 0 6px;
 }
 
-#rosterCard input[type="password"],
-#rosterCard input[type="text"],
-#fr24Card input[type="password"],
-#fr24Card input[type="text"],
-#crewPdfCard input[type="text"] {
+#crewCard input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -195,22 +189,6 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 1rem;
-}
-
-/* Debug's checkbox (alle Flüge des Zeitraums) - overrides the block
-   label styling above for just this one row, so the checkbox sits
-   inline with its own text instead of on its own line above an
-   (nonexistent) input. */
-.checkbox-label {
-  display: flex !important;
-  align-items: center;
-  gap: 8px;
-  margin: 14px 0 0 !important;
-}
-.checkbox-label input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
 }
 
 .btn {
@@ -257,23 +235,7 @@ body {
   margin-top: 12px;
 }
 
-.error-inline { color: var(--danger); }
-
-#rosterCard #saveRosterBtn {
-  margin-top: 14px;
-}
-#rosterCard #resetRosterBtn {
-  margin-top: 16px;
-}
-
-#fr24Card #saveFr24Btn {
-  margin-top: 14px;
-}
-#fr24Card #resetFr24Btn {
-  margin-top: 16px;
-}
-
-#crewPdfCard #saveOwnNameBtn {
+#crewCard #saveOwnNameBtn {
   margin-top: 14px;
 }
 
@@ -743,14 +705,6 @@ body {
   margin-top: 2px;
 }
 
-.crew-pdf-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 4px;
-}
-.crew-pdf-head h2 { margin: 0; }
-
 .file-btn {
   margin-top: 10px;
   cursor: pointer;
@@ -760,8 +714,18 @@ body {
   margin-top: 12px;
 }
 
-.crew-pdf-card #crewPdfRawToggle {
+.crew-pdf-prompt #crewPdfRawToggle {
   margin-top: 10px;
+}
+
+.crew-pdf-prompt {
+  margin-bottom: 14px;
+}
+
+.crew-own-name {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 .pdf-text {

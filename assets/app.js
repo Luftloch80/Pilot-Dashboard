@@ -1325,8 +1325,8 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
     if (f.aircraft === "–" && ownLeg.aircraftType) f.aircraft = ownLeg.aircraftType;
   }
 
-  cardEls.depCode.textContent = f.depCode;
-  cardEls.arrCode.textContent = f.arrCode;
+  cardEls.depCode.textContent = threeLetterCode(f.depCode);
+  cardEls.arrCode.textContent = threeLetterCode(f.arrCode);
   cardEls.depTime.textContent = fmtTime(f.depSchedDate);
   cardEls.arrTime.textContent = fmtTime(f.arrSchedDate);
   renderTimeDeviation(cardEls.depActualTime, f.depSchedDate, ownLeg && ownLeg.depDate);
@@ -2626,33 +2626,32 @@ function iataToIcao(code) {
   return IATA_TO_ICAO[code] || code;
 }
 
-// 3-letter station code per ICAO code, for the route chain on the
-// Urlaub/Ortstag cards. Deliberately only populated with codes the pilot
-// has actually confirmed (EDDF/LUKK/LPPT/EKBI/EPWA/EDDH so far) rather
-// than assumed IATA codes - the earlier mistake with a guessed ATC
-// callsign (DLH1557 vs the real DLH8KF) showed that airline-internal
-// station codes can't be reliably derived, only confirmed one by one.
-// Falls back to the raw ICAO code for anything not yet in this table.
-const THREE_LETTER_CODE = {
-  EDDF: "FRA",
-  LUKK: "RMO",
-  LPPT: "LIS",
-  EKBI: "BLL",
-  EPWA: "WAW",
-  EDDH: "HAM",
-};
+// ICAO -> IATA (the 3-letter code pilots and passengers actually know an
+// airport by), inverted from IATA_TO_ICAO above rather than hand-
+// maintained separately - same trusted, publicly documented pairs, so
+// there's no second table that could quietly drift out of sync with the
+// first. This used to be a small hand-picked THREE_LETTER_CODE table
+// (only entries confirmed one at a time, out of an old, now-outdated
+// caution about station codes in general - see the IATA_TO_ICAO comment
+// on why that caution doesn't apply to IATA itself) - replaced now that
+// every airport this app already trusts (ICAO_CITY's own list) has a
+// real IATA code behind it. Falls back to the raw ICAO code for anything
+// outside that list rather than showing nothing.
+const ICAO_TO_IATA = Object.fromEntries(
+  Object.entries(IATA_TO_ICAO).map(([iata, icao]) => [icao, iata])
+);
 
 function threeLetterCode(icao) {
-  return THREE_LETTER_CODE[icao] || icao;
+  return ICAO_TO_IATA[icao] || icao;
 }
 
-// IANA time zone per ICAO code - unlike THREE_LETTER_CODE's airline-
-// internal station codes, an airport's time zone is plain geography, not
-// something that needs confirming per station. Scoped to exactly the
-// codes THREE_LETTER_CODE already covers (extend both together) - that's
-// also every station computeLegalRestReference() can ever produce a time for,
-// so a backup pickup can always be shown in local time, matching a
-// roster pickup's "LT" formatting instead of a bare UTC instant.
+// IANA time zone per ICAO code - only populated for stations actually
+// seen in a real backup-pickup calculation so far (unlike threeLetterCode()
+// above, a time zone isn't public standard data the same way an IATA
+// code is, so this stays deliberately narrow). Every station
+// computeLegalRestReference() can ever produce a time for, so a backup
+// pickup can always be shown in local time, matching a roster pickup's
+// "LT" formatting instead of a bare UTC instant.
 const TIMEZONE_BY_ICAO = {
   EDDF: "Europe/Berlin",
   LUKK: "Europe/Chisinau",
@@ -3697,7 +3696,7 @@ function fillLayoverCardContent(layover) {
   els.layoverPickup.classList.remove("is-roster", "is-backup");
 
   const city = cityForIcao(layover.arrCode);
-  els.layoverPlace.textContent = city || layover.arrCode;
+  els.layoverPlace.textContent = city || threeLetterCode(layover.arrCode);
 
   const cachedWeather = currentWeatherCache.get(layover.arrCode);
   if (cachedWeather === undefined) ensureCurrentWeatherLoaded(layover.arrCode, city || threeLetterCode(layover.arrCode));

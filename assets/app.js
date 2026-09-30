@@ -3,6 +3,8 @@
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
 const DEBUG_ALL_MONTH_STORAGE_KEY = "oal_debug_all_month";
+const FR24_KEY_STORAGE_KEY = "oal_fr24_key";
+const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
 const FETCH_TIMEOUT_MS = 15000;
 
 // Home base the rotation returns to - OpenAirLog has no field for this
@@ -107,6 +109,15 @@ const els = {
   saveCorsProxyKeyBtn: document.getElementById("saveCorsProxyKeyBtn"),
   corsProxyKeyStatus: document.getElementById("corsProxyKeyStatus"),
   resetCorsProxyKeyBtn: document.getElementById("resetCorsProxyKeyBtn"),
+
+  fr24Card: document.getElementById("fr24Card"),
+  fr24KeyInput: document.getElementById("fr24KeyInput"),
+  saveFr24Btn: document.getElementById("saveFr24Btn"),
+  fr24Status: document.getElementById("fr24Status"),
+  testFr24Btn: document.getElementById("testFr24Btn"),
+  fr24TestResult: document.getElementById("fr24TestResult"),
+  fr24TestRaw: document.getElementById("fr24TestRaw"),
+  resetFr24Btn: document.getElementById("resetFr24Btn"),
 
   debugCard: document.getElementById("debugCard"),
   debugAllMonthInput: document.getElementById("debugAllMonthInput"),
@@ -467,6 +478,266 @@ function setDebugAllMonth(on) {
   try { localStorage.setItem(DEBUG_ALL_MONTH_STORAGE_KEY, on ? "1" : "0"); } catch { /* private mode etc. */ }
 }
 
+// ---------- Flightradar24 API - primary live-data source ----------
+//
+// Confirmed against the real, official docs (fr24api.flightradar24.com):
+// Bearer token in the Authorization header, plus an Accept-Version: v1
+// header - both required on every request. Base URL
+// https://fr24api.flightradar24.com/api. The Flight Summary endpoint
+// (/flight-summary/full) is the one workhorse used for everything here:
+// queried either by "flights" (flight number) or "registrations" (tail
+// number) plus a required flight_datetime_from/flight_datetime_to window,
+// it returns real ADS-B-observed data - registration, callsign, actual
+// takeoff/landing times - never a "scheduled" time (FR24 tracks what
+// actually happened/is happening, not an airline's own schedule), so
+// depSchedDate/arrSchedDate below are always null: the flight's own
+// planned times keep coming from wherever the flight itself was loaded
+// from, same as before. The exact request datetime format (with or
+// without trailing "Z"/milliseconds) isn't confirmed from an actual
+// response - "Verbindung testen" below shows the raw JSON so that's
+// checkable against a real key rather than guessed blind.
+
+function getFr24Key() {
+  try { return localStorage.getItem(FR24_KEY_STORAGE_KEY) || ""; } catch { return ""; }
+}
+function setFr24Key(key) {
+  try { localStorage.setItem(FR24_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
+}
+function clearFr24Key() {
+  try { localStorage.removeItem(FR24_KEY_STORAGE_KEY); } catch { /* ignore */ }
+}
+
+function renderFr24Status() {
+  const key = getFr24Key();
+  els.fr24Status.hidden = !key;
+  els.fr24Status.textContent = key ? "API-Schlüssel hinterlegt." : "";
+  els.testFr24Btn.hidden = !key;
+  els.fr24TestResult.hidden = true;
+  els.fr24TestRaw.hidden = true;
+  els.resetFr24Btn.hidden = !key;
+}
+
+// A {DateTime string} as ISO 8601 - the exact presence/absence of a "Z"
+// suffix isn't confirmed from a real response, so "Z" is appended
+// whenever the string doesn't already carry an explicit zone offset,
+// same defensive approach as the removed Lufthansa integration used for
+// the same reason.
+function parseFr24DateTime(s) {
+  if (!s) return null;
+  const iso = /[Z+-]\d{2}:?\d{2}$|Z$/.test(s) ? s : `${s}Z`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function normalizeFr24Leg(entry) {
+  if (!entry) return null;
+  const depDate = parseFr24DateTime(entry.datetime_takeoff);
+  const arrDate = parseFr24DateTime(entry.datetime_landed);
+  return {
+    depCode: entry.orig_icao || "---",
+    arrCode: entry.dest_icao_actual || entry.dest_icao || "---",
+    depDate, arrDate,
+    // Once datetime_takeoff exists at all it's a real ADS-B observation,
+    // not a still-changeable estimate the way AeroDataBox's revisedTime
+    // was - so it doubles directly as the "confirmed off-block" signal
+    // updateFlightTimerDisplay() uses to retire the countdown pill.
+    depRunwayDate: depDate,
+    // FR24 only ever reports what actually happened/is happening, never
+    // a schedule - see the module comment above.
+    depSchedDate: null,
+    arrSchedDate: null,
+    flightNumber: String(entry.flight || "").replace(/\s+/g, ""),
+    status: entry.flight_ended ? "Landed" : depDate ? "En Route" : "Scheduled",
+    registration: entry.reg || null,
+    callSign: entry.callsign || null,
+  };
+}
+
+// Shared GET against /flight-summary/full - filterParam is "flights" (a
+// flight number, e.g. "LH1212") or "registrations" (a tail number, e.g.
+// "D-AIZR"); date range query and ID query are mutually exclusive per the
+// docs, so this only ever uses the date-range form.
+async function fetchFr24FlightSummary(filterParam, filterValue, fromParam, toParam) {
+  const key = getFr24Key();
+  if (!key || !filterValue) return null;
+  const params = new URLSearchParams({
+    [filterParam]: filterValue,
+    flight_datetime_from: fromParam,
+    flight_datetime_to: toParam,
+  });
+  const url = `${FR24_API_BASE}/flight-summary/full?${params}`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { Accept: "application/json", "Accept-Version": "v1", Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) {
+      console.warn("[Flightradar24] flight-summary failed", res.status, url);
+      return null;
+    }
+    const json = await res.json();
+    return Array.isArray(json) ? json : [];
+  } catch (err) {
+    console.warn("[Flightradar24] flight-summary request failed (network/CORS?)", err, url);
+    return null;
+  }
+}
+
+// ISO-ish, no milliseconds/zone suffix - matches the one confirmed real
+// example in the docs (an airline/airport lookup, not flight-summary
+// itself); "Verbindung testen" is how this gets checked against a real
+// key rather than guessed blind (see the module comment above).
+function fr24DateTimeParam(date) {
+  return date.toISOString().slice(0, 19);
+}
+
+async function fetchFlightByNumber(flightNumber, dateKey) {
+  if (!flightNumber || !dateKey) return null;
+  const entries = await fetchFr24FlightSummary(
+    "flights", flightNumber, `${dateKey}T00:00:00`, `${dateKey}T23:59:59`
+  );
+  if (!entries || !entries.length) return null;
+  // Several rows can come back (e.g. a diversion, or more than one
+  // physical leg sharing the number that day) - prefer one that's
+  // actually happened/happening over a still-unflown placeholder.
+  const best = entries.find((e) => e.datetime_takeoff) || entries[0];
+  return normalizeFr24Leg(best);
+}
+
+// The aircraft's own schedule around the given reference flight - 3 days
+// back (covers a multi-day rotation's own prior legs, same reach as the
+// removed AeroDataBox version needed in practice) to 1 day ahead.
+async function fetchAircraftSchedule(registration, referenceDate) {
+  if (!registration || registration === "–") return null;
+  const center = referenceDate || new Date();
+  const from = fr24DateTimeParam(new Date(center.getTime() - 3 * 86400000));
+  const to = fr24DateTimeParam(new Date(center.getTime() + 1 * 86400000));
+  const entries = await fetchFr24FlightSummary("registrations", registration, from, to);
+  if (!entries) return null;
+  return entries
+    .map(normalizeFr24Leg)
+    .filter((leg) => leg.depDate)
+    .sort((a, b) => a.depDate - b.depDate);
+}
+
+// Within that aircraft's day schedule, the leg landing at the given
+// station right before the given departure time - i.e. what this
+// aircraft flew immediately before becoming available for pickup there.
+// Requires an exact station match: without it there could be an earlier,
+// unrelated leg in between.
+function findPriorLegArrival(legs, stationIcao, beforeDate) {
+  if (!legs || !beforeDate) return null;
+  let best = null;
+  for (const leg of legs) {
+    if (leg.arrCode !== stationIcao || !leg.arrDate || leg.arrDate >= beforeDate) continue;
+    if (!best || leg.arrDate > best.arrDate) best = leg;
+  }
+  return best;
+}
+
+const flightByNumberCache = new Map(); // "flightNumber|dateKey" -> { leg, fetchedAt }
+const flightByNumberLoading = new Set(); // cacheKey currently in flight, to avoid duplicate requests -
+// buildPdfRefMap() can ask for the same flight number/date from several
+// crew rows (and re-renders) before the first request even resolves.
+
+// Fire-and-forget, same pattern as ensureAircraftScheduleLoaded() - once
+// this resolves a registration, also kicks off the normal Reg-based
+// schedule lookup for it so findPriorLegArrival() has something to work
+// with on the next render.
+async function ensureFlightByNumberLoaded(flightNumber, dateKey) {
+  const cacheKey = `${flightNumber}|${dateKey}`;
+  if (flightByNumberLoading.has(cacheKey)) return;
+  flightByNumberLoading.add(cacheKey);
+  const leg = await fetchFlightByNumber(flightNumber, dateKey);
+  flightByNumberLoading.delete(cacheKey);
+  flightByNumberCache.set(cacheKey, { leg, fetchedAt: Date.now() });
+  if (leg && leg.registration) ensureAircraftScheduleLoaded(leg.registration, leg.depDate);
+  else renderFlight();
+}
+
+const aircraftScheduleCache = new Map(); // registration -> { legs, fetchedAt }
+
+// Fire-and-forget, same pattern as ensureCurrentWeatherLoaded(): fetches
+// once per registration, caches (including failures, as an empty list, so
+// a lookup miss doesn't retry every render), then re-renders.
+async function ensureAircraftScheduleLoaded(registration, referenceDate) {
+  const legs = await fetchAircraftSchedule(registration, referenceDate);
+  aircraftScheduleCache.set(registration, { legs: legs || [], fetchedAt: Date.now() });
+  renderFlight();
+}
+
+// Shared by the flight number's callsign suffix and the depTime/arrTime
+// deviation labels - the one place that checks the cache and triggers a
+// fetch if stale, rather than each caller doing that separately. peekOnly
+// reads whatever's cached without triggering a new fetch - used for the
+// cards the user isn't currently looking at, so scrolling past several of
+// them doesn't fire off a lookup for each one.
+function getOwnFlightLiveLeg(f, opts) {
+  const dateKey = f.raw && f.raw.date;
+  if (!f.flightNumber || !dateKey || !getFr24Key()) return null;
+  const cacheKey = `${f.flightNumber}|${dateKey}`;
+  const peekOnly = opts && opts.peekOnly;
+  const cached = flightByNumberCache.get(cacheKey);
+  if (!peekOnly && !cached) ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+  return cached ? cached.leg : null;
+}
+
+// Same in-app probe pattern the other API cards used - shows the raw
+// response right on the page so the request/response shape (genuinely
+// unconfirmed in places, see the module comment above) can be checked
+// against a real key without needing separate console/Web Inspector
+// access.
+async function testFr24Connection() {
+  const key = getFr24Key();
+  if (!key) return;
+  const testFlight = state.flights[state.index] || state.allFlights[0];
+  if (!testFlight || !testFlight.flightNumber || !(testFlight.raw && testFlight.raw.date)) {
+    els.fr24TestResult.hidden = false;
+    els.fr24TestResult.textContent = "Kein Testflug verfügbar - erst Flugdaten laden.";
+    return;
+  }
+
+  els.testFr24Btn.disabled = true;
+  els.fr24TestResult.hidden = false;
+  els.fr24TestResult.textContent = `Teste mit ${testFlight.flightNumber} …`;
+  els.fr24TestRaw.hidden = true;
+  els.fr24TestRaw.textContent = "";
+
+  function showRaw(value) {
+    els.fr24TestRaw.hidden = false;
+    els.fr24TestRaw.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  }
+
+  const dateKey = testFlight.raw.date;
+  const params = new URLSearchParams({
+    flights: testFlight.flightNumber,
+    flight_datetime_from: `${dateKey}T00:00:00`,
+    flight_datetime_to: `${dateKey}T23:59:59`,
+  });
+  const url = `${FR24_API_BASE}/flight-summary/full?${params}`;
+  try {
+    const res = await fetchWithTimeout(url, {
+      headers: { Accept: "application/json", "Accept-Version": "v1", Authorization: `Bearer ${key}` },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      els.fr24TestResult.textContent = `Fehlgeschlagen: Antwort ${res.status} von fr24api.flightradar24.com. Key/Abo prüfen.`;
+      showRaw(text);
+    } else {
+      let json;
+      try { json = JSON.parse(text); } catch { json = null; }
+      const entries = Array.isArray(json) ? json : [];
+      els.fr24TestResult.textContent = entries.length
+        ? `Erfolgreich - ${entries.length} Eintrag/Einträge für ${testFlight.flightNumber} gefunden.`
+        : "Antwort kam an, aber leer oder kein gültiges JSON-Array.";
+      showRaw(json !== null ? json : text);
+    }
+  } catch (err) {
+    els.fr24TestResult.textContent =
+      "Fehlgeschlagen: Netzwerk- oder CORS-Fehler (Anfrage kam nicht durch).";
+    showRaw(String(err));
+  }
+  els.testFr24Btn.disabled = false;
+}
 
 // Persist what was parsed from the uploaded PDF (crew, flight legs incl.
 // hotel/layover info, and the raw extracted lines for pickup-time lookup) -
@@ -519,10 +790,12 @@ function loadStoredPdfCrew() {
 function setSettingsOpen(open) {
   els.crewPdfCard.hidden = !open;
   els.rosterCard.hidden = !open;
+  els.fr24Card.hidden = !open;
   els.debugCard.hidden = !open;
   if (open) {
     renderRosterStatus();
     renderCorsProxyKeyStatus();
+    renderFr24Status();
     els.debugAllMonthInput.checked = getDebugAllMonth();
     els.flightCardTrack.hidden = true;
     els.flightCardDots.hidden = true;
@@ -720,6 +993,7 @@ function getCardEls(node) {
     arrActualTime: node.querySelector(".arr-actual-time"),
     aircraft: node.querySelector(".aircraft"),
     registration: node.querySelector(".registration"),
+    regPriorArrival: node.querySelector(".reg-prior-arrival"),
     transitInfo: node.querySelector(".transit-info"),
   };
 }
@@ -972,7 +1246,22 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
 
   const transitLabel = fmtDurationHM(nextFlight.depSchedDate - f.arrSchedDate);
 
-  const nextRegistration = nextFlight && nextFlight.registration !== "–" ? nextFlight.registration : null;
+  // The next flight's own registration is missing on some future-dated
+  // entries - when that happens, fall back to looking it up by its own
+  // flight number via Flightradar24 instead (see
+  // ensureFlightByNumberLoaded()), which also backfills the registration
+  // itself, so everything below works the same either way.
+  let nextRegistration = nextFlight && nextFlight.registration !== "–" ? nextFlight.registration : null;
+  if (transitLabel && !nextRegistration && getFr24Key() && nextFlight.flightNumber) {
+    const dateKey = nextFlight.raw && nextFlight.raw.date;
+    const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
+    const cachedByNumber = flightByNumberCache.get(cacheKey);
+    if (!cachedByNumber) {
+      if (isActive) ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
+    } else if (cachedByNumber.leg) {
+      nextRegistration = cachedByNumber.leg.registration || null;
+    }
+  }
 
   const aircraftChange = transitLabel && nextRegistration && f.registration &&
     f.registration !== "–" && nextRegistration !== f.registration;
@@ -980,6 +1269,15 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
   let transitText = transitLabel ? `Transit: ${transitLabel}` : "";
   if (aircraftChange) {
     transitText += ` · next A/C ${nextRegistration}`;
+    if (getFr24Key()) {
+      const cached = aircraftScheduleCache.get(nextRegistration);
+      if (!cached) {
+        if (isActive) ensureAircraftScheduleLoaded(nextRegistration, nextFlight.depSchedDate);
+      } else {
+        const priorLeg = findPriorLegArrival(cached.legs, nextFlight.depCode, nextFlight.depSchedDate);
+        if (priorLeg && priorLeg.arrDate) transitText += ` ${priorLeg.flightNumber} ${fmtTime(priorLeg.arrDate)}`;
+      }
+    }
   }
   cardEls.transitInfo.hidden = !transitText;
   cardEls.transitInfo.textContent = transitText;
@@ -994,9 +1292,10 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
   const f = flights[i];
   const cardEls = getCardEls(cardNodes[i]);
 
-  // Callsign/live times used to come from AeroDataBox/Lufthansa (removed) -
-  // ownLeg stays null until a new live data source is wired in.
-  const ownLeg = null;
+  // Callsign in parentheses, e.g. "LH1168 (DLH03H)" - only here in the
+  // main flight card, not in the crew list's inbound/outbound labels or
+  // the transit line, which are about other flights, not this one.
+  const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: !isActive });
   cardEls.flightNumber.textContent = ownLeg && ownLeg.callSign ? `${f.flightNumber} (${ownLeg.callSign})` : f.flightNumber;
   updateFlightTimerDisplay(f, ownLeg, cardEls.flightStatus);
 
@@ -1009,7 +1308,35 @@ function renderFlightCardContent(flights, cardNodes, i, isActive) {
 
   cardEls.aircraft.textContent = f.aircraft;
   cardEls.registration.textContent = f.registration;
+  renderRegistrationPriorArrival(f, isActive, cardEls);
+
   renderFlightCardTransit(flights, i, isActive, cardEls);
+}
+
+// Under the registration itself - when this exact aircraft is known and
+// a Flightradar24 key is configured, when it arrived here from whatever
+// it flew right before (same aircraft-schedule lookup the transit line's
+// own "next A/C" note uses for the NEXT flight's aircraft - see
+// ensureAircraftScheduleLoaded()/findPriorLegArrival() - just applied to
+// this card's own flight instead), so that's visible directly on the
+// card showing that aircraft, not only buried in the preceding card's own
+// transit line whenever this happens to be a Flugzeugwechsel.
+function renderRegistrationPriorArrival(f, isActive, cardEls) {
+  if (!cardEls.regPriorArrival) return;
+  cardEls.regPriorArrival.hidden = true;
+  cardEls.regPriorArrival.textContent = "";
+  if (!getFr24Key() || !f.registration || f.registration === "–" || !f.depCode || !f.depSchedDate) return;
+
+  const cached = aircraftScheduleCache.get(f.registration);
+  if (!cached) {
+    if (isActive) ensureAircraftScheduleLoaded(f.registration, f.depSchedDate);
+    return;
+  }
+  const priorLeg = findPriorLegArrival(cached.legs, f.depCode, f.depSchedDate);
+  if (priorLeg && priorLeg.arrDate) {
+    cardEls.regPriorArrival.hidden = false;
+    cardEls.regPriorArrival.textContent = `Ankunft ${fmtTime(priorLeg.arrDate)}`;
+  }
 }
 
 // Identifies today's flight list by flight number + date only (not
@@ -1462,12 +1789,23 @@ function computeMinRestAfterDuty(flight) {
 
 // "inbound" (joining): the pilot's own previous flight, formatted the
 // exact same "LHxxx <time>" way as a colleague's own PDF Ex reference does
-// (see buildPdfRefMap()). Used identically regardless of which crew source
-// (OpenAirLog vs PDF) is currently displayed - see renderCrew() - so a
-// joining colleague's info reads the same either way whenever they have no
-// more specific PDF ref of their own.
+// (see buildPdfRefMap()/formatExRefLabelLive()) - the live Flightradar24
+// arrival time when a key is configured, since that reflects this exact
+// occurrence's actual/revised arrival rather than whatever the flight's
+// own schedule last recorded, falling back to that scheduled arrival time
+// only when no FR24 key is set. Used identically regardless of which crew
+// source (OpenAirLog vs PDF) is currently displayed - see renderCrew() -
+// so a joining colleague's info reads the same either way whenever they
+// have no more specific PDF ref of their own.
 function ownAdjacentFlightLiveLabel(flight) {
   if (!flight) return null;
+  const dateKey = flight.raw && flight.raw.date;
+  if (getFr24Key() && dateKey) {
+    const cacheKey = `${flight.flightNumber}|${dateKey}`;
+    const cached = flightByNumberCache.get(cacheKey);
+    if (!cached) ensureFlightByNumberLoaded(flight.flightNumber, dateKey);
+    if (cached && cached.leg) return formatExRefLabelLive(flight.flightNumber, cached.leg);
+  }
   const arr = flight.arrActualDate || flight.arrSchedDate;
   return arr ? `${flight.flightNumber} ${fmtTime(arr)}` : flight.flightNumber;
 }
@@ -1728,20 +2066,54 @@ function formatPdfFlightRef(raw, contextDateKey) {
   return `${resolved.flightNumber} am ${dateLabel}`;
 }
 
-// Per-member Ex/To reference, straight from the uploaded PDF's own text
-// (AeroDataBox/OpenAirLog-history enrichment removed - just the flight
-// number plus the resolved date now) - an "exRef" only counts for the
-// block's first flight, a "toRef" only for its last (see
-// parseCrewFromLines()), so a colleague who shows up in more than one PDF
-// block doesn't leak the wrong block's reference onto a flight it
-// doesn't belong to.
+// Live variants via Flightradar24 (see ensureFlightByNumberLoaded()),
+// preferred over the plain PDF-text fallback above whenever a key is
+// configured - they reflect this exact occurrence's actual status, not
+// just the bare flight number/date the PDF itself printed. Both read the
+// connecting flight's own observed time (FR24 has no "scheduled" concept,
+// see the module comment above) - which for a still-future connection is
+// simply not there yet, falling back to the bare flight number until it
+// actually happens.
+function formatExRefLabelLive(flightNumber, leg) {
+  if (!flightNumber) return null;
+  if (leg && leg.arrDate) return `${flightNumber} ${fmtTime(leg.arrDate)}`;
+  return flightNumber;
+}
+function formatToRefLabelLive(flightNumber, leg) {
+  if (!flightNumber) return null;
+  if (leg && leg.depDate) return `${flightNumber} ${fmtTime(leg.depDate)}`;
+  return flightNumber;
+}
+
+// Per-member Ex/To reference (verbatim from the uploaded PDF, reformatted
+// via the live Flightradar24 lookup when available, else just the flight
+// number plus the resolved date) - an "exRef" only counts for the block's
+// first flight, a "toRef" only for its last (see parseCrewFromLines()),
+// so a colleague who shows up in more than one PDF block doesn't leak the
+// wrong block's reference onto a flight it doesn't belong to.
 function buildPdfRefMap(f, field) {
   const map = new Map();
   if (!state.pdfCrew) return map;
   const blockField = field === "exRef" ? "blockFirstFlight" : "blockLastFlight";
   for (const m of state.pdfCrew.crew) {
     if (!m[field] || m[blockField] !== f.flightNumber) continue;
-    map.set(crewKey(m.role, m.name), formatPdfFlightRef(m[field], f.raw && f.raw.date));
+
+    const resolved = resolvePdfRef(m[field], f.raw && f.raw.date);
+    let label = m[field];
+
+    if (resolved && getFr24Key()) {
+      const cacheKey = `${resolved.flightNumber}|${resolved.dateKey}`;
+      const cached = flightByNumberCache.get(cacheKey);
+      if (!cached) ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
+      const leg = cached && cached.leg;
+      label = field === "exRef"
+        ? (formatExRefLabelLive(resolved.flightNumber, leg) || m[field])
+        : (formatToRefLabelLive(resolved.flightNumber, leg) || m[field]);
+    } else if (resolved) {
+      label = formatPdfFlightRef(m[field], f.raw && f.raw.date);
+    }
+
+    map.set(crewKey(m.role, m.name), label);
   }
   return map;
 }
@@ -3667,6 +4039,28 @@ els.resetCorsProxyKeyBtn.addEventListener("click", () => {
   renderCorsProxyKeyStatus();
 });
 
+els.saveFr24Btn.addEventListener("click", () => {
+  const val = els.fr24KeyInput.value.trim();
+  if (!val) return;
+  setFr24Key(val);
+  els.fr24KeyInput.value = "";
+  flightByNumberCache.clear();
+  aircraftScheduleCache.clear();
+  renderFr24Status();
+  renderFlight();
+});
+
+els.resetFr24Btn.addEventListener("click", () => {
+  if (!confirm("Flightradar24-API-Schlüssel auf diesem Gerät entfernen?")) return;
+  clearFr24Key();
+  flightByNumberCache.clear();
+  aircraftScheduleCache.clear();
+  renderFr24Status();
+  renderFlight();
+});
+
+els.testFr24Btn.addEventListener("click", testFr24Connection);
+
 els.debugAllMonthInput.addEventListener("change", () => {
   const on = els.debugAllMonthInput.checked;
   setDebugAllMonth(on);
@@ -3683,14 +4077,19 @@ els.debugAllMonthInput.addEventListener("change", () => {
   renderFlight();
 });
 
-// ↻ refreshes the MyTime roster - the only remaining live data source
-// (OpenAirLog/AeroDataBox/Lufthansa removed; state.allFlights now stays
-// whatever the next data source populates it with).
+// ↻ refreshes the MyTime roster and clears the Flightradar24 lookup
+// caches, so a stale registration/callsign/live-time lookup doesn't keep
+// showing after the pilot explicitly asks for fresh data - the normal
+// "fetch if not yet cached" logic then re-fetches whatever's relevant to
+// what ends up shown once this re-renders.
 async function refreshAll() {
+  flightByNumberCache.clear();
+  aircraftScheduleCache.clear();
   await ensureRosterLoaded(true);
   lastUpdateAt = new Date();
   isOffline = false;
   renderDataStamp();
+  renderFlight();
 }
 
 els.refreshBtn.addEventListener("click", refreshAll);
@@ -3775,8 +4174,10 @@ if ("serviceWorker" in navigator) {
 
 // Startup never fetches anything live - state.allFlights simply stays
 // empty until a data source populates it (applyLoadedFlights() is ready
-// for that, just nothing calls it yet - OpenAirLog/AeroDataBox/Lufthansa
-// removed). ↻ (refreshAll()) only refreshes the MyTime roster now.
+// for that, just nothing calls it yet). Flightradar24 only ever enriches
+// flights already known from elsewhere, it isn't a source of which
+// flights exist. ↻ (refreshAll()) refreshes the MyTime roster and clears
+// the Flightradar24 lookup caches.
 function loadInitial() {
   els.refreshBtn.hidden = false;
   showBanner("", "");
@@ -3813,12 +4214,14 @@ setInterval(() => {
   // actually changed, so this stays cheap most ticks.
   renderFlight();
 
-  // Ticks every card's countdown pill (cheap, pure date math).
+  // Ticks every card's countdown pill (cheap, pure date math) - only the
+  // active card's own live lookup is allowed to actually fire.
   state.flights.forEach((f, i) => {
     const node = state.cardNodes[i];
     if (!node) return;
     const statusEl = node.querySelector(".status-pill");
-    updateFlightTimerDisplay(f, null, statusEl);
+    const ownLeg = getOwnFlightLiveLeg(f, { peekOnly: i !== state.index });
+    updateFlightTimerDisplay(f, ownLeg, statusEl);
   });
   tickPostLandingSwitch();
 }, 30000);

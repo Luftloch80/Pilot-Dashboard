@@ -174,7 +174,8 @@ body {
 .small { font-size: 0.82rem; }
 
 /* Setup */
-#rosterCard label {
+#rosterCard label,
+#fr24Card label {
   display: block;
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -182,7 +183,9 @@ body {
 }
 
 #rosterCard input[type="password"],
-#rosterCard input[type="text"] {
+#rosterCard input[type="text"],
+#fr24Card input[type="password"],
+#fr24Card input[type="text"] {
   width: 100%;
   padding: 12px 14px;
   border-radius: 12px;
@@ -258,6 +261,13 @@ body {
   margin-top: 14px;
 }
 #rosterCard #resetRosterBtn {
+  margin-top: 16px;
+}
+
+#fr24Card #saveFr24Btn {
+  margin-top: 14px;
+}
+#fr24Card #resetFr24Btn {
   margin-top: 16px;
 }
 
@@ -431,6 +441,11 @@ body {
   font-size: 1.05rem;
   letter-spacing: 0.01em;
   margin-top: 3px;
+}
+
+.reg-prior-arrival {
+  margin-top: 3px;
+  font-size: 0.72rem;
 }
 
 .transit-info {

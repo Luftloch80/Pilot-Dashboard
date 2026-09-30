@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=52" />
+<link rel="stylesheet" href="assets/style.css?v=53" />
 </head>
 <body>
 
@@ -106,6 +106,32 @@
     <button id="resetCorsProxyKeyBtn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
   </section>
 
+  <!-- Flightradar24 (optional, nur in den Settings): primäre Live-Quelle
+       für Kennzeichen, Callsign und tatsächliche Zeiten - kein Ersatz für
+       den eigenen Flugplan, siehe fr24Card in app.js. -->
+  <section id="fr24Card" class="card crew-pdf-card" hidden>
+    <div class="crew-pdf-head">
+      <h2>Flightradar24</h2>
+      <span class="muted small">optional</span>
+    </div>
+    <p class="muted small">
+      Live-Quelle für Kennzeichen, Callsign und tatsächliche Abflug-/
+      Ankunftszeiten (auf Basis echter ADS-B-Daten, keine Planzeiten). Der
+      Schlüssel wird nur lokal auf diesem Gerät gespeichert und bei jeder
+      Anfrage direkt an <code>fr24api.flightradar24.com</code> gesendet.
+      Er verlässt dieses Gerät sonst nicht.
+    </p>
+    <label for="fr24KeyInput">API-Schlüssel</label>
+    <input id="fr24KeyInput" type="password" inputmode="text" autocomplete="off"
+           spellcheck="false" placeholder="Dein Flightradar24 API-Schlüssel" />
+    <button id="saveFr24Btn" class="btn secondary">Speichern</button>
+    <p id="fr24Status" class="muted small" hidden></p>
+    <button id="testFr24Btn" class="btn ghost small" hidden>Verbindung testen</button>
+    <p id="fr24TestResult" class="muted small" hidden></p>
+    <div id="fr24TestRaw" class="pdf-text" hidden></div>
+    <button id="resetFr24Btn" class="btn ghost small" hidden>API-Schlüssel entfernen</button>
+  </section>
+
   <!-- Debug (optional, nur in den Settings): zum Testen gegen mehr als
        nur den heutigen Flug. -->
   <section id="debugCard" class="card crew-pdf-card" hidden>
@@ -165,6 +191,7 @@
         <div class="meta-item">
           <div class="meta-key">Kennzeichen</div>
           <div class="meta-val registration">–</div>
+          <div class="reg-prior-arrival muted small" hidden></div>
         </div>
       </div>
 
@@ -242,6 +269,6 @@
      file changes - iOS Safari (especially as a Home Screen app) otherwise
      keeps serving the old cached version indefinitely. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="assets/app.js?v=138"></script>
+<script src="assets/app.js?v=139"></script>
 </body>
 </html>

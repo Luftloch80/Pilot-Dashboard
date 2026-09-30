@@ -1386,10 +1386,24 @@ function renderActiveFlightExtras() {
 // still forced to "flights" and state.previewLayover cleared so the
 // shared dots/height/scroll-listener code (which branch on those) behave
 // exactly like the ordinary case with no preview page attached.
+// "Month" is the operative word here, not "everything the roster
+// happens to carry" - state.allFlights can now span the roster's whole
+// ROSTER_WINDOW_PAST_MS/ROSTER_WINDOW_FUTURE_MS window (~75 days, see
+// rosterEventsToRawFlights()), which is more than this debug switch was
+// ever meant to dump into one carousel (see the comment above - "eyeballing
+// card fields", not a full rotation history). Capped to a real calendar
+// month around today, same as the feature's own name says.
+const DEBUG_ALL_MONTH_WINDOW_MS = 15 * 24 * 3600 * 1000;
+
 function renderDebugAllMonthCarousel() {
   state.mode = "flights";
   state.previewLayover = null;
-  state.flights = state.allFlights.filter((f) => f.flightNumber && !f.isDeadhead);
+  const now = Date.now();
+  state.flights = state.allFlights.filter((f) => {
+    if (!f.flightNumber || f.isDeadhead) return false;
+    const d = f.depSchedDate || f.depActualDate;
+    return d && Math.abs(d.getTime() - now) <= DEBUG_ALL_MONTH_WINDOW_MS;
+  });
   if (state.index >= state.flights.length) state.index = 0;
 
   els.dutyStatusCard.hidden = true;
@@ -1935,10 +1949,9 @@ function adjacentFlightCrew(flight, offset) {
 // for whoever's new as of this one. Compared by first name rather than
 // the full name so this still works against OpenAirLog's partly-
 // anonymized names ("H., Nicolas") and isn't thrown off by the PDF-merged
-// display name. No adjacent flight loaded, or its crew not fetched yet,
-// means nothing can be said either way - see ensureAdjacentFlightCrewLoaded()
-// below, which fills that in and triggers a re-render once it's
-// available, rather than this guessing in the meantime.
+// display name. No adjacent flight loaded, or its crew not known (crew
+// only ever comes from the uploaded PDF now, never fetched per-flight -
+// see renderCrew()), means nothing can be said either way.
 function findLeavingCrew(flight, crew) {
   const next = adjacentFlightCrew(flight, 1);
   if (!next) return new Set();
@@ -1991,20 +2004,6 @@ function findJoiningCrew(flight, crew) {
     if (!wasThereBefore) joining.add(crewKey(member.role, member.name));
   }
   return joining;
-}
-
-// Fire-and-forget: the adjacent flight's crew is needed only to compute
-// the leaving/joining indicators, not to show that flight itself, so this
-// doesn't block rendering the current one - it just re-renders once the
-// fetch resolves, if the pilot is still looking at the same flight by then.
-async function ensureAdjacentFlightCrewLoaded(flight, offset) {
-  const idx = state.allFlights.indexOf(flight);
-  const adjacent = idx >= 0 ? state.allFlights[idx + offset] : undefined;
-  if (!adjacent || adjacent.embeddedCrew.length) return;
-  if (adjacent.id != null && crewCache.has(adjacent.id)) return; // already loading/loaded/forbidden/error
-
-  await ensureCrewLoaded(adjacent);
-  if (state.flights[state.index] === flight) renderCrew(flight);
 }
 
 // The PDF's own ref reads like "LH1168 -1/19" - flight number, an offset
@@ -2114,10 +2113,6 @@ function renderCrew(f) {
   const pdfCoversFlight = !state.pdfLegs.length ||
     state.pdfLegs.some((leg) => leg.flightNumber === f.flightNumber);
   const hasPdfCrew = !!(state.pdfCrew && state.pdfCrew.crew.length && pdfCoversFlight);
-
-  // Fill in the leaving/joining indicators once loaded, each re-renders itself
-  ensureAdjacentFlightCrewLoaded(f, 1);
-  ensureAdjacentFlightCrewLoaded(f, -1);
 
   els.crewList.innerHTML = "";
   els.crewEmpty.hidden = true;
@@ -3248,10 +3243,25 @@ const ROSTER_FLIGHT_SUMMARY_RE = /^(DH\s+)?([A-Z]{2,3})\s+(\d{1,4}):\s*([A-Z]{3}
 // aren't in the roster feed at all - registration/callsign/actual times
 // come from Flightradar24 instead (see getOwnFlightLiveLeg()), crew only
 // ever from the uploaded PDF (see renderCrew()).
+//
+// A MyTime "Teilen"-Link is a persistent calendar subscription, not a
+// bounded "next N days" API response the way OpenAirLog's /flights used
+// to be - left unfiltered, it can carry a pilot's entire flying history
+// (every rotation ever synced, going back months or years). Bounded here
+// to a window wide enough for every actual use (adjacentFlight()'s
+// neighbor lookups, computeRouteStops(), "next duty" after a vacation/
+// vacancy, the debug "alle Kacheln" carousel) without keeping years of
+// irrelevant history in state.allFlights.
+const ROSTER_WINDOW_PAST_MS = 14 * 24 * 3600 * 1000;
+const ROSTER_WINDOW_FUTURE_MS = 60 * 24 * 3600 * 1000;
+
 function rosterEventsToRawFlights(events) {
   const raw = [];
+  const now = Date.now();
   for (const ev of events) {
     if (!ev.summary || !ev.dtstart || !ev.dtend) continue;
+    const t = ev.dtstart.getTime();
+    if (t < now - ROSTER_WINDOW_PAST_MS || t > now + ROSTER_WINDOW_FUTURE_MS) continue;
     const m = ROSTER_FLIGHT_SUMMARY_RE.exec(ev.summary.trim());
     if (!m) continue;
     const [, dh, airline, number, depCode, arrCode] = m;

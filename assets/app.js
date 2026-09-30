@@ -4346,6 +4346,23 @@ function loadInitial() {
   showBanner("", "");
 }
 
+// Optional local defaults for a self-hosted deployment (assets/
+// local-config.js, gitignored - see assets/local-config.example.js) -
+// lets a Raspberry Pi/self-host seed its own roster URL/API keys once
+// per browser, without ever committing real keys into this (public)
+// repo. Only fills in a setting this browser doesn't already have of its
+// own - never overwrites a value the pilot entered or deliberately
+// cleared via Settings. Run before anything else reads these settings
+// (renderBrandName() included, for "own name").
+function seedLocalConfig() {
+  if (typeof LOCAL_CONFIG === "undefined" || !LOCAL_CONFIG) return;
+  if (LOCAL_CONFIG.rosterUrl && !getRosterUrl()) setRosterUrl(LOCAL_CONFIG.rosterUrl);
+  if (LOCAL_CONFIG.fr24Key && !getFr24Key()) setFr24Key(LOCAL_CONFIG.fr24Key);
+  if (LOCAL_CONFIG.corsProxyKey && !getCorsProxyKey()) setCorsProxyKey(LOCAL_CONFIG.corsProxyKey);
+  if (LOCAL_CONFIG.ownName && !getOwnName()) setOwnName(LOCAL_CONFIG.ownName);
+}
+
+seedLocalConfig();
 renderBrandName();
 loadStoredPdfCrew();
 renderLayover();

@@ -1,0 +1,4 @@
+# Real local defaults (roster URL, API keys) for a self-hosted
+# deployment - copy assets/local-config.example.js to this path and fill
+# it in there. Never committed: this repo is public.
+assets/local-config.js

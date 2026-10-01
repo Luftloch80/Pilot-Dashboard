@@ -3,7 +3,6 @@
 const PDF_CREW_STORAGE_KEY = "oal_pdf_crew";
 const JCT_LEGS_STORAGE_KEY = "oal_jct_legs";
 const ROSTER_URL_STORAGE_KEY = "oal_roster_url";
-const DEBUG_ALL_MONTH_STORAGE_KEY = "oal_debug_all_month";
 const FR24_KEY_STORAGE_KEY = "oal_fr24_key";
 const FR24_API_BASE = "https://fr24api.flightradar24.com/api";
 // 15s was too tight for a real Flightradar24 response over a weak mobile
@@ -77,6 +76,7 @@ const els = {
   dutyStatusEndValue: document.getElementById("dutyStatusEndValue"),
   dutyStatusRouteBtn: document.getElementById("dutyStatusRouteBtn"),
   dutyStatusWeather: document.getElementById("dutyStatusWeather"),
+  rotationPreview: document.getElementById("rotationPreview"),
 
   layoverCard: document.getElementById("layoverCard"),
   layoverTitle: document.getElementById("layoverTitle"),
@@ -423,16 +423,6 @@ function getCorsProxyKey() {
 }
 function setCorsProxyKey(key) {
   try { localStorage.setItem(CORSPROXY_KEY_STORAGE_KEY, key); } catch { /* private mode etc. */ }
-}
-
-// Debug-only toggle - not tied to any one API, just
-// swaps what renderFlight() shows as the ordinary flight-card carousel
-// content, see renderDebugAllMonthCarousel().
-function getDebugAllMonth() {
-  try { return localStorage.getItem(DEBUG_ALL_MONTH_STORAGE_KEY) === "1"; } catch { return false; }
-}
-function setDebugAllMonth(on) {
-  try { localStorage.setItem(DEBUG_ALL_MONTH_STORAGE_KEY, on ? "1" : "0"); } catch { /* private mode etc. */ }
 }
 
 // ---------- Flightradar24 API - primary live-data source ----------
@@ -1323,101 +1313,22 @@ function renderActiveFlightExtras() {
   ensureCrewLoaded(f);
 }
 
-// Debug-only (see getDebugAllMonth(), toggled via
-// localStorage.setItem("oal_debug_all_month", "1") - no UI for this
-// anymore, Settings removed) - every real flight in
-// state.allFlights (however wide a window the current data source
-// loads), not just today's own state.flights, as one long scrollable
-// card carousel. Deliberately ignores the Layover/
-// Ortstag mode switches entirely (this is for eyeballing card fields
-// across many flights, not for representing "right now") - state.mode is
-// still forced to "flights" and state.previewLayover cleared so the
-// shared dots/height/scroll-listener code (which branch on those) behave
-// exactly like the ordinary case with no preview page attached.
-// Not "everything the roster happens to carry" - state.allFlights can
-// now span the roster's whole ROSTER_WINDOW_PAST_MS/ROSTER_WINDOW_FUTURE_MS
-// window (~75 days, see rosterEventsToRawFlights()), which is more than
-// this debug switch was ever meant to dump into one carousel (see the
-// comment above - "eyeballing card fields", not a full rotation
-// history). Capped to a week back/two weeks ahead around today instead.
-const DEBUG_ALL_MONTH_WINDOW_PAST_MS = 7 * 24 * 3600 * 1000;
-const DEBUG_ALL_MONTH_WINDOW_FUTURE_MS = 14 * 24 * 3600 * 1000;
-
-function renderDebugAllMonthCarousel() {
-  state.mode = "flights";
-  state.previewLayover = null;
-  const now = Date.now();
-  state.flights = state.allFlights.filter((f) => {
-    if (!f.flightNumber || f.isDeadhead) return false;
-    const d = f.depSchedDate || f.depActualDate;
-    if (!d) return false;
-    const delta = d.getTime() - now;
-    return delta >= -DEBUG_ALL_MONTH_WINDOW_PAST_MS && delta <= DEBUG_ALL_MONTH_WINDOW_FUTURE_MS;
-  });
-  if (state.index >= state.flights.length) state.index = 0;
-
-  els.layoverCard.hidden = true;
-  if (els.layoverCard.parentElement !== els.flightCardTrack && els.layoverCard.previousElementSibling !== els.crewCard) {
-    els.crewCard.after(els.layoverCard);
-  }
-
-  const showFlightCard = !!state.flights.length;
-  els.flightCardTrack.hidden = !showFlightCard;
-  els.crewCard.hidden = !showFlightCard;
-  if (!showFlightCard) {
-    els.flightCardDots.hidden = true;
-    renderAirlineBadge(null);
-    // Same fallback the normal (non-debug) view uses - a rest day further
-    // out than the +-7/14 day debug window still has real duty info
-    // (countdown/Briefing/route) worth showing instead of a bare "nothing
-    // in this window" banner; only fall back to that banner once
-    // renderDutyStatus() itself has nothing either.
-    renderDutyStatus();
-    showBanner(els.dutyStatusCard.hidden ? "Keine Flüge im geladenen Zeitraum." : "", "");
-    return;
-  }
-  els.dutyStatusCard.hidden = true;
-  showBanner("", "");
-
-  const signature = flightsSignature(state.flights) + "|DEBUG_ALL_MONTH";
-  const rebuilt = signature !== lastCardSignature;
-  if (rebuilt) {
-    buildFlightCards(null);
-    lastCardSignature = signature;
-  }
-
-  state.flights.forEach((flight, i) => renderFlightCardContent(state.flights, state.cardNodes, i, i === state.index));
-  if (rebuilt) scrollTrackToIndex(state.index);
-  els.flightCardDots.hidden = state.flights.length <= 1;
-  renderFlightDots();
-  updateTrackHeight();
-
-  const f = state.flights[state.index];
-  renderAirlineBadge(f.flightNumber);
-  renderCrew(f);
-  ensureCrewLoaded(f);
-}
-
 function renderFlight() {
   // Nothing loaded yet (MyTime unreachable/not configured and no JCT
   // roster uploaded either, or a JCT roster is uploaded but doesn't
   // cover any upcoming flight) - ask for the JCT roster right here,
   // same "ask where it's needed" pattern as the Crew card's own PDF
   // prompt (see renderCrew()). Shown regardless of which branch below
-  // ends up running, so it's not tucked away behind the debug carousel
-  // or a rest-day view a pilot might land on first.
+  // ends up running, so it's not tucked away behind a rest-day view a
+  // pilot might land on first.
   els.jctCard.hidden = !!state.allFlights.length;
 
-  // Debug-only escape hatch (see getDebugAllMonth()) - bypasses everything below
-  // (today-only filtering, the Ortstag/post-landing switch, the dedicated
-  // Layover carousel) in favor of one long scrollable carousel over every
-  // real flight in the whole loaded window, so card fields can be checked
-  // across a full month without waiting for each flight to actually
-  // become "today".
-  if (getDebugAllMonth()) {
-    renderDebugAllMonthCarousel();
-    return;
-  }
+  // Defaults to hidden on every render pass - only the rest-day branch
+  // below (via renderDutyStatus() -> renderRotationPreview()) re-shows it.
+  // Without this, a stale rotation preview from an earlier rest day stuck
+  // around once today switched to a layover or a live flight-card day,
+  // since neither of those branches touches #rotationPreview at all.
+  els.rotationPreview.hidden = true;
 
   // 30+ min after today's last flight lands back at home base, show the
   // Ortstag-style duty status view instead of the (by then stale-feeling)
@@ -1459,9 +1370,7 @@ function renderFlight() {
     els.flightCardDots.hidden = true;
     renderAirlineBadge(null);
     renderDutyStatus();
-    // Clears any banner left over from a mode this view just switched
-    // away from (e.g. the debug "alle Kacheln" toggle's own "no flights
-    // in this window" banner - see renderDebugAllMonthCarousel()) - this
+    // Clears any banner left over from a previous render pass - this
     // view already has its own way of saying "nothing here" (the Duty
     // Status/Layover cards themselves), same as tickPostLandingSwitch().
     const nothingToShow = els.layoverCard.hidden && els.dutyStatusCard.hidden;
@@ -2994,6 +2903,25 @@ function rotationEndFlight(stops) {
   return last.icao === HOME_BASE ? last.flight : null;
 }
 
+// Every flight of the upcoming rotation, in order - from nextDutyFlight()
+// through whichever one lands back at HOME_BASE (rotationEndFlight()),
+// both inclusive. Same state.allFlights slice computeRouteStops()'s own
+// stop-chain walk already implicitly covers, just handed back as the
+// actual flight objects (not just the overnight-stop summary) so
+// renderRotationPreview() can show one card per leg. Empty when there's
+// no next duty at all.
+function nextRotationFlights() {
+  const next = nextDutyFlight();
+  if (!next) return [];
+  const startIdx = state.allFlights.indexOf(next);
+  if (startIdx === -1) return [next];
+  const stops = computeRouteStops(next);
+  const endFlight = rotationEndFlight(stops);
+  if (!endFlight) return state.allFlights.slice(startIdx); // doesn't return home within the fetched window - show what's known
+  const endIdx = state.allFlights.indexOf(endFlight);
+  return state.allFlights.slice(startIdx, endIdx + 1);
+}
+
 // ---------- per-city weather for the route chain (tap "Route: …") ----------
 //
 // Uses Open-Meteo (open-meteo.com) - free, no API key, CORS-enabled for
@@ -3659,6 +3587,7 @@ function renderDutyStatus() {
   const type = effectiveDutyType();
   if (!type) {
     els.dutyStatusCard.hidden = true;
+    renderRotationPreview();
     return;
   }
 
@@ -3771,6 +3700,76 @@ function renderDutyStatus() {
     els.dutyStatusRouteBtn.setAttribute("aria-expanded", "false");
     els.dutyStatusRouteBtn.textContent = route ? `Route: ${route}` : "";
   }
+  renderRotationPreview();
+}
+
+// Appended right below the Duty Status card on a rest day - every flight
+// of the upcoming rotation (nextRotationFlights()), one real flight-card
+// per leg (same template/renderFlightCardContent() the live carousel
+// uses, for the same look) with a lightweight layover summary between
+// legs that land away from home overnight, all the way through to
+// whichever leg lands back at HOME_BASE. A plain vertical stack, not a
+// swipeable page set like the live carousel - nothing here is "now", so
+// nothing to swipe to. isActive is always false (peekOnly live lookups
+// only, see getOwnFlightLiveLeg()) - a flight days away has no live
+// Flightradar24 data yet regardless. Self-contained (checks
+// effectiveDutyType()/nextDutyFlight() itself) so every renderDutyStatus()
+// caller gets it back in sync for free, without its own wiring.
+function renderRotationPreview() {
+  const flights = effectiveDutyType() ? nextRotationFlights() : [];
+  els.rotationPreview.innerHTML = "";
+  els.rotationPreview.hidden = !flights.length;
+  if (!flights.length) return;
+
+  const nodes = [];
+  flights.forEach((f, i) => {
+    if (i > 0) {
+      const prev = flights[i - 1];
+      // Same overnight-stop condition computeRouteStops() uses for its
+      // own stop chain - compares the roster's own "date" field, not a
+      // calendar day derived from UTC times (see its comment on why).
+      const prevDateKey = prev.raw && prev.raw.date;
+      const curDateKey = f.raw && f.raw.date;
+      if (prevDateKey !== curDateKey || prev.arrCode !== f.depCode) {
+        els.rotationPreview.appendChild(buildRotationLayoverSummary(prev));
+      }
+    }
+    const node = els.flightCardTemplate.content.firstElementChild.cloneNode(true);
+    els.rotationPreview.appendChild(node);
+    nodes.push(node);
+  });
+  flights.forEach((f, i) => {
+    renderFlightCardContent(flights, nodes, i, false);
+    // The status pill's "-N min"/"+N min" countdown only makes sense
+    // against today's own departure - for a leg days out it'd show
+    // something like "-4344 min", which reads as a bug, not a feature.
+    const statusEl = nodes[i].querySelector(".status-pill");
+    if (statusEl) statusEl.hidden = true;
+  });
+}
+
+// A lightweight stand-in for the full interactive #layoverCard (hotel/
+// currency/room-number fields etc.) - those only matter once a layover
+// is actually happening, not days ahead in a forecast. Just enough to
+// place the rotation's own overnight stops: city and, if the uploaded
+// PDF happens to name one for this exact flight, the hotel (see
+// findPdfHotelFor()).
+function buildRotationLayoverSummary(arrivingFlight) {
+  const div = document.createElement("div");
+  div.className = "card rotation-layover";
+  const city = cityForIcao(arrivingFlight.arrCode) || threeLetterCode(arrivingFlight.arrCode);
+  const title = document.createElement("div");
+  title.className = "rotation-layover-city";
+  title.textContent = `Layover: ${city}`;
+  div.appendChild(title);
+  const hotel = findPdfHotelFor(arrivingFlight.flightNumber, state.pdfLegs);
+  if (hotel) {
+    const hotelEl = document.createElement("div");
+    hotelEl.className = "muted small";
+    hotelEl.textContent = hotel;
+    div.appendChild(hotelEl);
+  }
+  return div;
 }
 
 // Called every 30s (see the ticker below) to catch the post-landing switch
@@ -4315,11 +4314,7 @@ setInterval(() => {
   // Re-applies the 20-minutes-past-arrival retirement (see
   // computeTodayFlights()) - purely time-based, so a flight can cross
   // that mark while the app just sits open, not only right after a load.
-  // Skipped entirely while the debug "all month" toggle is on (see
-  // renderDebugAllMonthCarousel()) - otherwise this would reset
-  // state.flights back down to just today's list every 30s, immediately
-  // undoing what that toggle is for.
-  if (state.allFlights.length && !getDebugAllMonth()) {
+  if (state.allFlights.length) {
     const refreshed = computeTodayFlights(state.allFlights);
     if (refreshed.length !== state.flights.length || refreshed.some((f, i) => f !== state.flights[i])) {
       state.flights = refreshed;

@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=56" />
+<link rel="stylesheet" href="assets/style.css?v=57" />
 </head>
 <body>
 
@@ -125,6 +125,13 @@
     <div id="dutyStatusWeather" class="route-weather" hidden></div>
   </section>
 
+  <!-- Umlauf-Vorschau: alle Flüge des nächsten Umlaufs mit Layover-
+       Stationen dazwischen, direkt unter der Duty-Status-Karte - siehe
+       renderRotationPreview() in app.js. Eigene Flugkarten (gleiches
+       Template wie die aktive Karussell-Karte), aber als einfacher,
+       nicht wischbarer Stapel - reine Vorschau, nichts davon ist "jetzt". -->
+  <div id="rotationPreview" class="rotation-preview" hidden></div>
+
   <!-- Crew: einzige Quelle ist eine hochgeladene Umlaufcrewliste als PDF -
        wird direkt hier angefragt, solange keine (zu diesem Flug passende)
        PDF vorliegt, statt in eigenen Settings. -->
@@ -211,6 +218,6 @@
      committed since this repo is public. A 404 here (file not present,
      e.g. on GitHub Pages) is harmless - app.js only uses it if defined. -->
 <script src="assets/local-config.js"></script>
-<script src="assets/app.js?v=162"></script>
+<script src="assets/app.js?v=163"></script>
 </body>
 </html>

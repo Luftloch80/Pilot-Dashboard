@@ -164,6 +164,19 @@ body {
   padding: 16px;
 }
 
+/* Upcoming-rotation forecast below the Duty Status card (see
+   renderRotationPreview() in app.js) - a plain vertical stack, not the
+   swipeable flight-card-track carousel, so just needs the same rhythm
+   .app itself already uses between its own top-level cards. */
+.rotation-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.rotation-layover-city {
+  font-weight: 600;
+}
+
 .card h2 {
   margin: 0 0 8px;
   font-size: 1rem;

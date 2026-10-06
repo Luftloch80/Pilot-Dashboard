@@ -199,24 +199,6 @@ body {
 .muted { color: var(--text-muted); }
 .small { font-size: 0.82rem; }
 
-/* Setup */
-#crewCard label {
-  display: block;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin: 12px 0 6px;
-}
-
-#crewCard input[type="text"] {
-  width: 100%;
-  padding: 12px 14px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  font-size: 1rem;
-}
-
 .btn {
   border: none;
   border-radius: 12px;
@@ -259,10 +241,6 @@ body {
   border-radius: 10px;
   font-size: 0.85rem;
   margin-top: 12px;
-}
-
-#crewCard #saveOwnNameBtn {
-  margin-top: 14px;
 }
 
 /* Status banner */
@@ -746,12 +724,6 @@ body {
 
 .crew-pdf-prompt {
   margin-bottom: 14px;
-}
-
-.crew-own-name {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
 }
 
 .pdf-text {

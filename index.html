@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=58" />
+<link rel="stylesheet" href="assets/style.css?v=59" />
 </head>
 <body>
 
@@ -45,15 +45,16 @@
 
 <main id="app" class="app">
 
-  <!-- Einstellungen: MyTime-Roster-URL, Flightradar24-Key, CORS-Proxy-Key -
-       je ein einzeiliges Eingabefeld (Placeholder statt Beschreibungstext),
-       speichert bei Verlassen des Felds. Standardmäßig ausgeblendet, über
-       #settingsBtn im Header umschaltbar. -->
+  <!-- Einstellungen: MyTime-Roster-URL, Flightradar24-Key, CORS-Proxy-Key,
+       Eigener Name - je ein einzeiliges Eingabefeld (Placeholder statt
+       Beschreibungstext), speichert bei Verlassen des Felds. Standardmäßig
+       ausgeblendet, über #settingsBtn im Header umschaltbar. -->
   <section id="settingsPanel" class="card settings-panel" hidden>
     <h2>Einstellungen</h2>
     <input id="rosterUrlInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="MyTime-Roster-URL (.ics)" />
     <input id="fr24KeyInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Flightradar24 API-Key" />
     <input id="corsProxyKeyInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="CORS-Proxy-Key (optional)" />
+    <input id="ownNameInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Eigener Name (Nachname, Vorname)" />
   </section>
 
   <!-- Status / Lade / Fehleranzeige -->
@@ -174,13 +175,6 @@
 
     <ul id="crewList" class="crew-list"></ul>
     <p id="crewEmpty" class="muted" hidden></p>
-
-    <div class="crew-own-name">
-      <label for="ownNameInput">Eigener Name (für "latest Onblock" und Zimmerliste beim Layover)</label>
-      <input id="ownNameInput" type="text" inputmode="text" autocomplete="off"
-             spellcheck="false" placeholder="Nachname, Vorname" />
-      <button id="saveOwnNameBtn" class="btn secondary">Speichern</button>
-    </div>
   </section>
 
   <!-- Layover: aus OpenAirLog erkannt -->
@@ -235,6 +229,6 @@
      committed since this repo is public. A 404 here (file not present,
      e.g. on GitHub Pages) is harmless - app.js only uses it if defined. -->
 <script src="assets/local-config.js"></script>
-<script src="assets/app.js?v=164"></script>
+<script src="assets/app.js?v=165"></script>
 </body>
 </html>

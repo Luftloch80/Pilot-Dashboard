@@ -106,8 +106,6 @@ const els = {
   crewPdfStatus: document.getElementById("crewPdfStatus"),
   crewPdfRawToggle: document.getElementById("crewPdfRawToggle"),
   crewPdfResult: document.getElementById("crewPdfResult"),
-  ownNameInput: document.getElementById("ownNameInput"),
-  saveOwnNameBtn: document.getElementById("saveOwnNameBtn"),
 
   jctCard: document.getElementById("jctCard"),
   jctInput: document.getElementById("jctInput"),
@@ -124,6 +122,7 @@ const els = {
   rosterUrlInput: document.getElementById("rosterUrlInput"),
   fr24KeyInput: document.getElementById("fr24KeyInput"),
   corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
+  ownNameInput: document.getElementById("ownNameInput"),
 };
 
 /** @type {{flights: any[], index: number, pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
@@ -4242,14 +4241,6 @@ els.jctRawToggle.addEventListener("click", () => {
   els.jctRawToggle.textContent = els.jctResult.hidden ? "Rohtext anzeigen" : "Rohtext ausblenden";
 });
 
-els.saveOwnNameBtn.addEventListener("click", () => {
-  setOwnName(els.ownNameInput.value.trim());
-  renderBrandName();
-  const f = state.flights[state.index];
-  if (f) renderCrew(f);
-  renderLayover();
-});
-
 els.settingsBtn.addEventListener("click", () => {
   els.settingsPanel.hidden = !els.settingsPanel.hidden;
 });
@@ -4273,6 +4264,13 @@ els.fr24KeyInput.addEventListener("change", () => {
 });
 els.corsProxyKeyInput.addEventListener("change", () => {
   setCorsProxyKey(els.corsProxyKeyInput.value.trim());
+});
+els.ownNameInput.addEventListener("change", () => {
+  setOwnName(els.ownNameInput.value.trim());
+  renderBrandName();
+  const f = state.flights[state.index];
+  if (f) renderCrew(f);
+  renderLayover();
 });
 
 els.roomNumberInput.addEventListener("input", () => {

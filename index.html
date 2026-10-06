@@ -15,7 +15,7 @@
 <link rel="apple-touch-icon" href="assets/icon-180.png?v=4" />
 <link rel="icon" href="assets/favicon.png?v=4" />
 
-<link rel="stylesheet" href="assets/style.css?v=57" />
+<link rel="stylesheet" href="assets/style.css?v=58" />
 </head>
 <body>
 
@@ -28,6 +28,12 @@
   </div>
   <div class="topbar-actions">
     <span id="dataStamp" class="data-stamp muted small" hidden></span>
+    <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="Einstellungen">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .7.4 1.31 1 1.51h.09a2 2 0 0 1 2 2 2 2 0 0 1-2 2H21a1.65 1.65 0 0 0-1.51 1z" />
+      </svg>
+    </button>
     <button id="refreshBtn" class="icon-btn" aria-label="Aktualisieren" title="Aktualisieren" hidden>
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M23 4v6h-6" />
@@ -38,6 +44,17 @@
 </header>
 
 <main id="app" class="app">
+
+  <!-- Einstellungen: MyTime-Roster-URL, Flightradar24-Key, CORS-Proxy-Key -
+       je ein einzeiliges Eingabefeld (Placeholder statt Beschreibungstext),
+       speichert bei Verlassen des Felds. Standardmäßig ausgeblendet, über
+       #settingsBtn im Header umschaltbar. -->
+  <section id="settingsPanel" class="card settings-panel" hidden>
+    <h2>Einstellungen</h2>
+    <input id="rosterUrlInput" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="MyTime-Roster-URL (.ics)" />
+    <input id="fr24KeyInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="Flightradar24 API-Key" />
+    <input id="corsProxyKeyInput" type="text" inputmode="text" autocomplete="off" spellcheck="false" placeholder="CORS-Proxy-Key (optional)" />
+  </section>
 
   <!-- Status / Lade / Fehleranzeige -->
   <section id="statusBanner" class="status-banner" hidden></section>
@@ -218,6 +235,6 @@
      committed since this repo is public. A 404 here (file not present,
      e.g. on GitHub Pages) is harmless - app.js only uses it if defined. -->
 <script src="assets/local-config.js"></script>
-<script src="assets/app.js?v=163"></script>
+<script src="assets/app.js?v=164"></script>
 </body>
 </html>

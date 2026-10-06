@@ -177,6 +177,19 @@ body {
   font-weight: 600;
 }
 
+/* Einstellungen: ein einzeiliges Eingabefeld pro Setting (Placeholder statt
+   eigenem <label>/Beschreibungstext), siehe #settingsPanel in index.html. */
+.settings-panel input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 1rem;
+  margin-top: 10px;
+}
+
 .card h2 {
   margin: 0 0 8px;
   font-size: 1rem;

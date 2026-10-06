@@ -118,6 +118,12 @@ const els = {
 
   refreshBtn: document.getElementById("refreshBtn"),
   dataStamp: document.getElementById("dataStamp"),
+
+  settingsBtn: document.getElementById("settingsBtn"),
+  settingsPanel: document.getElementById("settingsPanel"),
+  rosterUrlInput: document.getElementById("rosterUrlInput"),
+  fr24KeyInput: document.getElementById("fr24KeyInput"),
+  corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
 };
 
 /** @type {{flights: any[], index: number, pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
@@ -4244,6 +4250,31 @@ els.saveOwnNameBtn.addEventListener("click", () => {
   renderLayover();
 });
 
+els.settingsBtn.addEventListener("click", () => {
+  els.settingsPanel.hidden = !els.settingsPanel.hidden;
+});
+
+// Just saves on blur/Enter (type="url"/"text" inputs both fire "change"
+// on either) - no separate Speichern button, same "ask where it's
+// needed, nothing more" spirit as the rest of this settings panel. The
+// roster URL deliberately doesn't trigger a fetch here - see loadInitial()'s
+// own comment on why only an explicit ↻ ever loads the roster.
+els.rosterUrlInput.addEventListener("change", () => {
+  setRosterUrl(els.rosterUrlInput.value.trim());
+});
+els.fr24KeyInput.addEventListener("change", () => {
+  setFr24Key(els.fr24KeyInput.value.trim());
+  // Drops whatever got cached (incl. misses) under the old/missing key,
+  // so a freshly entered key is picked up on the very next render instead
+  // of waiting for the pilot to also hit ↻.
+  flightByNumberCache.clear();
+  aircraftScheduleCache.clear();
+  renderFlight();
+});
+els.corsProxyKeyInput.addEventListener("change", () => {
+  setCorsProxyKey(els.corsProxyKeyInput.value.trim());
+});
+
 els.roomNumberInput.addEventListener("input", () => {
   if (currentLayoverKey) setRoomNumber(currentLayoverKey, els.roomNumberInput.value);
 });
@@ -4298,6 +4329,9 @@ function seedLocalConfig() {
 seedLocalConfig();
 renderBrandName();
 els.ownNameInput.value = getOwnName();
+els.rosterUrlInput.value = getRosterUrl();
+els.fr24KeyInput.value = getFr24Key();
+els.corsProxyKeyInput.value = getCorsProxyKey();
 loadStoredPdfCrew();
 loadStoredJctLegs();
 // A previously uploaded JCT roster is already local data (no network

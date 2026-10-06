@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<!-- GitHub Pages serves this file itself with a ~10min Cache-Control, and
+     unlike assets/app.js/style.css below it has no ?v= to bust - without
+     this, Safari (esp. as a Home Screen app) can keep showing an outdated
+     page (missing a just-shipped section etc.) for up to that long after
+     a fresh deploy. Best-effort only; a few browsers ignore it. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <title>PilotDashboard</title>
 <meta name="description" content="Aktueller Flug: Abflug, Ankunft und Crew auf einen Blick." />
 

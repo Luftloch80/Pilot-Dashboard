@@ -45,7 +45,13 @@ self.addEventListener("fetch", (event) => {
   if (!isAppShell && !isPdfJs) return; // not ours to handle - straight to the network, uncached
 
   event.respondWith(
-    fetch(req)
+    // cache: "no-store" - "network-first" above the Cache API is pointless
+    // if this fetch() itself quietly answers from Safari's own HTTP cache
+    // instead of actually hitting the network (observed: a just-deployed
+    // index.html not showing up for several minutes even while online).
+    // The *offline* fallback (catch below) still uses the Cache API as
+    // intended - only this always-prefer-fresh fetch is affected.
+    fetch(req, { cache: "no-store" })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});

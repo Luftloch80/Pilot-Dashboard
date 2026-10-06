@@ -190,6 +190,25 @@ body {
   margin-top: 10px;
 }
 
+.settings-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+/* Reuses .pdf-text's scrollable box look - monospace here since this is
+   log lines, not PDF-extracted prose. */
+.debug-log {
+  margin-top: 8px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  /* Long unbroken URLs in a warning (e.g. the FR24 request URL) would
+     otherwise overflow the box instead of wrapping - .pdf-text's own
+     pre-wrap alone only breaks on whitespace. */
+  overflow-wrap: anywhere;
+}
+
 .card h2 {
   margin: 0 0 8px;
   font-size: 1rem;

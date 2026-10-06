@@ -123,7 +123,53 @@ const els = {
   fr24KeyInput: document.getElementById("fr24KeyInput"),
   corsProxyKeyInput: document.getElementById("corsProxyKeyInput"),
   ownNameInput: document.getElementById("ownNameInput"),
+  debugLogBox: document.getElementById("debugLogBox"),
+  debugLogClearBtn: document.getElementById("debugLogClearBtn"),
 };
+
+// ---------- In-app debug log (Settings panel) ----------
+//
+// The pilot has no easy way to open a browser devtools console on an
+// iPhone - mirrors every console.warn()/console.error() (the
+// "[Flightradar24] ... (network/CORS?)" warnings included) plus uncaught
+// errors/unhandled promise rejections into a small scrollable box right
+// in Settings, so a real failure is visible on the same device it
+// happened on instead of needing a desktop browser to diagnose.
+const DEBUG_LOG_MAX = 200;
+const debugLog = [];
+
+function formatDebugLogArg(a) {
+  if (a instanceof Error) return a.message;
+  if (a && typeof a === "object") { try { return JSON.stringify(a); } catch { return String(a); } }
+  return String(a);
+}
+
+function pushDebugLog(level, args) {
+  const text = args.map(formatDebugLogArg).join(" ");
+  debugLog.push(`${new Date().toLocaleTimeString("de-DE")} [${level}] ${text}`);
+  if (debugLog.length > DEBUG_LOG_MAX) debugLog.shift();
+  renderDebugLog();
+}
+
+function renderDebugLog() {
+  if (!els.debugLogBox) return;
+  els.debugLogBox.textContent = debugLog.length ? debugLog.join("\n") : "Keine Meldungen.";
+  els.debugLogBox.scrollTop = els.debugLogBox.scrollHeight;
+}
+
+// Still calls the real console.warn()/console.error() too - this only
+// adds a second destination, never replaces the browser's own console.
+const nativeConsoleWarn = console.warn.bind(console);
+console.warn = (...args) => { nativeConsoleWarn(...args); pushDebugLog("warn", args); };
+const nativeConsoleError = console.error.bind(console);
+console.error = (...args) => { nativeConsoleError(...args); pushDebugLog("error", args); };
+
+window.addEventListener("error", (e) => {
+  pushDebugLog("error", [e.message, e.filename ? `(${e.filename}:${e.lineno})` : ""]);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  pushDebugLog("error", ["Unhandled promise rejection:", e.reason]);
+});
 
 /** @type {{flights: any[], index: number, pdfCrew: {crew: any[], rotation: any, fileName: string}|null}} */
 const state = {
@@ -4245,6 +4291,11 @@ els.settingsBtn.addEventListener("click", () => {
   els.settingsPanel.hidden = !els.settingsPanel.hidden;
 });
 
+els.debugLogClearBtn.addEventListener("click", () => {
+  debugLog.length = 0;
+  renderDebugLog();
+});
+
 // Just saves on blur/Enter (type="url"/"text" inputs both fire "change"
 // on either) - no separate Speichern button, same "ask where it's
 // needed, nothing more" spirit as the rest of this settings panel. The
@@ -4330,6 +4381,7 @@ els.ownNameInput.value = getOwnName();
 els.rosterUrlInput.value = getRosterUrl();
 els.fr24KeyInput.value = getFr24Key();
 els.corsProxyKeyInput.value = getCorsProxyKey();
+renderDebugLog();
 loadStoredPdfCrew();
 loadStoredJctLegs();
 // A previously uploaded JCT roster is already local data (no network

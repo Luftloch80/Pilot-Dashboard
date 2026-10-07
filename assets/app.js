@@ -688,6 +688,21 @@ const flightByNumberLoading = new Set(); // cacheKey currently in flight, to avo
 // buildPdfRefMap() can ask for the same flight number/date from several
 // crew rows (and re-renders) before the first request even resolves.
 
+// Flightradar24 genuinely has no data for a flight before it starts
+// moving (confirmed via their own API FAQ: flight-summary only covers
+// tracked/historic flights, never a schedule) - a lookup made before
+// departure correctly comes back as "leg: null", but without this, that
+// null stayed cached for the rest of the page session even once the
+// flight was actually airborne and real data existed, since every call
+// site below only re-fetches on "not cached at all" - not "cached as a
+// miss a while ago". Confirmed live: pilot mid-flight, Debug-Meldungen
+// showed no errors at all, yet Kennzeichen/Rufzeichen stayed blank the
+// entire time because of exactly this.
+const FLIGHT_BY_NUMBER_NULL_RETRY_MS = 3 * 60 * 1000;
+function flightByNumberCacheIsStale(cached) {
+  return !cached || (!cached.leg && Date.now() - cached.fetchedAt > FLIGHT_BY_NUMBER_NULL_RETRY_MS);
+}
+
 // Fire-and-forget, same pattern as ensureAircraftScheduleLoaded() - once
 // this resolves a registration, also kicks off the normal Reg-based
 // schedule lookup for it so findPriorLegArrival() has something to work
@@ -726,7 +741,7 @@ function getOwnFlightLiveLeg(f, opts) {
   const cacheKey = `${f.flightNumber}|${dateKey}`;
   const peekOnly = opts && opts.peekOnly;
   const cached = flightByNumberCache.get(cacheKey);
-  if (!peekOnly && !cached) ensureFlightByNumberLoaded(f.flightNumber, dateKey);
+  if (!peekOnly && flightByNumberCacheIsStale(cached)) ensureFlightByNumberLoaded(f.flightNumber, dateKey);
   return cached ? cached.leg : null;
 }
 
@@ -1228,7 +1243,7 @@ function renderFlightCardTransit(flights, i, isActive, cardEls) {
     const dateKey = nextFlight.raw && nextFlight.raw.date;
     const cacheKey = `${nextFlight.flightNumber}|${dateKey}`;
     const cachedByNumber = flightByNumberCache.get(cacheKey);
-    if (!cachedByNumber) {
+    if (flightByNumberCacheIsStale(cachedByNumber)) {
       if (isActive) ensureFlightByNumberLoaded(nextFlight.flightNumber, dateKey);
     } else if (cachedByNumber.leg) {
       nextRegistration = cachedByNumber.leg.registration || null;
@@ -1910,7 +1925,7 @@ function buildPdfRefMap(f, field) {
     if (resolved && getFr24Key()) {
       const cacheKey = `${resolved.flightNumber}|${resolved.dateKey}`;
       const cached = flightByNumberCache.get(cacheKey);
-      if (!cached) ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
+      if (flightByNumberCacheIsStale(cached)) ensureFlightByNumberLoaded(resolved.flightNumber, resolved.dateKey);
       const leg = cached && cached.leg;
       label = field === "exRef"
         ? (formatExRefLabelLive(resolved.flightNumber, leg) || m[field])
